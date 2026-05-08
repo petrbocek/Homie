@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Domácí Finance</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #242424; --border: #2e2e2e;
+    --text: #f0ede8; --muted: #666; --accent: #c8f060; --accent2: #60c8f0;
+    --accent4: #f0a860; --green: #4ade80; --red: #f87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Syne', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; overflow-x: hidden; }
+  header { padding: 24px 32px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: rgba(15,15,15,0.95); backdrop-filter: blur(12px); z-index: 100; }
+  .logo { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+  .logo span { color: var(--accent); }
+  .header-right { display: flex; align-items: center; gap: 20px; }
+  .month-nav { display: flex; align-items: center; gap: 14px; font-family: 'DM Mono', monospace; font-size: 14px; }
+  .month-nav button { background: var(--surface2); border: 1px solid var(--border); color: var(--text); width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 16px; transition: all 0.15s; }
+  .month-nav button:hover { background: var(--border); }
+  .sync-indicator { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+  .sync-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); transition: background 0.3s; }
+  .sync-dot.syncing { background: var(--accent4); animation: pulse 1s infinite; }
+  .sync-dot.error { background: var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .tabs { display: flex; padding: 24px 32px 0; border-bottom: 1px solid var(--border); overflow-x: auto; }
+  .tab { padding: 10px 24px; cursor: pointer; font-size: 14px; font-weight: 600; color: var(--muted); border-bottom: 2px solid transparent; transition: all 0.15s; letter-spacing: 0.5px; text-transform: uppercase; white-space: nowrap; }
+  .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab:hover:not(.active) { color: var(--text); }
+  main { padding: 32px; max-width: 1200px; margin: 0 auto; }
+  .view { display: none; }
+  .view.active { display: block; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-bottom: 32px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px; transition: transform 0.15s; }
+  .card:hover { transform: translateY(-2px); }
+  .card-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 12px; font-family: 'DM Mono', monospace; }
+  .card-value { font-size: 32px; font-weight: 800; letter-spacing: -1px; line-height: 1; margin-bottom: 6px; }
+  .card-sub { font-size: 12px; color: var(--muted); font-family: 'DM Mono', monospace; }
+  .card.accent { border-color: rgba(200,240,96,0.3); } .card.accent .card-value { color: var(--accent); }
+  .card.danger { border-color: rgba(248,113,113,0.3); } .card.danger .card-value { color: var(--red); }
+  .card.info { border-color: rgba(96,200,240,0.3); } .card.info .card-value { color: var(--accent2); }
+  .budget-section { margin-bottom: 32px; }
+  .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); margin-bottom: 16px; font-family: 'DM Mono', monospace; }
+  .budget-item { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px 20px; margin-bottom: 8px; display: flex; align-items: center; gap: 16px; }
+  .budget-item-name { font-weight: 600; font-size: 14px; width: 160px; flex-shrink: 0; }
+  .bar-wrap { flex: 1; }
+  .bar-bg { background: var(--surface2); border-radius: 99px; height: 8px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 99px; transition: width 0.4s cubic-bezier(.4,0,.2,1); }
+  .bar-ok { background: var(--accent); } .bar-warn { background: var(--accent4); } .bar-over { background: var(--red); }
+  .budget-nums { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--muted); white-space: nowrap; min-width: 120px; text-align: right; }
+  .budget-nums strong { color: var(--text); }
+  .split { display: grid; grid-template-columns: 340px 1fr; gap: 24px; }
+  .form-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px; height: fit-content; position: sticky; top: 100px; }
+  .form-title { font-size: 16px; font-weight: 700; margin-bottom: 20px; }
+  .field { margin-bottom: 14px; }
+  label { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin-bottom: 6px; font-family: 'DM Mono', monospace; }
+  input, select { width: 100%; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px 12px; font-family: 'DM Mono', monospace; font-size: 14px; transition: border-color 0.15s; outline: none; }
+  input:focus, select:focus { border-color: var(--accent); }
+  select option { background: var(--surface2); }
+  .btn { width: 100%; padding: 12px; background: var(--accent); color: #0f0f0f; border: none; border-radius: 8px; font-family: 'Syne', sans-serif; font-weight: 700; font-size: 14px; cursor: pointer; transition: all 0.15s; letter-spacing: 0.5px; margin-top: 4px; }
+  .btn:hover:not(:disabled) { background: #d4f570; transform: translateY(-1px); }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn.danger-btn { background: transparent; color: var(--red); border: 1px solid rgba(248,113,113,0.3); }
+  .btn.danger-btn:hover { background: rgba(248,113,113,0.1); transform: none; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); font-family: 'DM Mono', monospace; font-weight: 500; text-align: left; padding: 12px 16px; border-bottom: 1px solid var(--border); }
+  td { padding: 14px 16px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+  .pill { display: inline-block; padding: 3px 10px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+  .del-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; padding: 4px 8px; border-radius: 6px; transition: all 0.15s; }
+  .del-btn:hover { color: var(--red); background: rgba(248,113,113,0.1); }
+  .amount-positive { color: var(--green); font-weight: 600; font-family: 'DM Mono', monospace; }
+  .amount-negative { color: var(--red); font-weight: 600; font-family: 'DM Mono', monospace; }
+  .mono { font-family: 'DM Mono', monospace; }
+  .energy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; margin-bottom: 32px; }
+  .energy-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px; }
+  .energy-icon { font-size: 28px; margin-bottom: 12px; }
+  .energy-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+  .energy-value { font-size: 28px; font-weight: 800; font-family: 'DM Mono', monospace; margin: 8px 0; }
+  .energy-unit { font-size: 13px; color: var(--muted); }
+  .trend { font-size: 12px; font-family: 'DM Mono', monospace; margin-top: 6px; }
+  .trend.up { color: var(--red); } .trend.down { color: var(--green); }
+  .chart-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 24px; margin-bottom: 24px; }
+  .chart-title { font-size: 14px; font-weight: 700; margin-bottom: 20px; }
+  .bar-chart { display: flex; align-items: flex-end; gap: 8px; height: 140px; }
+  .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .bar-col-bar { width: 100%; border-radius: 6px 6px 0 0; min-height: 4px; transition: height 0.4s cubic-bezier(.4,0,.2,1); }
+  .bar-col-label { font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace; }
+  .bar-col-val { font-size: 10px; color: var(--muted); font-family: 'DM Mono', monospace; }
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface); border: 1px solid var(--accent); color: var(--accent); padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 600; transform: translateY(80px); opacity: 0; transition: all 0.3s cubic-bezier(.4,0,.2,1); z-index: 999; }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.err { border-color: var(--red); color: var(--red); }
+  .empty { text-align: center; padding: 48px; color: var(--muted); font-size: 14px; }
+  .empty .emoji { font-size: 40px; display: block; margin-bottom: 12px; }
+  .budget-edit-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+  .budget-edit-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 20px; }
+  .row2 { display: flex; gap: 10px; }
+  .row2 .field { flex: 1; }
+  .loading-overlay { position: fixed; inset: 0; background: var(--bg); display: flex; align-items: center; justify-content: center; z-index: 200; flex-direction: column; gap: 16px; }
+  .loading-spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-size: 14px; color: var(--muted); font-family: 'DM Mono', monospace; }
+  @media (max-width: 768px) {
+    header { padding: 16px 20px; } main { padding: 20px; } .tabs { padding: 16px 20px 0; }
+    .split { grid-template-columns: 1fr; } .form-card { position: static; }
+    .summary-grid { grid-template-columns: 1fr 1fr; }
+  }
+  @media (max-width: 480px) { .summary-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="loading-overlay" id="loading">
+  <div class="loading-spinner"></div>
+  <div class="loading-text">Načítám data…</div>
+</div>
+
+<header>
+  <div class="logo">domácí<span>.</span>finance</div>
+  <div class="header-right">
+    <div class="sync-indicator">
+      <div class="sync-dot" id="sync-dot"></div>
+      <span id="sync-label">online</span>
+    </div>
+    <div class="month-nav">
+      <button onclick="changeMonth(-1)">‹</button>
+      <span id="monthLabel"></span>
+      <button onclick="changeMonth(1)">›</button>
+    </div>
+  </div>
+</header>
+
+<div class="tabs">
+  <div class="tab active" onclick="showTab('prehled')">Přehled</div>
+  <div class="tab" onclick="showTab('vydaje')">Výdaje</div>
+  <div class="tab" onclick="showTab('energie')">Energie</div>
+  <div class="tab" onclick="showTab('budget')">Budget</div>
+</div>
+
+<main>
+  <div class="view active" id="view-prehled">
+    <div class="summary-grid">
+      <div class="card accent">
+        <div class="card-label">Zůstatek měsíce</div>
+        <div class="card-value" id="sum-zustatek">—</div>
+        <div class="card-sub" id="sum-zustatek-sub">příjmy − výdaje</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Celkové příjmy</div>
+        <div class="card-value" id="sum-prijmy">—</div>
+        <div class="card-sub">tento měsíc</div>
+      </div>
+      <div class="card danger">
+        <div class="card-label">Celkové výdaje</div>
+        <div class="card-value" id="sum-vydaje">—</div>
+        <div class="card-sub">tento měsíc</div>
+      </div>
+      <div class="card info">
+        <div class="card-label">Energie celkem</div>
+        <div class="card-value" id="sum-energie">—</div>
+        <div class="card-sub">odhadované náklady</div>
+      </div>
+    </div>
+    <div class="budget-section">
+      <div class="section-title">Plnění budgetu</div>
+      <div id="budget-bars"></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Výdaje posledních 6 měsíců</div>
+      <div class="bar-chart" id="trend-chart"></div>
+    </div>
+  </div>
+
+  <div class="view" id="view-vydaje">
+    <div class="split">
+      <div class="form-card">
+        <div class="form-title">Přidat záznam</div>
+        <div class="field"><label>Typ</label>
+          <select id="typ"><option value="vydaj">Výdaj</option><option value="prijem">Příjem</option></select></div>
+        <div class="field"><label>Popis</label><input id="popis" type="text" placeholder="např. Nákup v Lidlu…"></div>
+        <div class="field"><label>Kategorie</label>
+          <select id="kategorie">
+            <option>Potraviny</option><option>Doprava</option><option>Bydlení</option><option>Zábava</option>
+            <option>Zdraví</option><option>Oblečení</option><option>Restaurace</option><option>Sport</option>
+            <option>Elektro</option><option>Ostatní</option><option>Plat</option><option>Příjem jiný</option>
+          </select></div>
+        <div class="row2">
+          <div class="field"><label>Částka (Kč)</label><input id="castka" type="number" placeholder="0" min="0"></div>
+          <div class="field"><label>Datum</label><input id="datum" type="date"></div>
+        </div>
+        <button class="btn" id="btn-zaznam" onclick="addZaznam()">+ Přidat</button>
+      </div>
+      <div>
+        <div class="section-title">Záznamy — <span id="records-month"></span></div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Datum</th><th>Popis</th><th>Kategorie</th><th>Částka</th><th></th></tr></thead>
+            <tbody id="zaznamy-table"></tbody>
+          </table>
+          <div id="zaznamy-empty" class="empty" style="display:none"><span class="emoji">📋</span>Žádné záznamy pro tento měsíc</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="view" id="view-energie">
+    <div class="split">
+      <div class="form-card">
+        <div class="form-title">Zadat odečet</div>
+        <div class="field"><label>Typ energie</label>
+          <select id="e-typ">
+            <option value="elektrina">⚡ Elektřina</option><option value="plyn">🔥 Plyn</option>
+            <option value="voda">💧 Voda</option><option value="teplo">🏠 Teplo</option>
+          </select></div>
+        <div class="field"><label>Hodnota měřidla</label><input id="e-hodnota" type="number" placeholder="0" step="0.01"></div>
+        <div class="field"><label>Datum odečtu</label><input id="e-datum" type="date"></div>
+        <div class="field"><label>Cena za jednotku (Kč)</label><input id="e-cena" type="number" placeholder="0" step="0.01"></div>
+        <button class="btn" id="btn-energie" onclick="addEnergie()">+ Uložit odečet</button>
+      </div>
+      <div>
+        <div class="energy-grid" id="energie-cards"></div>
+        <div class="section-title" style="margin-top:16px">Historie odečtů</div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Datum</th><th>Typ</th><th>Hodnota</th><th>Spotřeba</th><th>Náklady</th><th></th></tr></thead>
+            <tbody id="energie-table"></tbody>
+          </table>
+          <div id="energie-empty" class="empty" style="display:none"><span class="emoji">⚡</span>Žádné odečty zatím</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="view" id="view-budget">
+    <div class="split">
+      <div class="form-card">
+        <div class="form-title">Nastavit budget</div>
+        <div class="field"><label>Kategorie</label>
+          <select id="b-kategorie">
+            <option>Potraviny</option><option>Doprava</option><option>Bydlení</option><option>Zábava</option>
+            <option>Zdraví</option><option>Oblečení</option><option>Restaurace</option><option>Sport</option>
+            <option>Elektro</option><option>Ostatní</option>
+          </select></div>
+        <div class="field"><label>Měsíční limit (Kč)</label><input id="b-limit" type="number" placeholder="0" min="0"></div>
+        <button class="btn" id="btn-budget" onclick="saveBudget()">Uložit budget</button>
+      </div>
+      <div>
+        <div class="section-title">Nastavené budgety</div>
+        <div class="budget-edit-grid" id="budget-cards"></div>
+        <div id="budget-empty" class="empty" style="display:none"><span class="emoji">🎯</span>Žádné budgety zatím</div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SB_URL = 'https://fcycbzbzhuslmkfbgryb.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZjeWNiemJ6aHVzbG1rZmJncnliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMjcyNjksImV4cCI6MjA5MzgwMzI2OX0.Ho8tJ0GnL5pcF8uqHlEnuf4Dy6gza03jwrDslVTMrts';
+const H = { 'apikey': SB_KEY, 'Authorization': `Bearer ${SB_KEY}`, 'Content-Type': 'application/json' };
+
+const MONTHS_CS = ['Leden','Únor','Březen','Duben','Květen','Červen','Červenec','Srpen','Září','Říjen','Listopad','Prosinec'];
+const MONTHS_SHORT = ['Led','Úno','Bře','Dub','Kvě','Čer','Čvc','Srp','Zář','Říj','Lis','Pro'];
+const CAT_COLORS = { Potraviny:'#c8f060',Doprava:'#60c8f0',Bydlení:'#f0a860',Zábava:'#a860f0',Zdraví:'#f06060',Oblečení:'#60f0a8',Restaurace:'#f0d060',Sport:'#60f0f0',Elektro:'#c860f0',Ostatní:'#888',Plat:'#4ade80','Příjem jiný':'#86efac' };
+
+let currentYear = new Date().getFullYear();
+let currentMonth = new Date().getMonth();
+let zaznamy = [], energie = [], budgets = [];
+
+async function api(table, method = 'GET', body = null, filter = '') {
+  const url = `${SB_URL}/rest/v1/${table}${filter ? '?' + filter : ''}`;
+  const opts = { method, headers: { ...H } };
+  if (method === 'POST') opts.headers['Prefer'] = 'return=representation';
+  if (method === 'POST' && filter.includes('on_conflict')) opts.headers['Prefer'] = 'resolution=merge-duplicates,return=representation';
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(url, opts);
+  if (!res.ok) { const e = await res.json().catch(()=>{}); throw new Error((e&&e.message)||`HTTP ${res.status}`); }
+  const t = await res.text();
+  return t ? JSON.parse(t) : null;
+}
+
+function sync(state) {
+  document.getElementById('sync-dot').className = 'sync-dot' + (state==='syncing'?' syncing':state==='error'?' error':'');
+  document.getElementById('sync-label').textContent = state==='syncing'?'ukládám…':state==='error'?'chyba':'online';
+}
+
+function toast(msg, err=false) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast show' + (err?' err':'');
+  setTimeout(()=>t.classList.remove('show'), 2800);
+}
+
+function btn(id, loading, label) {
+  const b = document.getElementById(id);
+  b.disabled = loading; b.textContent = loading ? 'Ukládám…' : label;
+}
+
+function fmt(n) { return Number(n).toLocaleString('cs-CZ') + ' Kč'; }
+function monthKey() { return `${currentYear}-${String(currentMonth+1).padStart(2,'0')}`; }
+function monthZaznamy() { const k = monthKey(); return zaznamy.filter(z=>z.datum&&z.datum.startsWith(k)); }
+
+function changeMonth(d) {
+  currentMonth += d;
+  if (currentMonth > 11) { currentMonth=0; currentYear++; }
+  if (currentMonth < 0) { currentMonth=11; currentYear--; }
+  render();
+}
+
+function showTab(id) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+  ['prehled','vydaje','energie','budget'].forEach((t,i)=>{ if(t===id) { document.querySelectorAll('.tab')[i].classList.add('active'); document.getElementById('view-'+t).classList.add('active'); } });
+}
+
+async function init() {
+  try {
+    const [z,e,b] = await Promise.all([api('zaznamy','GET',null,'select=*&order=datum.desc'), api('energie','GET',null,'select=*&order=datum.desc'), api('budgets','GET',null,'select=*')]);
+    zaznamy = z||[]; energie = e||[];
+    budgets = (b||[]).map(b=>({...b, limit: b.limit_castka}));
+    document.getElementById('loading').style.display = 'none';
+    const today = new Date().toISOString().split('T')[0];
+    document.getElementById('datum').value = today;
+    document.getElementById('e-datum').value = today;
+    render();
+  } catch(err) {
+    document.getElementById('loading').innerHTML = `<div style="color:var(--red);text-align:center;padding:40px"><div style="font-size:40px;margin-bottom:16px">⚠️</div><div style="font-size:16px;font-weight:700">Chyba připojení k databázi</div><div style="font-size:12px;color:var(--muted);margin-top:8px">${err.message}</div></div>`;
+  }
+}
+
+function render() {
+  document.getElementById('monthLabel').textContent = `${MONTHS_CS[currentMonth]} ${currentYear}`;
+  document.getElementById('records-month').textContent = `${MONTHS_CS[currentMonth]} ${currentYear}`;
+  renderPrehled(); renderZaznamy(); renderEnergie(); renderBudget();
+}
+
+function renderPrehled() {
+  const mz = monthZaznamy();
+  const prijmy = mz.filter(z=>z.typ==='prijem').reduce((s,z)=>s+Number(z.castka),0);
+  const vydaje = mz.filter(z=>z.typ==='vydaj').reduce((s,z)=>s+Number(z.castka),0);
+  const zustatek = prijmy - vydaje;
+  document.getElementById('sum-prijmy').textContent = fmt(prijmy);
+  document.getElementById('sum-vydaje').textContent = fmt(vydaje);
+  document.getElementById('sum-zustatek').textContent = fmt(zustatek);
+  document.getElementById('sum-zustatek-sub').textContent = zustatek >= 0 ? 'v přebytku 🎉' : 'v deficitu ⚠️';
+  document.getElementById('sum-energie').textContent = fmt(0);
+
+  const bars = document.getElementById('budget-bars');
+  if (!budgets.length) { bars.innerHTML = '<div class="empty"><span class="emoji">🎯</span>Nejsou nastavené žádné budgety</div>'; }
+  else bars.innerHTML = budgets.map(b => {
+    const spent = mz.filter(z=>z.typ==='vydaj'&&z.kategorie===b.kategorie).reduce((s,z)=>s+Number(z.castka),0);
+    const pct = Math.min(100, b.limit>0?Math.round(spent/b.limit*100):0);
+    const cls = pct<75?'bar-ok':pct<100?'bar-warn':'bar-over';
+    return `<div class="budget-item"><div class="budget-item-name">${b.kategorie}</div><div class="bar-wrap"><div class="bar-bg"><div class="bar-fill ${cls}" style="width:${pct}%"></div></div><div style="margin-top:4px;font-size:10px;font-family:'DM Mono',monospace;color:var(--muted)">${pct}% z limitu</div></div><div class="budget-nums"><strong>${fmt(spent)}</strong> / ${fmt(b.limit)}</div></div>`;
+  }).join('');
+
+  const months = [];
+  for (let i=5; i>=0; i--) {
+    let m = currentMonth-i, y = currentYear;
+    if (m<0){m+=12;y--;}
+    const k = `${y}-${String(m+1).padStart(2,'0')}`;
+    const total = zaznamy.filter(z=>z.typ==='vydaj'&&z.datum&&z.datum.startsWith(k)).reduce((s,z)=>s+Number(z.castka),0);
+    months.push({label:MONTHS_SHORT[m], total});
+  }
+  const max = Math.max(...months.map(m=>m.total),1);
+  document.getElementById('trend-chart').innerHTML = months.map((m,i)=>`<div class="bar-col"><div class="bar-col-val">${m.total?Math.round(m.total/1000)+'k':''}</div><div class="bar-col-bar" style="height:${Math.round(m.total/max*110)+4}px;background:${i===5?'var(--accent)':'var(--surface2)'}"></div><div class="bar-col-label">${m.label}</div></div>`).join('');
+}
+
+function renderZaznamy() {
+  const mz = monthZaznamy().sort((a,b)=>b.datum.localeCompare(a.datum));
+  const tbody = document.getElementById('zaznamy-table');
+  const empty = document.getElementById('zaznamy-empty');
+  if (!mz.length) { tbody.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+  tbody.innerHTML = mz.map(z => {
+    const c = CAT_COLORS[z.kategorie]||'#888';
+    return `<tr><td class="mono">${z.datum}</td><td>${z.popis}</td><td><span class="pill" style="background:${c}22;color:${c}">${z.kategorie}</span></td><td class="${z.typ==='prijem'?'amount-positive':'amount-negative'}">${z.typ==='prijem'?'+':'−'}${fmt(z.castka)}</td><td><button class="del-btn" onclick="delZaznam(${z.id})">✕</button></td></tr>`;
+  }).join('');
+}
+
+async function addZaznam() {
+  const popis = document.getElementById('popis').value.trim();
+  const castka = parseFloat(document.getElementById('castka').value);
+  const datum = document.getElementById('datum').value;
+  if (!popis||!castka||!datum) { toast('Vyplňte všechna pole',true); return; }
+  btn('btn-zaznam',true); sync('syncing');
+  try {
+    const res = await api('zaznamy','POST',{typ:document.getElementById('typ').value,popis,kategorie:document.getElementById('kategorie').value,castka,datum});
+    zaznamy.unshift(res[0]);
+    document.getElementById('popis').value=''; document.getElementById('castka').value='';
+    toast('Záznam přidán ✓'); sync('ok'); render();
+  } catch(e) { toast('Chyba: '+e.message,true); sync('error'); }
+  btn('btn-zaznam',false,'+ Přidat');
+}
+
+async function delZaznam(id) {
+  sync('syncing');
+  try {
+    await api('zaznamy','DELETE',null,`id=eq.${id}`);
+    zaznamy = zaznamy.filter(z=>z.id!==id);
+    toast('Záznam odstraněn'); sync('ok'); render();
+  } catch(e) { toast('Chyba: '+e.message,true); sync('error'); }
+}
+
+function renderEnergie() {
+  const typMap = {elektrina:{label:'Elektřina',icon:'⚡',unit:'kWh',color:'#f0d060'},plyn:{label:'Plyn',icon:'🔥',unit:'m³',color:'#f06060'},voda:{label:'Voda',icon:'💧',unit:'m³',color:'#60c8f0'},teplo:{label:'Teplo',icon:'🏠',unit:'GJ',color:'#f0a860'}};
+  document.getElementById('energie-cards').innerHTML = Object.entries(typMap).map(([k,v])=>{
+    const r = energie.filter(e=>e.typ===k).sort((a,b)=>b.datum.localeCompare(a.datum));
+    const last=r[0],prev=r[1];
+    const sp = last&&prev?(last.hodnota-prev.hodnota).toFixed(2):null;
+    const prevSp = prev&&r[2]?(prev.hodnota-r[2].hodnota):null;
+    const dir = sp&&prevSp!=null?(parseFloat(sp)>prevSp?'up':'down'):'';
+    return `<div class="energy-card" style="border-color:${v.color}33"><div class="energy-icon">${v.icon}</div><div class="energy-name">${v.label}</div>${last?`<div class="energy-value" style="color:${v.color}">${last.hodnota} <span style="font-size:14px;color:var(--muted)">${v.unit}</span></div>`:'<div class="energy-value" style="color:var(--muted)">—</div>'}${sp?`<div class="energy-unit">Spotřeba: ${sp} ${v.unit}</div>`:'<div class="energy-unit">Žádný předchozí odečet</div>'}${sp&&dir?`<div class="trend ${dir}">${dir==='up'?'↑ více než minule':'↓ méně než minule'}</div>`:''}</div>`;
+  }).join('');
+
+  const typLabels = {elektrina:'⚡ Elektřina',plyn:'🔥 Plyn',voda:'💧 Voda',teplo:'🏠 Teplo'};
+  const sorted = [...energie].sort((a,b)=>b.datum.localeCompare(a.datum));
+  const tbody = document.getElementById('energie-table');
+  const empty = document.getElementById('energie-empty');
+  if (!sorted.length) { tbody.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+  tbody.innerHTML = sorted.map((e,i)=>{
+    const prev = sorted.find((p,pi)=>pi>i&&p.typ===e.typ);
+    const sp = prev?(e.hodnota-prev.hodnota).toFixed(2):'—';
+    const cost = prev&&e.cena&&parseFloat(sp)>0?fmt(Math.round(parseFloat(sp)*e.cena)):'—';
+    return `<tr><td class="mono">${e.datum}</td><td>${typLabels[e.typ]||e.typ}</td><td class="mono">${e.hodnota}</td><td class="mono">${parseFloat(sp)>0?sp:'—'}</td><td class="mono">${cost}</td><td><button class="del-btn" onclick="delEnergie(${e.id})">✕</button></td></tr>`;
+  }).join('');
+}
+
+async function addEnergie() {
+  const hodnota = parseFloat(document.getElementById('e-hodnota').value);
+  const datum = document.getElementById('e-datum').value;
+  const cena = parseFloat(document.getElementById('e-cena').value)||0;
+  if (!hodnota||!datum) { toast('Vyplňte hodnotu a datum',true); return; }
+  btn('btn-energie',true); sync('syncing');
+  try {
+    const res = await api('energie','POST',{typ:document.getElementById('e-typ').value,hodnota,datum,cena});
+    energie.unshift(res[0]);
+    document.getElementById('e-hodnota').value='';
+    toast('Odečet uložen ✓'); sync('ok'); render();
+  } catch(e) { toast('Chyba: '+e.message,true); sync('error'); }
+  btn('btn-energie',false,'+ Uložit odečet');
+}
+
+async function delEnergie(id) {
+  sync('syncing');
+  try {
+    await api('energie','DELETE',null,`id=eq.${id}`);
+    energie = energie.filter(e=>e.id!==id);
+    toast('Odečet odstraněn'); sync('ok'); render();
+  } catch(e) { toast('Chyba: '+e.message,true); sync('error'); }
+}
+
+function renderBudget() {
+  const mz = monthZaznamy();
+  const cards = document.getElementById('budget-cards');
+  const empty = document.getElementById('budget-empty');
+  if (!budgets.length) { cards.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+  cards.innerHTML = budgets.map(b=>{
+    const spent = mz.filter(z=>z.typ==='vydaj'&&z.kategorie===b.kategorie).reduce((s,z)=>s+Number(z.castka),0);
+    const pct = Math.min(100,b.limit>0?Math.round(spent/b.limit*100):0);
+    const cls = pct<75?'bar-ok':pct<100?'bar-warn':'bar-over';
+    const c = CAT_COLORS[b.kategorie]||'#888';
+    return `<div class="budget-edit-card"><div class="card-label" style="color:${c}">${b.kategorie}</div><div style="font-size:22px;font-weight:800;margin:8px 0">${fmt(b.limit)}<span style="font-size:12px;font-weight:400;color:var(--muted)">/měs.</span></div><div class="bar-bg" style="margin-bottom:8px"><div class="bar-fill ${cls}" style="width:${pct}%"></div></div><div style="font-size:12px;font-family:'DM Mono',monospace;color:var(--muted)">Utraceno: <strong style="color:var(--text)">${fmt(spent)}</strong> (${pct}%)</div><button class="btn danger-btn" style="margin-top:12px;padding:8px" onclick="delBudget(${b.id})">Odebrat</button></div>`;
+  }).join('');
+}
+
+async function saveBudget() {
+  const kat = document.getElementById('b-kategorie').value;
+  const limit = parseFloat(document.getElementById('b-limit').value);
+  if (!limit) { toast('Zadejte limit',true); return; }
+  btn('btn-budget',true); sync('syncing');
+  try {
+    const url = `${SB_URL}/rest/v1/budgets?on_conflict=kategorie`;
+    const res = await fetch(url,{method:'POST',headers:{...H,'Prefer':'resolution=merge-duplicates,return=representation'},body:JSON.stringify({kategorie:kat,limit_castka:limit})});
+    const data = await res.json();
+    const updated = data[0];
+    const idx = budgets.findIndex(b=>b.kategorie===kat);
+    if (idx>=0) budgets[idx]={...updated,limit:updated.limit_castka};
+    else budgets.push({...updated,limit:updated.limit_castka});
+    document.getElementById('b-limit').value='';
+    toast('Budget uložen ✓'); sync('ok'); render();
+  } catch(e) { toast('Chyba: '+e.message,true); sync('error'); }
+  btn('btn-budget',false,'Uložit budget');
+}
+
+async function delBudget(id) {
+  sync('syncing');
+  try {
+    await api('budgets','DELETE',null,`id=eq.${id}`);
+    budgets = budgets.filter(b=>b.id!==id);
+    toast('Budget odebrán'); sync('ok'); render();
+  } catch(e) { toast('Chyba: '+e.message,true); sync('error'); }
+}
+
+init();
+</script>
+</body>
+</html>
