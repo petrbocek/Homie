@@ -85,6 +85,8 @@ select option{background:var(–surface2);}
 .btn.secondary{background:var(–surface2);color:var(–text);border:1px solid var(–border);}
 .del-btn{background:none;border:none;color:var(–muted);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:5px;transition:all 0.15s;}
 .del-btn:hover{color:var(–red);background:rgba(248,113,113,0.1);}
+.edit-btn{background:none;border:none;color:var(–muted);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:5px;transition:all 0.15s;}
+.edit-btn:hover{color:var(–accent2);background:rgba(96,200,240,0.1);}
 .amount-positive{color:var(–green);font-weight:600;font-family:‘DM Mono’,monospace;}
 .amount-negative{color:var(–red);font-weight:600;font-family:‘DM Mono’,monospace;}
 .mono{font-family:‘DM Mono’,monospace;}
@@ -225,7 +227,7 @@ header{padding:13px 16px;} main{padding:16px;} .tabs{padding:12px 16px 0;}
   <div class="view" id="view-vydaje">
     <div class="split">
       <div class="form-card">
-        <div class="form-title">Přidat záznam</div>
+        <div class="form-title" id="form-zaznam-title">Přidat záznam</div>
         <div class="field"><label>Typ</label>
           <select id="typ" onchange="updateKategorie()">
             <option value="vydaj">Výdaj</option>
@@ -239,6 +241,7 @@ header{padding:13px 16px;} main{padding:16px;} .tabs{padding:12px 16px 0;}
           <div class="field"><label>Datum</label><input id="datum" type="date"></div>
         </div>
         <button class="btn" id="btn-zaznam" onclick="addZaznam()">+ Přidat</button>
+        <button class="btn secondary" id="btn-cancel-edit" onclick="cancelEdit()" style="display:none;margin-top:6px">Zrušit úpravy</button>
       </div>
       <div>
         <div class="section-title">Záznamy — <span id="records-month"></span></div>
@@ -336,7 +339,7 @@ const MONTHS_CS=['Leden','Únor','Březen','Duben','Květen','Červen','Červene
 const MONTHS_SHORT=['Led','Úno','Bře','Dub','Kvě','Čer','Čvc','Srp','Zář','Říj','Lis','Pro'];
 
 let cY=new Date().getFullYear(), cM=new Date().getMonth();
-let zaznamy=[], energie=[], planItems=[];
+let zaznamy=[], energie=[], planItems=[], editingId=null;
 
 // --- helpers ---
 function fmt(n){return Math.round(Number(n)).toLocaleString('cs-CZ')+' Kč';}
@@ -537,7 +540,7 @@ function renderZaznamy(){
   tbody.innerHTML=mz.map(z=>{
     const c=CAT_COLORS[z.kategorie]||'#888';
     const sub=z.podkategorie?` · ${z.podkategorie}`:'';
-    return `<tr><td class="mono">${z.datum}</td><td>${z.popis||'—'}</td><td><span class="pill" style="background:${c}22;color:${c}">${z.kategorie}${sub}</span></td><td class="right ${z.typ==='prijem'?'amount-positive':'amount-negative'}">${z.typ==='prijem'?'+':'−'}${fmt(z.castka)}</td><td><button class="del-btn" onclick="delZaznam(${z.id})">✕</button></td></tr>`;
+    return `<tr><td class="mono">${z.datum}</td><td>${z.popis||'—'}</td><td><span class="pill" style="background:${c}22;color:${c}">${z.kategorie}${sub}</span></td><td class="right ${z.typ==='prijem'?'amount-positive':'amount-negative'}">${z.typ==='prijem'?'+':'−'}${fmt(z.castka)}</td><td style="white-space:nowrap"><button class="edit-btn" onclick="editZaznam(${z.id})" title="Upravit">✎</button><button class="del-btn" onclick="delZaznam(${z.id})" title="Smazat">✕</button></td></tr>`;
   }).join('');
 }
 
@@ -548,11 +551,48 @@ async function addZaznam(){
   setBtn('btn-zaznam',true);syncSt('syncing');
   try{
     const row={typ:document.getElementById('typ').value,popis:document.getElementById('popis').value.trim()||null,kategorie:document.getElementById('kategorie').value,podkategorie:document.getElementById('podkategorie').value||null,castka,datum};
-    const res=await api('zaznamy','POST',row);
-    zaznamy.unshift(res[0]);
-    document.getElementById('popis').value='';document.getElementById('castka').value='';
-    toast('Záznam přidán ✓');syncSt('ok');render();
-  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
+    if(editingId){
+      await api('zaznamy','PATCH',row,`id=eq.${editingId}`);
+      const idx=zaznamy.findIndex(z=>z.id===editingId);
+      if(idx>=0)zaznamy[idx]={...zaznamy[idx],...row};
+      toast('Záznam upraven ✓');syncSt('ok');render();
+      cancelEdit();
+    }else{
+      const res=await api('zaznamy','POST',row);
+      zaznamy.unshift(res[0]);
+      document.getElementById('popis').value='';document.getElementById('castka').value='';
+      toast('Záznam přidán ✓');syncSt('ok');render();
+      setBtn('btn-zaznam',false,'+ Přidat');
+    }
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');setBtn('btn-zaznam',false,editingId?'Uložit změny':'+ Přidat');}
+}
+
+function editZaznam(id){
+  const z=zaznamy.find(z=>z.id===id);
+  if(!z)return;
+  editingId=id;
+  document.getElementById('typ').value=z.typ;
+  updateKategorie();
+  document.getElementById('kategorie').value=z.kategorie;
+  updatePodkategorie();
+  if(z.podkategorie)document.getElementById('podkategorie').value=z.podkategorie;
+  document.getElementById('popis').value=z.popis||'';
+  document.getElementById('castka').value=z.castka;
+  document.getElementById('datum').value=z.datum;
+  document.getElementById('form-zaznam-title').textContent='Upravit záznam';
+  document.getElementById('btn-zaznam').textContent='Uložit změny';
+  document.getElementById('btn-cancel-edit').style.display='block';
+  showTab('vydaje');
+  document.querySelector('#view-vydaje .form-card').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function cancelEdit(){
+  editingId=null;
+  document.getElementById('popis').value='';
+  document.getElementById('castka').value='';
+  document.getElementById('datum').value=new Date().toISOString().split('T')[0];
+  document.getElementById('form-zaznam-title').textContent='Přidat záznam';
+  document.getElementById('btn-cancel-edit').style.display='none';
   setBtn('btn-zaznam',false,'+ Přidat');
 }
 
