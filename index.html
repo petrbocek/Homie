@@ -1,5 +1,4 @@
 <!DOCTYPE html>
-
 <html lang="cs">
 <head>
 <meta charset="UTF-8">
@@ -14,6 +13,7 @@
   }
   *{box-sizing:border-box;margin:0;padding:0;}
   body{font-family:'Syne',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden;}
+
   header{padding:18px 28px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(15,15,15,0.96);backdrop-filter:blur(12px);z-index:100;}
   .logo{font-size:20px;font-weight:800;letter-spacing:-0.5px;}
   .logo span{color:var(--accent);}
@@ -26,114 +26,125 @@
   .sync-dot.syncing{background:var(--accent4);animation:pulse 1s infinite;}
   .sync-dot.error{background:var(--red);}
   @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
-  .tabs{display:flex;padding:18px 28px 0;border-bottom:1px solid var(--border);overflow-x:auto;}
+
+  .tabs{display:flex;padding:18px 28px 0;border-bottom:1px solid var(--border);overflow-x:auto;gap:4px;}
   .tab{padding:9px 20px;cursor:pointer;font-size:12px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;transition:all 0.15s;letter-spacing:0.5px;text-transform:uppercase;white-space:nowrap;}
   .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
   .tab:hover:not(.active){color:var(--text);}
+
   main{padding:24px 28px;max-width:1200px;margin:0 auto;}
   .view{display:none;} .view.active{display:block;}
 
-/* SUMMARY */
-.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px;}
-.card{background:var(–surface);border:1px solid var(–border);border-radius:12px;padding:18px;transition:transform 0.15s;}
-.card:hover{transform:translateY(-1px);}
-.card-label{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:var(–muted);margin-bottom:8px;font-family:‘DM Mono’,monospace;}
-.card-value{font-size:24px;font-weight:800;letter-spacing:-1px;line-height:1;margin-bottom:4px;}
-.card-sub{font-size:10px;color:var(–muted);font-family:‘DM Mono’,monospace;}
-.card.accent{border-color:rgba(200,240,96,0.3);} .card.accent .card-value{color:var(–accent);}
-.card.danger{border-color:rgba(248,113,113,0.3);} .card.danger .card-value{color:var(–red);}
-.card.info{border-color:rgba(96,200,240,0.3);} .card.info .card-value{color:var(–accent2);}
-.card.warn{border-color:rgba(240,168,96,0.3);} .card.warn .card-value{color:var(–accent4);}
+  .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px;}
+  .card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;transition:transform 0.15s;}
+  .card:hover{transform:translateY(-1px);}
+  .card-label{font-size:10px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:8px;font-family:'DM Mono',monospace;}
+  .card-value{font-size:24px;font-weight:800;letter-spacing:-1px;line-height:1;margin-bottom:4px;}
+  .card-sub{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;}
+  .card.accent{border-color:rgba(200,240,96,0.3);} .card.accent .card-value{color:var(--accent);}
+  .card.danger{border-color:rgba(248,113,113,0.3);} .card.danger .card-value{color:var(--red);}
+  .card.info{border-color:rgba(96,200,240,0.3);} .card.info .card-value{color:var(--accent2);}
+  .card.warn{border-color:rgba(240,168,96,0.3);} .card.warn .card-value{color:var(--accent4);}
 
-/* PLAN VS SKUTECNOST TABLE */
-.plan-table-wrap{background:var(–surface);border:1px solid var(–border);border-radius:12px;overflow:hidden;margin-bottom:24px;}
-.plan-table-header{padding:14px 18px;border-bottom:1px solid var(–border);display:flex;align-items:center;justify-content:space-between;}
-.plan-table-title{font-size:13px;font-weight:700;}
-.plan-legend{display:flex;gap:16px;font-size:10px;font-family:‘DM Mono’,monospace;color:var(–muted);}
-.plan-legend span{display:flex;align-items:center;gap:5px;}
-.dot{width:8px;height:8px;border-radius:50%;}
-table{width:100%;border-collapse:collapse;}
-th{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(–muted);font-family:‘DM Mono’,monospace;font-weight:500;text-align:left;padding:10px 16px;border-bottom:1px solid var(–border);}
-th.right,td.right{text-align:right;}
-td{padding:11px 16px;border-bottom:1px solid var(–border);font-size:12px;}
-tr:last-child td{border-bottom:none;}
-tr:hover td{background:rgba(255,255,255,0.015);}
-.plan-row td{color:var(–muted);}
-.plan-row td .popis{color:var(–text);}
-.diff-ok{color:var(–green);}
-.diff-over{color:var(–red);}
-.diff-none{color:var(–muted);}
-.pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;}
-.badge-plan{background:rgba(96,200,240,0.15);color:var(–accent2);font-size:9px;padding:1px 6px;border-radius:4px;font-family:‘DM Mono’,monospace;}
-.badge-real{background:rgba(200,240,96,0.15);color:var(–accent);font-size:9px;padding:1px 6px;border-radius:4px;font-family:‘DM Mono’,monospace;}
+  .wallet-cards-row{display:flex;gap:12px;overflow-x:auto;margin-bottom:24px;padding-bottom:4px;}
+  .wallet-preview{border:2px solid var(--border);border-radius:12px;padding:16px 20px;min-width:165px;flex-shrink:0;background:var(--surface);}
+  .wallet-preview-name{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:6px;}
+  .wallet-preview-balance{font-size:21px;font-weight:800;font-family:'DM Mono',monospace;}
+  .wallet-preview-init{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:4px;}
 
-/* FORM */
-.section-title{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(–muted);margin-bottom:12px;font-family:‘DM Mono’,monospace;}
-.split{display:grid;grid-template-columns:300px 1fr;gap:18px;}
-.form-card{background:var(–surface);border:1px solid var(–border);border-radius:12px;padding:18px;height:fit-content;position:sticky;top:86px;}
-.form-title{font-size:14px;font-weight:700;margin-bottom:14px;}
-.field{margin-bottom:11px;}
-label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(–muted);margin-bottom:4px;font-family:‘DM Mono’,monospace;}
-input,select{width:100%;background:var(–surface2);border:1px solid var(–border);border-radius:6px;color:var(–text);padding:8px 10px;font-family:‘DM Mono’,monospace;font-size:12px;transition:border-color 0.15s;outline:none;}
-input:focus,select:focus{border-color:var(–accent);}
-select option{background:var(–surface2);}
-.btn{width:100%;padding:10px;background:var(–accent);color:#0f0f0f;border:none;border-radius:6px;font-family:‘Syne’,sans-serif;font-weight:700;font-size:12px;cursor:pointer;transition:all 0.15s;margin-top:4px;}
-.btn:hover:not(:disabled){background:#d4f570;transform:translateY(-1px);}
-.btn:disabled{opacity:0.5;cursor:not-allowed;}
-.btn.danger-btn{background:transparent;color:var(–red);border:1px solid rgba(248,113,113,0.3);margin-top:6px;}
-.btn.danger-btn:hover{background:rgba(248,113,113,0.1);transform:none;}
-.btn.secondary{background:var(–surface2);color:var(–text);border:1px solid var(–border);}
-.del-btn{background:none;border:none;color:var(–muted);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:5px;transition:all 0.15s;}
-.del-btn:hover{color:var(–red);background:rgba(248,113,113,0.1);}
-.edit-btn{background:none;border:none;color:var(–muted);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:5px;transition:all 0.15s;}
-.edit-btn:hover{color:var(–accent2);background:rgba(96,200,240,0.1);}
-.amount-positive{color:var(–green);font-weight:600;font-family:‘DM Mono’,monospace;}
-.amount-negative{color:var(–red);font-weight:600;font-family:‘DM Mono’,monospace;}
-.mono{font-family:‘DM Mono’,monospace;}
-.row2{display:flex;gap:8px;} .row2 .field{flex:1;}
+  .table-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;margin-bottom:24px;}
+  .table-header{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+  .table-title{font-size:13px;font-weight:700;}
+  table{width:100%;border-collapse:collapse;}
+  th{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-family:'DM Mono',monospace;font-weight:500;text-align:left;padding:10px 16px;border-bottom:1px solid var(--border);}
+  th.right,td.right{text-align:right;}
+  td{padding:11px 16px;border-bottom:1px solid var(--border);font-size:12px;}
+  tr:last-child td{border-bottom:none;}
+  tr:hover td{background:rgba(255,255,255,0.015);}
+  .pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;}
 
-/* ENERGIE */
-.energy-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:24px;}
-.energy-card{background:var(–surface);border:1px solid var(–border);border-radius:12px;padding:18px;}
-.energy-icon{font-size:22px;margin-bottom:8px;}
-.energy-name{font-size:13px;font-weight:700;margin-bottom:2px;}
-.energy-value{font-size:22px;font-weight:800;font-family:‘DM Mono’,monospace;margin:5px 0;}
-.energy-unit{font-size:11px;color:var(–muted);}
-.trend{font-size:10px;font-family:‘DM Mono’,monospace;margin-top:4px;}
-.trend.up{color:var(–red);} .trend.down{color:var(–green);}
+  .split{display:grid;grid-template-columns:300px 1fr;gap:18px;}
+  .form-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;height:fit-content;position:sticky;top:86px;}
+  .form-title{font-size:14px;font-weight:700;margin-bottom:14px;}
+  .field{margin-bottom:11px;}
+  label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px;font-family:'DM Mono',monospace;}
+  input,select,textarea{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:8px 10px;font-family:'DM Mono',monospace;font-size:12px;transition:border-color 0.15s;outline:none;}
+  textarea{resize:vertical;min-height:52px;}
+  input:focus,select:focus,textarea:focus{border-color:var(--accent);}
+  select option{background:var(--surface2);}
+  .btn{width:100%;padding:10px;background:var(--accent);color:#0f0f0f;border:none;border-radius:6px;font-family:'Syne',sans-serif;font-weight:700;font-size:12px;cursor:pointer;transition:all 0.15s;margin-top:4px;}
+  .btn:hover:not(:disabled){background:#d4f570;transform:translateY(-1px);}
+  .btn:disabled{opacity:0.5;cursor:not-allowed;}
+  .btn.secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
+  .btn.danger-btn{background:transparent;color:var(--red);border:1px solid rgba(248,113,113,0.3);margin-top:6px;}
+  .btn.danger-btn:hover{background:rgba(248,113,113,0.1);transform:none;}
+  .del-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:5px;transition:all 0.15s;}
+  .del-btn:hover{color:var(--red);background:rgba(248,113,113,0.1);}
+  .edit-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:5px;transition:all 0.15s;}
+  .edit-btn:hover{color:var(--accent2);background:rgba(96,200,240,0.1);}
+  .row2{display:flex;gap:8px;} .row2 .field{flex:1;}
+  .amount-positive{color:var(--green);font-weight:600;font-family:'DM Mono',monospace;}
+  .amount-negative{color:var(--red);font-weight:600;font-family:'DM Mono',monospace;}
+  .mono{font-family:'DM Mono',monospace;}
+  .section-title{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);margin-bottom:12px;font-family:'DM Mono',monospace;}
 
-/* CHART */
-.chart-wrap{background:var(–surface);border:1px solid var(–border);border-radius:12px;padding:18px;margin-bottom:18px;}
-.chart-title{font-size:12px;font-weight:700;margin-bottom:14px;}
-.bar-chart{display:flex;align-items:flex-end;gap:6px;height:110px;}
-.bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;}
-.bar-col-bar{width:100%;border-radius:4px 4px 0 0;min-height:4px;}
-.bar-col-label{font-size:9px;color:var(–muted);font-family:‘DM Mono’,monospace;}
-.bar-col-val{font-size:9px;color:var(–muted);font-family:‘DM Mono’,monospace;}
+  .cat-tree{display:flex;flex-direction:column;gap:4px;}
+  .cat-item{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:8px;}
+  .cat-item.top{font-weight:700;font-size:13px;}
+  .cat-item.sub{margin-left:22px;font-size:12px;}
+  .cat-item-name{flex:1;}
+  .badge{padding:2px 8px;border-radius:4px;font-size:9px;font-family:'DM Mono',monospace;font-weight:600;letter-spacing:0.5px;}
+  .badge-vydaj{background:rgba(248,113,113,0.15);color:var(--red);}
+  .badge-prijem{background:rgba(74,222,128,0.15);color:var(--green);}
 
-/* PLAN EDIT */
-.plan-edit-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px;}
-.plan-edit-card{background:var(–surface);border:1px solid var(–border);border-radius:12px;padding:16px;}
-.plan-inactive{opacity:0.4;}
+  .color-swatches{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;}
+  .swatch{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2px solid transparent;transition:all 0.15s;}
+  .swatch.sel{border-color:white;transform:scale(1.2);}
 
-.toast{position:fixed;bottom:18px;right:18px;background:var(–surface);border:1px solid var(–accent);color:var(–accent);padding:10px 16px;border-radius:8px;font-size:12px;font-weight:600;transform:translateY(80px);opacity:0;transition:all 0.3s cubic-bezier(.4,0,.2,1);z-index:999;}
-.toast.show{transform:translateY(0);opacity:1;}
-.toast.err{border-color:var(–red);color:var(–red);}
-.empty{text-align:center;padding:36px;color:var(–muted);font-size:13px;}
-.empty .emoji{font-size:32px;display:block;margin-bottom:10px;}
-.loading-overlay{position:fixed;inset:0;background:var(–bg);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:12px;}
-.loading-spinner{width:34px;height:34px;border:3px solid var(–border);border-top-color:var(–accent);border-radius:50%;animation:spin 0.8s linear infinite;}
-@keyframes spin{to{transform:rotate(360deg);}}
-.loading-text{font-size:12px;color:var(–muted);font-family:‘DM Mono’,monospace;}
+  .wallet-list{display:flex;flex-direction:column;gap:10px;}
+  .wallet-list-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;align-items:center;gap:12px;}
+  .wallet-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;}
+  .wallet-info{flex:1;}
+  .wallet-name{font-size:14px;font-weight:700;}
+  .wallet-meta{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:2px;}
+  .wallet-balance-val{font-size:18px;font-weight:800;font-family:'DM Mono',monospace;}
 
-@media(max-width:768px){
-header{padding:13px 16px;} main{padding:16px;} .tabs{padding:12px 16px 0;}
-.split{grid-template-columns:1fr;} .form-card{position:static;}
-.summary-grid{grid-template-columns:1fr 1fr;}
-}
-@media(max-width:480px){.summary-grid{grid-template-columns:1fr;}}
+  .plan-section{margin-bottom:18px;}
+  .plan-section-title{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-family:'DM Mono',monospace;padding:10px 16px;border-bottom:1px solid var(--border);}
+  .plan-row{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);}
+  .plan-row:last-child{border-bottom:none;}
+  .plan-row-label{flex:1;font-size:13px;}
+  .plan-row-actual{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);width:90px;text-align:right;flex-shrink:0;}
+  .plan-input{background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:6px 10px;font-family:'DM Mono',monospace;font-size:12px;width:110px;text-align:right;outline:none;transition:border-color 0.15s;flex-shrink:0;}
+  .plan-input:focus{border-color:var(--accent);}
+
+  .chart-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:18px;}
+  .chart-title{font-size:12px;font-weight:700;margin-bottom:14px;}
+  .bar-chart{display:flex;align-items:flex-end;gap:6px;height:110px;}
+  .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;}
+  .bar-col-bar{width:100%;border-radius:4px 4px 0 0;min-height:4px;}
+  .bar-col-label{font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;}
+  .bar-col-val{font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;}
+  .diff-ok{color:var(--green);} .diff-over{color:var(--red);} .diff-none{color:var(--muted);}
+
+  .toast{position:fixed;bottom:18px;right:18px;background:var(--surface);border:1px solid var(--accent);color:var(--accent);padding:10px 16px;border-radius:8px;font-size:12px;font-weight:600;transform:translateY(80px);opacity:0;transition:all 0.3s cubic-bezier(.4,0,.2,1);z-index:999;}
+  .toast.show{transform:translateY(0);opacity:1;}
+  .toast.err{border-color:var(--red);color:var(--red);}
+  .empty{text-align:center;padding:36px;color:var(--muted);font-size:13px;}
+  .empty .emoji{font-size:32px;display:block;margin-bottom:10px;}
+  .loading-overlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:12px;}
+  .loading-spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg);}}
+  .loading-text{font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;}
+
+  @media(max-width:768px){
+    header{padding:13px 16px;} main{padding:16px;} .tabs{padding:12px 16px 0;}
+    .split{grid-template-columns:1fr;} .form-card{position:static;}
+    .summary-grid{grid-template-columns:1fr 1fr;}
+    .plan-row{flex-wrap:wrap;} .plan-row-actual{width:auto;}
+  }
+  @media(max-width:480px){.summary-grid{grid-template-columns:1fr;}}
 </style>
-
 </head>
 <body>
 
@@ -159,170 +170,177 @@ header{padding:13px 16px;} main{padding:16px;} .tabs{padding:12px 16px 0;}
 
 <div class="tabs">
   <div class="tab active" onclick="showTab('prehled')">Přehled</div>
-  <div class="tab" onclick="showTab('vydaje')">Výdaje</div>
-  <div class="tab" onclick="showTab('energie')">Energie</div>
+  <div class="tab" onclick="showTab('zaznamy')">Záznamy</div>
+  <div class="tab" onclick="showTab('penezenky')">Peněženky</div>
+  <div class="tab" onclick="showTab('osnova')">Osnova</div>
   <div class="tab" onclick="showTab('plan')">Plán</div>
 </div>
 
 <main>
+
   <!-- PŘEHLED -->
   <div class="view active" id="view-prehled">
     <div class="summary-grid">
       <div class="card accent">
-        <div class="card-label">Zůstatek</div>
+        <div class="card-label">Celkový zůstatek</div>
         <div class="card-value" id="sum-zustatek">—</div>
-        <div class="card-sub" id="sum-zustatek-sub">příjmy − výdaje</div>
+        <div class="card-sub">všechny peněženky</div>
       </div>
       <div class="card info">
-        <div class="card-label">Příjmy (plán)</div>
-        <div class="card-value" id="sum-prijmy-plan">—</div>
-        <div class="card-sub" id="sum-prijmy-real">skutečnost: —</div>
+        <div class="card-label">Příjmy měsíce</div>
+        <div class="card-value" id="sum-prijmy">—</div>
+        <div class="card-sub" id="sum-prijmy-plan">plán: —</div>
       </div>
       <div class="card danger">
-        <div class="card-label">Výdaje (plán)</div>
-        <div class="card-value" id="sum-vydaje-plan">—</div>
-        <div class="card-sub" id="sum-vydaje-real">skutečnost: —</div>
+        <div class="card-label">Výdaje měsíce</div>
+        <div class="card-value" id="sum-vydaje">—</div>
+        <div class="card-sub" id="sum-vydaje-plan">plán: —</div>
       </div>
       <div class="card warn">
-        <div class="card-label">Zbývá utratit</div>
+        <div class="card-label">Zbývá dle plánu</div>
         <div class="card-value" id="sum-zbyva">—</div>
-        <div class="card-sub">plán − skutečnost</div>
+        <div class="card-sub" id="sum-zbyva-sub">plán − skutečnost</div>
       </div>
     </div>
 
-```
-<!-- Plan vs Skutecnost table -->
-<div class="plan-table-wrap">
-  <div class="plan-table-header">
-    <div class="plan-table-title">Plán vs. Skutečnost — <span id="plan-month-label"></span></div>
-    <div class="plan-legend">
-      <span><div class="dot" style="background:var(--accent2)"></div>plán</span>
-      <span><div class="dot" style="background:var(--accent)"></div>skutečnost</span>
+    <div class="section-title">Peněženky</div>
+    <div class="wallet-cards-row" id="prehled-wallets"></div>
+
+    <div class="table-wrap">
+      <div class="table-header">
+        <div class="table-title">Plán vs. Skutečnost — <span id="plan-month-label"></span></div>
+      </div>
+      <table>
+        <thead><tr>
+          <th>Kategorie</th>
+          <th class="right">Plán</th>
+          <th class="right">Skutečnost</th>
+          <th class="right">Rozdíl</th>
+        </tr></thead>
+        <tbody id="plan-vs-real-table"></tbody>
+      </table>
+    </div>
+
+    <div class="chart-wrap">
+      <div class="chart-title">Výdaje posledních 6 měsíců</div>
+      <div class="bar-chart" id="trend-chart"></div>
     </div>
   </div>
-  <table>
-    <thead>
-      <tr>
-        <th>Kategorie</th>
-        <th>Popis</th>
-        <th class="right">Plán</th>
-        <th class="right">Skutečnost</th>
-        <th class="right">Rozdíl</th>
-      </tr>
-    </thead>
-    <tbody id="plan-vs-real-table"></tbody>
-  </table>
-</div>
 
-<div class="chart-wrap">
-  <div class="chart-title">Výdaje posledních 6 měsíců</div>
-  <div class="bar-chart" id="trend-chart"></div>
-</div>
-```
-
-  </div>
-
-  <!-- VÝDAJE -->
-
-  <div class="view" id="view-vydaje">
+  <!-- ZÁZNAMY -->
+  <div class="view" id="view-zaznamy">
     <div class="split">
       <div class="form-card">
         <div class="form-title" id="form-zaznam-title">Přidat záznam</div>
         <div class="field"><label>Typ</label>
-          <select id="typ" onchange="updateKategorie()">
+          <select id="z-typ" onchange="updateCategorySelect()">
             <option value="vydaj">Výdaj</option>
             <option value="prijem">Příjem</option>
           </select></div>
-        <div class="field"><label>Popis</label><input id="popis" type="text" placeholder="např. Albert, Shell…"></div>
-        <div class="field"><label>Kategorie</label><select id="kategorie" onchange="updatePodkategorie()"></select></div>
-        <div class="field"><label>Podkategorie</label><select id="podkategorie"></select></div>
         <div class="row2">
-          <div class="field"><label>Částka (Kč)</label><input id="castka" type="number" placeholder="0" min="0"></div>
-          <div class="field"><label>Datum</label><input id="datum" type="date"></div>
+          <div class="field"><label>Datum</label><input id="z-datum" type="date"></div>
+          <div class="field"><label>Částka (Kč)</label><input id="z-castka" type="number" placeholder="0" min="0" step="0.01"></div>
         </div>
-        <button class="btn" id="btn-zaznam" onclick="addZaznam()">+ Přidat</button>
-        <button class="btn secondary" id="btn-cancel-edit" onclick="cancelEdit()" style="display:none;margin-top:6px">Zrušit úpravy</button>
+        <div class="field"><label>Kategorie</label><select id="z-kategorie"><option value="">— vybrat —</option></select></div>
+        <div class="field"><label>Kde / U koho</label><input id="z-kde" type="text" placeholder="např. Albert, Shell…"></div>
+        <div class="field"><label>Poznámka</label><textarea id="z-poznamka" placeholder="volitelná poznámka"></textarea></div>
+        <div class="field"><label>Peněženka</label><select id="z-penezenka"><option value="">— vybrat —</option></select></div>
+        <button class="btn" id="btn-zaznam" onclick="saveZaznam()">+ Přidat</button>
+        <button class="btn secondary" id="btn-cancel-zaznam" onclick="cancelEditZaznam()" style="display:none;margin-top:6px">Zrušit úpravy</button>
       </div>
       <div>
         <div class="section-title">Záznamy — <span id="records-month"></span></div>
         <div style="overflow-x:auto">
           <table>
-            <thead><tr><th>Datum</th><th>Popis</th><th>Kategorie</th><th class="right">Částka</th><th></th></tr></thead>
+            <thead><tr>
+              <th>Datum</th><th>Kde</th><th>Kategorie</th><th>Peněženka</th>
+              <th class="right">Částka</th><th></th>
+            </tr></thead>
             <tbody id="zaznamy-table"></tbody>
           </table>
-          <div id="zaznamy-empty" class="empty" style="display:none"><span class="emoji">📋</span>Žádné záznamy pro tento měsíc</div>
+          <div id="zaznamy-empty" class="empty" style="display:none">
+            <span class="emoji">📋</span>Žádné záznamy pro tento měsíc
+          </div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- ENERGIE -->
-
-  <div class="view" id="view-energie">
+  <!-- PENĚŽENKY -->
+  <div class="view" id="view-penezenky">
     <div class="split">
       <div class="form-card">
-        <div class="form-title">Zadat odečet</div>
-        <div class="field"><label>Typ</label>
-          <select id="e-typ">
-            <option value="elektrina_t1">⚡ Elektřina T1 (VT)</option>
-            <option value="elektrina_t2">⚡ Elektřina T2 (NT)</option>
-            <option value="voda">💧 Voda (m³)</option>
-            <option value="plyn">🔥 Plyn (m³)</option>
-          </select></div>
-        <div class="field"><label>Hodnota měřidla</label><input id="e-hodnota" type="number" placeholder="0" step="0.01"></div>
-        <div class="field"><label>Datum odečtu</label><input id="e-datum" type="date"></div>
-        <div class="field"><label>Cena za jednotku (Kč)</label><input id="e-cena" type="number" placeholder="0" step="0.01"></div>
-        <button class="btn" id="btn-energie" onclick="addEnergie()">+ Uložit odečet</button>
+        <div class="form-title">Přidat peněženku</div>
+        <div class="field"><label>Název</label><input id="w-nazev" type="text" placeholder="např. Hotovost, KB účet…"></div>
+        <div class="field"><label>Počáteční zůstatek (Kč)</label><input id="w-zustatek" type="number" placeholder="0" step="0.01"></div>
+        <div class="field">
+          <label>Barva</label>
+          <div class="color-swatches" id="w-barva-swatches"></div>
+          <input type="hidden" id="w-barva" value="#c8f060">
+        </div>
+        <button class="btn" id="btn-penezenka" onclick="addPenezenka()">+ Přidat peněženku</button>
       </div>
       <div>
-        <div class="energy-grid" id="energie-cards"></div>
-        <div class="section-title" style="margin-top:12px">Historie odečtů</div>
-        <div style="overflow-x:auto">
-          <table>
-            <thead><tr><th>Datum</th><th>Typ</th><th class="right">Hodnota</th><th class="right">Spotřeba</th><th class="right">Náklady</th><th></th></tr></thead>
-            <tbody id="energie-table"></tbody>
-          </table>
-          <div id="energie-empty" class="empty" style="display:none"><span class="emoji">⚡</span>Žádné odečty zatím</div>
+        <div class="section-title">Moje peněženky</div>
+        <div class="wallet-list" id="penezenky-list"></div>
+        <div id="penezenky-empty" class="empty" style="display:none">
+          <span class="emoji">👛</span>Žádné peněženky — přidejte první
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- OSNOVA -->
+  <div class="view" id="view-osnova">
+    <div class="split">
+      <div class="form-card">
+        <div class="form-title">Přidat do osnovy</div>
+        <div class="field"><label>Úroveň</label>
+          <select id="o-uroven" onchange="updateOsnovaForm()">
+            <option value="top">Kategorie (1. úroveň)</option>
+            <option value="sub">Podkategorie (2. úroveň)</option>
+          </select></div>
+        <div class="field"><label>Název</label>
+          <input id="o-nazev" type="text" placeholder="název kategorie"></div>
+        <div class="field" id="o-typ-field"><label>Typ</label>
+          <select id="o-typ">
+            <option value="vydaj">Výdaj</option>
+            <option value="prijem">Příjem</option>
+          </select></div>
+        <div class="field" id="o-parent-field" style="display:none"><label>Nadřazená kategorie</label>
+          <select id="o-parent"><option value="">— vybrat —</option></select></div>
+        <button class="btn" id="btn-osnova" onclick="addOsnova()">+ Přidat</button>
+      </div>
+      <div>
+        <div class="section-title">Osnova kategorií</div>
+        <div class="cat-tree" id="cat-tree"></div>
+        <div id="cat-empty" class="empty" style="display:none">
+          <span class="emoji">🗂️</span>Žádné kategorie — přidejte první
         </div>
       </div>
     </div>
   </div>
 
   <!-- PLÁN -->
-
   <div class="view" id="view-plan">
-    <div class="split">
-      <div class="form-card">
-        <div class="form-title">Přidat plánovanou položku</div>
-        <div class="field"><label>Typ</label>
-          <select id="p-typ">
-            <option value="vydaj">Výdaj</option>
-            <option value="prijem">Příjem</option>
-          </select></div>
-        <div class="field"><label>Kategorie</label>
-          <select id="p-kategorie">
-            <option>Strava</option><option>Drogerie</option><option>Odevy</option>
-            <option>Doprava</option><option>Ostatni</option><option>Zalohy</option>
-            <option>Hypoteka</option><option>Pojisteni</option><option>Sporeni</option>
-            <option>Pujcka</option><option>Mzda</option><option>Jiny Prijem</option>
-          </select></div>
-        <div class="field"><label>Popis</label><input id="p-popis" type="text" placeholder="např. Hypotéka KB"></div>
-        <div class="field"><label>Kdo / Kde</label><input id="p-kdo" type="text" placeholder="např. KB, Simplea…"></div>
-        <div class="field"><label>Částka (Kč, záporná = výdaj)</label><input id="p-castka" type="number" placeholder="-14000"></div>
-        <div class="row2">
-          <div class="field"><label>Periodicita (měs./rok)</label><input id="p-periodicita" type="number" placeholder="12" min="1" max="12" value="12"></div>
-          <div class="field"><label>Den v měsíci</label><input id="p-den" type="number" placeholder="15" min="1" max="31"></div>
-        </div>
-        <div class="field"><label>Měsíce (prázdné = každý)</label><input id="p-mesice" type="text" placeholder="např. 3,6,9,12"></div>
-        <button class="btn" id="btn-plan" onclick="addPlan()">+ Přidat</button>
-      </div>
-      <div>
-        <div class="section-title">Plánované položky</div>
-        <div class="plan-edit-grid" id="plan-cards"></div>
-        <div id="plan-empty" class="empty" style="display:none"><span class="emoji">📅</span>Žádné plánované položky</div>
-      </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;">
+      <div class="section-title" style="margin-bottom:0">Plán pro — <span id="plan-mesic-label"></span></div>
+      <button class="btn" style="width:auto;padding:8px 24px" onclick="savePlan()">Uložit plán</button>
+    </div>
+
+    <div class="table-wrap plan-section" id="plan-vydaje-wrap">
+      <div class="plan-section-title">Výdaje</div>
+      <div id="plan-vydaje-rows"></div>
+    </div>
+    <div class="table-wrap plan-section" id="plan-prijmy-wrap">
+      <div class="plan-section-title">Příjmy</div>
+      <div id="plan-prijmy-rows"></div>
+    </div>
+    <div id="plan-empty" class="empty" style="display:none">
+      <span class="emoji">📅</span>Nejprve přidejte kategorie v záložce Osnova
     </div>
   </div>
+
 </main>
 
 <div class="toast" id="toast"></div>
@@ -331,35 +349,17 @@ header{padding:13px 16px;} main{padding:16px;} .tabs{padding:12px 16px 0;}
 const SB_URL='https://fcycbzbzhuslmkfbgryb.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZjeWNiemJ6aHVzbG1rZmJncnliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMjcyNjksImV4cCI6MjA5MzgwMzI2OX0.Ho8tJ0GnL5pcF8uqHlEnuf4Dy6gza03jwrDslVTMrts';
 const H={'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'};
-
-const VYDAJ_KAT={'Strava':['Nakupy','Restaurace','Obedy','Posezeni'],'Drogerie':['Drogerie','Léky'],'Odevy':['Odevy'],'Doprava':['Benzin','Jizdenky','Servis','Pneu'],'Ostatni':['Zdraví','Fitness','Predplatne','Ostatní','Vánoce','Narozeniny','Dovolená','Domácnost'],'Zalohy':['Elektrina','Vodne','Telefony','Internet','SIPO','Drevo','Odpady'],'Hypoteka':['Dům'],'Pojisteni':['Úrazovka','Domácnost','Povinné ručení','Havarijní','Důchodové'],'Sporeni':['XTB','Amundi','Trigea','Conseq'],'Pujcka':['Bazén','Auto']};
-const PRIJEM_KAT={'Mzda':['Petr','Marika'],'Jiny Prijem':['Daně','Volejbal','Ostatní']};
-const CAT_COLORS={Strava:'#c8f060',Drogerie:'#60c8f0',Odevy:'#a860f0',Doprava:'#f0a860','Ostatni':'#f06060',Zalohy:'#60f0a8',Hypoteka:'#f0d060',Pojisteni:'#60f0f0',Sporeni:'#4ade80',Pujcka:'#f87171',Mzda:'#4ade80','Jiny Prijem':'#86efac'};
+const COLORS=['#c8f060','#60c8f0','#f0a860','#a860f0','#f06060','#60f0a8','#f0d060','#f087b0'];
 const MONTHS_CS=['Leden','Únor','Březen','Duben','Květen','Červen','Červenec','Srpen','Září','Říjen','Listopad','Prosinec'];
 const MONTHS_SHORT=['Led','Úno','Bře','Dub','Kvě','Čer','Čvc','Srp','Zář','Říj','Lis','Pro'];
 
 let cY=new Date().getFullYear(), cM=new Date().getMonth();
-let zaznamy=[], energie=[], planItems=[], editingId=null;
+let zaznamy=[], penezenky=[], osnova=[], planItems=[];
+let editingZaznamId=null, selectedColor=COLORS[0];
 
-// --- helpers ---
 function fmt(n){return Math.round(Number(n)).toLocaleString('cs-CZ')+' Kč';}
 function mKey(){return `${cY}-${String(cM+1).padStart(2,'0')}`;}
 function mZaz(){const k=mKey();return zaznamy.filter(z=>z.datum&&z.datum.startsWith(k));}
-
-// Returns plan items active for given month (1-indexed)
-function planForMonth(month, year) {
-  return planItems.filter(p => {
-    if (!p.aktivni) return false;
-    if (p.mesice) {
-      // specific months e.g. "3,6,9,12" or "5"
-      const months = p.mesice.split(',').map(m=>parseInt(m.trim()));
-      return months.includes(month);
-    }
-    // periodicita < 12 = applies to some months only (e.g. 9 = Sept-May)
-    // For simplicity treat periodicita < 12 but no mesice as every month
-    return true;
-  });
-}
 
 function syncSt(s){
   document.getElementById('sync-dot').className='sync-dot'+(s==='syncing'?' syncing':s==='error'?' error':'');
@@ -370,7 +370,7 @@ function toast(msg,err=false){
   t.textContent=msg;t.className='toast show'+(err?' err':'');
   setTimeout(()=>t.classList.remove('show'),2800);
 }
-function setBtn(id,loading,label){const b=document.getElementById(id);b.disabled=loading;b.textContent=loading?'Ukládám…':label;}
+function setBtn(id,loading,label){const b=document.getElementById(id);if(!b)return;b.disabled=loading;b.textContent=loading?'Ukládám…':label;}
 
 async function api(table,method='GET',body=null,filter=''){
   const url=`${SB_URL}/rest/v1/${table}${filter?'?'+filter:''}`;
@@ -382,151 +382,124 @@ async function api(table,method='GET',body=null,filter=''){
   const t=await res.text();return t?JSON.parse(t):null;
 }
 
-function updateKategorie(){
-  const typ=document.getElementById('typ').value;
-  const sel=document.getElementById('kategorie');
-  const map=typ==='vydaj'?VYDAJ_KAT:PRIJEM_KAT;
-  sel.innerHTML=Object.keys(map).map(k=>`<option value="${k}">${k}</option>`).join('');
-  updatePodkategorie();
+// --- Category helpers ---
+function catTop(){return osnova.filter(o=>o.parent_id===null).sort((a,b)=>a.poradi-b.poradi||a.id-b.id);}
+function catSub(pid){return osnova.filter(o=>o.parent_id===pid).sort((a,b)=>a.poradi-b.poradi||a.id-b.id);}
+function catName(id){
+  if(!id)return'—';
+  const c=osnova.find(o=>o.id==id);if(!c)return'—';
+  if(c.parent_id){const p=osnova.find(o=>o.id==c.parent_id);return p?`${p.nazev} › ${c.nazev}`:c.nazev;}
+  return c.nazev;
 }
-function updatePodkategorie(){
-  const typ=document.getElementById('typ').value;
-  const kat=document.getElementById('kategorie').value;
-  const map=typ==='vydaj'?VYDAJ_KAT:PRIJEM_KAT;
-  document.getElementById('podkategorie').innerHTML=(map[kat]||[]).map(p=>`<option>${p}</option>`).join('');
+function catTyp(id){
+  if(!id)return null;
+  const c=osnova.find(o=>o.id==id);if(!c)return null;
+  const root=c.parent_id?osnova.find(o=>o.id==c.parent_id):c;
+  return root?root.typ:null;
+}
+function buildCatOptions(typFilter=null){
+  const tops=catTop().filter(t=>!typFilter||t.typ===typFilter);
+  if(!tops.length)return'<option value="">— nejprve přidejte osnovu —</option>';
+  return tops.map(top=>{
+    const subs=catSub(top.id);
+    if(!subs.length)return`<option value="${top.id}">${top.nazev}</option>`;
+    return`<optgroup label="${top.nazev}">${subs.map(s=>`<option value="${s.id}">${s.nazev}</option>`).join('')}</optgroup>`;
+  }).join('');
 }
 
+// --- Wallet helpers ---
+function walletBalance(wId){
+  const w=penezenky.find(p=>p.id==wId);if(!w)return 0;
+  return Number(w.pocatecni_zustatek)+zaznamy.filter(z=>z.penezenka_id==wId).reduce((s,z)=>s+(z.typ==='prijem'?1:-1)*Number(z.castka),0);
+}
+function walletName(wId){const w=penezenky.find(p=>p.id==wId);return w?w.nazev:'—';}
+function walletColor(wId){const w=penezenky.find(p=>p.id==wId);return w?w.barva:'#888';}
+
+// --- UI helpers ---
 function changeMonth(d){
   cM+=d;
-  if(cM>11){cM=0;cY++;}
-  if(cM<0){cM=11;cY--;}
+  if(cM>11){cM=0;cY++;}if(cM<0){cM=11;cY--;}
   render();
 }
 function showTab(id){
-  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  const tabs=['prehled','zaznamy','penezenky','osnova','plan'];
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===id));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-  ['prehled','vydaje','energie','plan'].forEach((t,i)=>{if(t===id){document.querySelectorAll('.tab')[i].classList.add('active');document.getElementById('view-'+t).classList.add('active');}});
+  document.getElementById('view-'+id).classList.add('active');
+  if(id==='plan')renderPlan();
 }
-
-async function init(){
-  try{
-    const [z,e,p]=await Promise.all([
-      api('zaznamy','GET',null,'select=*&order=datum.desc'),
-      api('energie','GET',null,'select=*&order=datum.desc'),
-      api('plan','GET',null,'select=*&order=kategorie.asc')
-    ]);
-    zaznamy=z||[];energie=e||[];planItems=p||[];
-    document.getElementById('loading').style.display='none';
-    const today=new Date().toISOString().split('T')[0];
-    document.getElementById('datum').value=today;
-    document.getElementById('e-datum').value=today;
-    updateKategorie();
-    render();
-  }catch(err){
-    document.getElementById('loading').innerHTML=`<div style="color:var(--red);text-align:center;padding:40px"><div style="font-size:36px;margin-bottom:12px">⚠️</div><div style="font-weight:700">Chyba připojení</div><div style="font-size:11px;color:var(--muted);margin-top:6px">${err.message}</div></div>`;
+function updateCategorySelect(){
+  const typ=document.getElementById('z-typ').value;
+  document.getElementById('z-kategorie').innerHTML='<option value="">— vybrat —</option>'+buildCatOptions(typ);
+}
+function updateWalletSelect(){
+  document.getElementById('z-penezenka').innerHTML='<option value="">— vybrat —</option>'+penezenky.map(w=>`<option value="${w.id}">${w.nazev}</option>`).join('');
+}
+function updateOsnovaForm(){
+  const uroven=document.getElementById('o-uroven').value;
+  document.getElementById('o-typ-field').style.display=uroven==='top'?'block':'none';
+  document.getElementById('o-parent-field').style.display=uroven==='sub'?'block':'none';
+  if(uroven==='sub'){
+    document.getElementById('o-parent').innerHTML='<option value="">— vybrat —</option>'+catTop().map(t=>`<option value="${t.id}">${t.nazev} (${t.typ==='vydaj'?'výdaj':'příjem'})</option>`).join('');
   }
 }
+function selectColor(c){
+  selectedColor=c;document.getElementById('w-barva').value=c;renderSwatches();
+}
+function renderSwatches(){
+  document.getElementById('w-barva-swatches').innerHTML=COLORS.map(c=>`<div class="swatch${selectedColor===c?' sel':''}" style="background:${c}" onclick="selectColor('${c}')"></div>`).join('');
+}
 
+// --- Render ---
 function render(){
   const label=`${MONTHS_CS[cM]} ${cY}`;
   document.getElementById('monthLabel').textContent=label;
   document.getElementById('records-month').textContent=label;
   document.getElementById('plan-month-label').textContent=label;
-  renderPrehled();renderZaznamy();renderEnergie();renderPlan();
+  document.getElementById('plan-mesic-label').textContent=label;
+  renderPrehled();renderZaznamy();renderPenezenky();renderOsnova();
+  if(document.getElementById('view-plan').classList.contains('active'))renderPlan();
 }
 
 function renderPrehled(){
-  const mz=mZaz();
-  const month=cM+1; // 1-indexed
-
-  // Plan for this month
-  const mp=planForMonth(month, cY);
-  const planPrijmy=mp.filter(p=>p.typ==='prijem').reduce((s,p)=>s+Math.abs(p.castka),0);
-  const planVydaje=mp.filter(p=>p.typ==='vydaj').reduce((s,p)=>s+Math.abs(p.castka),0);
-
-  // Actual
+  const mz=mZaz(), k=mKey();
+  const mp=planItems.filter(p=>p.mesic===k);
   const realPrijmy=mz.filter(z=>z.typ==='prijem').reduce((s,z)=>s+Number(z.castka),0);
   const realVydaje=mz.filter(z=>z.typ==='vydaj').reduce((s,z)=>s+Number(z.castka),0);
-  const zustatek=realPrijmy-realVydaje;
+  const planVydaje=mp.filter(p=>catTyp(p.kategorie_id)==='vydaj').reduce((s,p)=>s+Number(p.castka),0);
+  const planPrijmy=mp.filter(p=>catTyp(p.kategorie_id)==='prijem').reduce((s,p)=>s+Number(p.castka),0);
+  const totalWallet=penezenky.reduce((s,w)=>s+walletBalance(w.id),0);
 
-  document.getElementById('sum-prijmy-plan').textContent=fmt(planPrijmy);
-  document.getElementById('sum-prijmy-real').textContent=`skutečnost: ${fmt(realPrijmy)}`;
-  document.getElementById('sum-vydaje-plan').textContent=fmt(planVydaje);
-  document.getElementById('sum-vydaje-real').textContent=`skutečnost: ${fmt(realVydaje)}`;
-  document.getElementById('sum-zustatek').textContent=fmt(zustatek);
-  document.getElementById('sum-zustatek-sub').textContent=zustatek>=0?'v přebytku 🎉':'v deficitu ⚠️';
-
-  // Zbývá utratit = plan vydaje - real vydaje (positive = still have budget)
+  document.getElementById('sum-zustatek').textContent=fmt(totalWallet);
+  document.getElementById('sum-prijmy').textContent=fmt(realPrijmy);
+  document.getElementById('sum-prijmy-plan').textContent=`plán: ${planPrijmy?fmt(planPrijmy):'nenastaveno'}`;
+  document.getElementById('sum-vydaje').textContent=fmt(realVydaje);
+  document.getElementById('sum-vydaje-plan').textContent=`plán: ${planVydaje?fmt(planVydaje):'nenastaveno'}`;
   const zbyva=planVydaje-realVydaje;
-  document.getElementById('sum-zbyva').textContent=fmt(Math.abs(zbyva));
-  document.getElementById('sum-zbyva').style.color=zbyva>=0?'var(--green)':'var(--red)';
-  document.querySelector('[id="sum-zbyva"]').closest('.card').querySelector('.card-sub').textContent=zbyva>=0?'ještě nevyčerpáno':'překročeno o';
+  const el=document.getElementById('sum-zbyva');
+  el.textContent=planVydaje?fmt(Math.abs(zbyva)):'—';
+  el.style.color=planVydaje?(zbyva>=0?'var(--green)':'var(--red)'):'var(--muted)';
+  document.getElementById('sum-zbyva-sub').textContent=planVydaje?(zbyva>=0?'ještě nevyčerpáno':'překročeno o'):'plán nenastaveno';
 
-  // Plan vs real table
-  // Group plan by kategorie
-  const planByKat={};
-  mp.forEach(p=>{
-    const k=p.kategorie;
-    if(!planByKat[k])planByKat[k]={plan:0,popis:[]};
-    planByKat[k].plan+=(p.typ==='vydaj'?-1:1)*p.castka;
-    planByKat[k].popis.push(p.popis||p.kdo||'');
-  });
+  document.getElementById('prehled-wallets').innerHTML=penezenky.length
+    ?penezenky.map(w=>{const bal=walletBalance(w.id);return`<div class="wallet-preview" style="border-color:${w.barva}55"><div class="wallet-preview-name">${w.nazev}</div><div class="wallet-preview-balance" style="color:${w.barva}">${fmt(bal)}</div><div class="wallet-preview-init">počáteční: ${fmt(w.pocatecni_zustatek)}</div></div>`;}).join('')
+    :'<div style="color:var(--muted);font-size:12px">Žádné peněženky</div>';
 
-  // Group real by kategorie
-  const realByKat={};
-  mz.forEach(z=>{
-    const k=z.kategorie;
-    if(!realByKat[k])realByKat[k]=0;
-    realByKat[k]+=(z.typ==='vydaj'?-1:1)*Number(z.castka);
-  });
-
-  // Merge all kategories
-  const allKats=new Set([...Object.keys(planByKat),...Object.keys(realByKat)]);
-  const rows=[];
-  allKats.forEach(k=>{
-    const plan=planByKat[k]?.plan||null;
-    const real=realByKat[k]||null;
-    rows.push({kat:k, plan, real, popis:(planByKat[k]?.popis||[]).filter(Boolean).join(', ')});
-  });
-
-  // Sort: income first, then expenses by plan amount
-  rows.sort((a,b)=>{
-    const aInc=(a.plan||0)>0;const bInc=(b.plan||0)>0;
-    if(aInc&&!bInc)return-1;if(!aInc&&bInc)return 1;
-    return(Math.abs(b.plan||0))-(Math.abs(a.plan||0));
-  });
-
+  const tops=catTop();
   const tbody=document.getElementById('plan-vs-real-table');
-  tbody.innerHTML=rows.map(r=>{
-    const c=CAT_COLORS[r.kat]||'#888';
-    const planFmt=r.plan!==null?fmt(Math.abs(r.plan)):'—';
-    const realFmt=r.real!==null?fmt(Math.abs(r.real)):'—';
-    let diff='—', diffCls='diff-none';
-    if(r.plan!==null&&r.real!==null){
-      const d=r.real-r.plan; // positive = spent more than planned
-      diff=(d>0?'+':'')+fmt(Math.abs(d));
-      diffCls=d>100?'diff-over':d<-100?'diff-ok':'diff-none';
-      if((r.plan||0)>0)diffCls=d>0?'diff-ok':'diff-none'; // income: more is better
-    }
-    const isIncome=(r.plan||0)>0||(r.real||0)>0;
-    return `<tr>
-      <td><span class="pill" style="background:${c}22;color:${c}">${r.kat}</span></td>
-      <td style="color:var(--muted);font-size:11px">${r.popis||'—'}</td>
-      <td class="right mono" style="color:var(--accent2)">${planFmt}</td>
-      <td class="right mono" style="color:var(--accent)">${realFmt}</td>
-      <td class="right mono ${diffCls}">${diff}</td>
-    </tr>`;
+  if(!tops.length){tbody.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px">Nejprve nastavte osnovu</td></tr>';return;}
+  tbody.innerHTML=tops.map(top=>{
+    const planItem=mp.find(p=>p.kategorie_id==top.id);
+    const planned=planItem?Number(planItem.castka):null;
+    const catIds=[top.id,...catSub(top.id).map(s=>s.id)];
+    const actual=mz.filter(z=>catIds.includes(z.kategorie_id)).reduce((s,z)=>s+Number(z.castka),0);
+    let diff='—',cls='diff-none';
+    if(planned!==null){const d=actual-planned;diff=(d>=0?'+':'')+fmt(Math.abs(d));cls=top.typ==='prijem'?(d>=0?'diff-ok':'diff-over'):(actual<=planned?'diff-ok':'diff-over');}
+    return`<tr><td><span class="badge ${top.typ==='vydaj'?'badge-vydaj':'badge-prijem'}">${top.typ==='vydaj'?'výdaj':'příjem'}</span> ${top.nazev}</td><td class="right mono">${planned!==null?fmt(planned):'—'}</td><td class="right mono">${fmt(actual)}</td><td class="right mono ${cls}">${diff}</td></tr>`;
   }).join('');
 
-  // Trend chart
   const months=[];
-  for(let i=5;i>=0;i--){
-    let m=cM-i,y=cY;
-    if(m<0){m+=12;y--;}
-    const k=`${y}-${String(m+1).padStart(2,'0')}`;
-    const total=zaznamy.filter(z=>z.typ==='vydaj'&&z.datum&&z.datum.startsWith(k)).reduce((s,z)=>s+Number(z.castka),0);
-    months.push({label:MONTHS_SHORT[m],total});
-  }
+  for(let i=5;i>=0;i--){let m=cM-i,y=cY;if(m<0){m+=12;y--;}const kk=`${y}-${String(m+1).padStart(2,'0')}`;months.push({label:MONTHS_SHORT[m],total:zaznamy.filter(z=>z.typ==='vydaj'&&z.datum&&z.datum.startsWith(kk)).reduce((s,z)=>s+Number(z.castka),0)});}
   const max=Math.max(...months.map(m=>m.total),1);
   document.getElementById('trend-chart').innerHTML=months.map((m,i)=>`<div class="bar-col"><div class="bar-col-val">${m.total?Math.round(m.total/1000)+'k':''}</div><div class="bar-col-bar" style="height:${Math.round(m.total/max*90)+4}px;background:${i===5?'var(--accent)':'var(--surface2)'}"></div><div class="bar-col-label">${m.label}</div></div>`).join('');
 }
@@ -538,175 +511,237 @@ function renderZaznamy(){
   if(!mz.length){tbody.innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
   tbody.innerHTML=mz.map(z=>{
-    const c=CAT_COLORS[z.kategorie]||'#888';
-    const sub=z.podkategorie?` · ${z.podkategorie}`:'';
-    return `<tr><td class="mono">${z.datum}</td><td>${z.popis||'—'}</td><td><span class="pill" style="background:${c}22;color:${c}">${z.kategorie}${sub}</span></td><td class="right ${z.typ==='prijem'?'amount-positive':'amount-negative'}">${z.typ==='prijem'?'+':'−'}${fmt(z.castka)}</td><td style="white-space:nowrap"><button class="edit-btn" onclick="editZaznam(${z.id})" title="Upravit">✎</button><button class="del-btn" onclick="delZaznam(${z.id})" title="Smazat">✕</button></td></tr>`;
+    const isInc=z.typ==='prijem';
+    const kde=z.kde||'—';
+    const pozn=z.poznamka?`<div style="font-size:10px;color:var(--muted);margin-top:2px">${z.poznamka}</div>`:'';
+    const wColor=z.penezenka_id?walletColor(z.penezenka_id):'#888';
+    return`<tr>
+      <td class="mono">${z.datum}</td>
+      <td>${kde}${pozn}</td>
+      <td>${catName(z.kategorie_id)}</td>
+      <td>${z.penezenka_id?`<span style="color:${wColor}">${walletName(z.penezenka_id)}</span>`:'—'}</td>
+      <td class="right ${isInc?'amount-positive':'amount-negative'}">${isInc?'+':'−'}${fmt(z.castka)}</td>
+      <td style="white-space:nowrap">
+        <button class="edit-btn" onclick="editZaznam(${z.id})" title="Upravit">✎</button>
+        <button class="del-btn" onclick="delZaznam(${z.id})" title="Smazat">✕</button>
+      </td>
+    </tr>`;
   }).join('');
 }
 
-async function addZaznam(){
-  const castka=parseFloat(document.getElementById('castka').value);
-  const datum=document.getElementById('datum').value;
+function renderPenezenky(){
+  renderSwatches();
+  const list=document.getElementById('penezenky-list');
+  const empty=document.getElementById('penezenky-empty');
+  if(!penezenky.length){list.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  list.innerHTML=penezenky.map(w=>{
+    const bal=walletBalance(w.id);
+    return`<div class="wallet-list-item">
+      <div class="wallet-dot" style="background:${w.barva}"></div>
+      <div class="wallet-info"><div class="wallet-name">${w.nazev}</div><div class="wallet-meta">počáteční: ${fmt(w.pocatecni_zustatek)}</div></div>
+      <div class="wallet-balance-val" style="color:${bal>=0?'var(--green)':'var(--red)'}">${fmt(bal)}</div>
+      <button class="del-btn" onclick="delPenezenka(${w.id})" title="Smazat">✕</button>
+    </div>`;
+  }).join('');
+}
+
+function renderOsnova(){
+  const tree=document.getElementById('cat-tree');
+  const empty=document.getElementById('cat-empty');
+  const tops=catTop();
+  if(!tops.length){tree.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+  tree.innerHTML=tops.map(top=>{
+    const subs=catSub(top.id);
+    const sub=subs.map(s=>`<div class="cat-item sub"><div class="cat-item-name">↳ ${s.nazev}</div><button class="del-btn" onclick="delOsnova(${s.id})">✕</button></div>`).join('');
+    return`<div class="cat-item top"><span class="badge ${top.typ==='vydaj'?'badge-vydaj':'badge-prijem'}">${top.typ==='vydaj'?'výdaj':'příjem'}</span><div class="cat-item-name">${top.nazev}</div><button class="del-btn" onclick="delOsnova(${top.id})">✕</button></div>${sub}`;
+  }).join('');
+  updateOsnovaForm();
+}
+
+function renderPlan(){
+  const k=mKey(), mz=mZaz(), mp=planItems.filter(p=>p.mesic===k);
+  const tops=catTop();
+  const empty=document.getElementById('plan-empty');
+  if(!tops.length){
+    empty.style.display='block';
+    document.getElementById('plan-vydaje-wrap').style.display='none';
+    document.getElementById('plan-prijmy-wrap').style.display='none';
+    return;
+  }
+  empty.style.display='none';
+  document.getElementById('plan-vydaje-wrap').style.display='block';
+  document.getElementById('plan-prijmy-wrap').style.display='block';
+
+  function buildRows(cats){
+    if(!cats.length)return'<div style="padding:14px 16px;color:var(--muted);font-size:12px">Žádné kategorie</div>';
+    return cats.map(top=>{
+      const planItem=mp.find(p=>p.kategorie_id==top.id);
+      const catIds=[top.id,...catSub(top.id).map(s=>s.id)];
+      const actual=mz.filter(z=>catIds.includes(z.kategorie_id)).reduce((s,z)=>s+Number(z.castka),0);
+      return`<div class="plan-row">
+        <div class="plan-row-label">${top.nazev}</div>
+        <div class="plan-row-actual">${actual?fmt(actual):'0 Kč'} skut.</div>
+        <input class="plan-input" type="number" id="plan-${top.id}" value="${planItem?planItem.castka:''}" placeholder="0">
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('plan-vydaje-rows').innerHTML=buildRows(tops.filter(t=>t.typ==='vydaj'));
+  document.getElementById('plan-prijmy-rows').innerHTML=buildRows(tops.filter(t=>t.typ==='prijem'));
+}
+
+// --- ZÁZNAMY CRUD ---
+async function saveZaznam(){
+  const castka=parseFloat(document.getElementById('z-castka').value);
+  const datum=document.getElementById('z-datum').value;
   if(!castka||!datum){toast('Vyplňte alespoň částku a datum',true);return;}
   setBtn('btn-zaznam',true);syncSt('syncing');
   try{
-    const row={typ:document.getElementById('typ').value,popis:document.getElementById('popis').value.trim()||null,kategorie:document.getElementById('kategorie').value,podkategorie:document.getElementById('podkategorie').value||null,castka,datum};
-    if(editingId){
-      await api('zaznamy','PATCH',row,`id=eq.${editingId}`);
-      const idx=zaznamy.findIndex(z=>z.id===editingId);
+    const row={typ:document.getElementById('z-typ').value,datum,castka,
+      kategorie_id:parseInt(document.getElementById('z-kategorie').value)||null,
+      penezenka_id:parseInt(document.getElementById('z-penezenka').value)||null,
+      kde:document.getElementById('z-kde').value.trim()||null,
+      poznamka:document.getElementById('z-poznamka').value.trim()||null};
+    if(editingZaznamId){
+      await api('zaznamy','PATCH',row,`id=eq.${editingZaznamId}`);
+      const idx=zaznamy.findIndex(z=>z.id===editingZaznamId);
       if(idx>=0)zaznamy[idx]={...zaznamy[idx],...row};
-      toast('Záznam upraven ✓');syncSt('ok');render();
-      cancelEdit();
+      toast('Záznam upraven ✓');syncSt('ok');render();cancelEditZaznam();
     }else{
       const res=await api('zaznamy','POST',row);
       zaznamy.unshift(res[0]);
-      document.getElementById('popis').value='';document.getElementById('castka').value='';
+      ['z-kde','z-poznamka','z-castka'].forEach(id=>document.getElementById(id).value='');
       toast('Záznam přidán ✓');syncSt('ok');render();
       setBtn('btn-zaznam',false,'+ Přidat');
     }
-  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');setBtn('btn-zaznam',false,editingId?'Uložit změny':'+ Přidat');}
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');setBtn('btn-zaznam',false,editingZaznamId?'Uložit změny':'+ Přidat');}
 }
-
 function editZaznam(id){
-  const z=zaznamy.find(z=>z.id===id);
-  if(!z)return;
-  editingId=id;
-  document.getElementById('typ').value=z.typ;
-  updateKategorie();
-  document.getElementById('kategorie').value=z.kategorie;
-  updatePodkategorie();
-  if(z.podkategorie)document.getElementById('podkategorie').value=z.podkategorie;
-  document.getElementById('popis').value=z.popis||'';
-  document.getElementById('castka').value=z.castka;
-  document.getElementById('datum').value=z.datum;
+  const z=zaznamy.find(z=>z.id===id);if(!z)return;
+  editingZaznamId=id;
+  document.getElementById('z-typ').value=z.typ;updateCategorySelect();
+  setTimeout(()=>{
+    if(z.kategorie_id)document.getElementById('z-kategorie').value=z.kategorie_id;
+  },0);
+  document.getElementById('z-datum').value=z.datum;
+  document.getElementById('z-castka').value=z.castka;
+  document.getElementById('z-kde').value=z.kde||'';
+  document.getElementById('z-poznamka').value=z.poznamka||'';
+  updateWalletSelect();
+  if(z.penezenka_id)document.getElementById('z-penezenka').value=z.penezenka_id;
   document.getElementById('form-zaznam-title').textContent='Upravit záznam';
   document.getElementById('btn-zaznam').textContent='Uložit změny';
-  document.getElementById('btn-cancel-edit').style.display='block';
-  showTab('vydaje');
-  document.querySelector('#view-vydaje .form-card').scrollIntoView({behavior:'smooth',block:'start'});
+  document.getElementById('btn-cancel-zaznam').style.display='block';
+  showTab('zaznamy');
+  document.querySelector('#view-zaznamy .form-card').scrollIntoView({behavior:'smooth',block:'start'});
 }
-
-function cancelEdit(){
-  editingId=null;
-  document.getElementById('popis').value='';
-  document.getElementById('castka').value='';
-  document.getElementById('datum').value=new Date().toISOString().split('T')[0];
+function cancelEditZaznam(){
+  editingZaznamId=null;
+  ['z-kde','z-poznamka','z-castka'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('z-datum').value=new Date().toISOString().split('T')[0];
   document.getElementById('form-zaznam-title').textContent='Přidat záznam';
-  document.getElementById('btn-cancel-edit').style.display='none';
+  document.getElementById('btn-cancel-zaznam').style.display='none';
   setBtn('btn-zaznam',false,'+ Přidat');
 }
-
 async function delZaznam(id){
   syncSt('syncing');
   try{await api('zaznamy','DELETE',null,`id=eq.${id}`);zaznamy=zaznamy.filter(z=>z.id!==id);toast('Odstraněno');syncSt('ok');render();}
   catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
 }
 
-function renderEnergie(){
-  const typMap={elektrina_t1:{label:'Elektřina T1',icon:'⚡',unit:'kWh',color:'#f0d060'},elektrina_t2:{label:'Elektřina T2',icon:'⚡',unit:'kWh',color:'#c8f060'},voda:{label:'Voda',icon:'💧',unit:'m³',color:'#60c8f0'},plyn:{label:'Plyn',icon:'🔥',unit:'m³',color:'#f06060'}};
-  document.getElementById('energie-cards').innerHTML=Object.entries(typMap).map(([k,v])=>{
-    const r=energie.filter(e=>e.typ===k).sort((a,b)=>b.datum.localeCompare(a.datum));
-    const last=r[0],prev=r[1];
-    const sp=last&&prev?(last.hodnota-prev.hodnota).toFixed(2):null;
-    const prevSp=prev&&r[2]?(prev.hodnota-r[2].hodnota):null;
-    const dir=sp&&prevSp!=null?(parseFloat(sp)>prevSp?'up':'down'):'';
-    return `<div class="energy-card" style="border-color:${v.color}33"><div class="energy-icon">${v.icon}</div><div class="energy-name">${v.label}</div>${last?`<div class="energy-value" style="color:${v.color}">${last.hodnota} <span style="font-size:11px;color:var(--muted)">${v.unit}</span></div>`:'<div class="energy-value" style="color:var(--muted)">—</div>'}${sp&&parseFloat(sp)>0?`<div class="energy-unit">Spotřeba: ${sp} ${v.unit}</div>`:'<div class="energy-unit">Žádný předchozí odečet</div>'}${sp&&dir?`<div class="trend ${dir}">${dir==='up'?'↑ více':'↓ méně'} než minule</div>`:''}</div>`;
-  }).join('');
-
-  const typLabels={elektrina_t1:'⚡ T1',elektrina_t2:'⚡ T2',voda:'💧 Voda',plyn:'🔥 Plyn'};
-  const sorted=[...energie].sort((a,b)=>b.datum.localeCompare(a.datum));
-  const tbody=document.getElementById('energie-table');
-  const empty=document.getElementById('energie-empty');
-  if(!sorted.length){tbody.innerHTML='';empty.style.display='block';return;}
-  empty.style.display='none';
-  tbody.innerHTML=sorted.map((e,i)=>{
-    const prev=sorted.find((p,pi)=>pi>i&&p.typ===e.typ);
-    const sp=prev?(e.hodnota-prev.hodnota).toFixed(2):'—';
-    const cost=prev&&e.cena&&parseFloat(sp)>0?fmt(Math.round(parseFloat(sp)*e.cena)):'—';
-    return `<tr><td class="mono">${e.datum}</td><td>${typLabels[e.typ]||e.typ}</td><td class="right mono">${e.hodnota}</td><td class="right mono">${parseFloat(sp)>0?sp:'—'}</td><td class="right mono">${cost}</td><td><button class="del-btn" onclick="delEnergie(${e.id})">✕</button></td></tr>`;
-  }).join('');
-}
-
-async function addEnergie(){
-  const hodnota=parseFloat(document.getElementById('e-hodnota').value);
-  const datum=document.getElementById('e-datum').value;
-  const cena=parseFloat(document.getElementById('e-cena').value)||0;
-  if(!hodnota||!datum){toast('Vyplňte hodnotu a datum',true);return;}
-  setBtn('btn-energie',true);syncSt('syncing');
+// --- PENĚŽENKY CRUD ---
+async function addPenezenka(){
+  const nazev=document.getElementById('w-nazev').value.trim();
+  if(!nazev){toast('Zadejte název peněženky',true);return;}
+  setBtn('btn-penezenka',true);syncSt('syncing');
   try{
-    const res=await api('energie','POST',{typ:document.getElementById('e-typ').value,hodnota,datum,cena});
-    energie.unshift(res[0]);document.getElementById('e-hodnota').value='';
-    toast('Odečet uložen ✓');syncSt('ok');render();
+    const res=await api('penezenky','POST',{nazev,pocatecni_zustatek:parseFloat(document.getElementById('w-zustatek').value)||0,barva:document.getElementById('w-barva').value});
+    penezenky.push(res[0]);
+    document.getElementById('w-nazev').value='';document.getElementById('w-zustatek').value='';
+    toast('Peněženka přidána ✓');syncSt('ok');render();updateWalletSelect();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
-  setBtn('btn-energie',false,'+ Uložit odečet');
+  setBtn('btn-penezenka',false,'+ Přidat peněženku');
 }
-
-async function delEnergie(id){
+async function delPenezenka(id){
+  if(zaznamy.some(z=>z.penezenka_id==id)){toast('Nelze smazat – peněženka má záznamy',true);return;}
   syncSt('syncing');
-  try{await api('energie','DELETE',null,`id=eq.${id}`);energie=energie.filter(e=>e.id!==id);toast('Odstraněno');syncSt('ok');render();}
+  try{await api('penezenky','DELETE',null,`id=eq.${id}`);penezenky=penezenky.filter(w=>w.id!==id);toast('Peněženka smazána');syncSt('ok');render();}
   catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
 }
 
-function renderPlan(){
-  const cards=document.getElementById('plan-cards');
-  const empty=document.getElementById('plan-empty');
-  if(!planItems.length){cards.innerHTML='';empty.style.display='block';return;}
-  empty.style.display='none';
-  cards.innerHTML=planItems.map(p=>{
-    const c=CAT_COLORS[p.kategorie]||'#888';
-    const isIncome=p.typ==='prijem';
-    const periodicityLabel=p.periodicita===12?'měsíčně':p.periodicita===1?'ročně':p.periodicita===4?'čtvrtletně':`${p.periodicita}×/rok`;
-    const mesiceLabel=p.mesice?`měs. ${p.mesice}`:'';
-    const denLabel=p.den_v_mesici?`${p.den_v_mesici}. v měs.`:'';
-    return `<div class="plan-edit-card ${p.aktivni?'':'plan-inactive'}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
-        <span class="pill" style="background:${c}22;color:${c}">${p.kategorie}</span>
-        <button class="del-btn" onclick="togglePlan(${p.id},${!p.aktivni})" title="${p.aktivni?'Deaktivovat':'Aktivovat'}">${p.aktivni?'⏸':'▶'}</button>
-      </div>
-      <div style="font-size:13px;font-weight:700;margin-bottom:2px">${p.popis||p.kdo||'—'}</div>
-      <div style="font-size:11px;color:var(--muted);margin-bottom:8px">${p.kdo||''}</div>
-      <div style="font-size:20px;font-weight:800;font-family:'DM Mono',monospace;color:${isIncome?'var(--green)':'var(--red)'};margin-bottom:6px">${isIncome?'+':''}${fmt(Math.abs(p.castka))}</div>
-      <div style="font-size:10px;font-family:'DM Mono',monospace;color:var(--muted)">${periodicityLabel} ${mesiceLabel} ${denLabel}</div>
-      <button class="btn danger-btn" style="padding:6px;margin-top:8px" onclick="delPlan(${p.id})">Odebrat</button>
-    </div>`;
-  }).join('');
-}
-
-async function addPlan(){
-  const castka=parseFloat(document.getElementById('p-castka').value);
-  const perioda=parseInt(document.getElementById('p-periodicita').value)||12;
-  if(!castka){toast('Zadejte částku',true);return;}
-  setBtn('btn-plan',true);syncSt('syncing');
+// --- OSNOVA CRUD ---
+async function addOsnova(){
+  const nazev=document.getElementById('o-nazev').value.trim();
+  if(!nazev){toast('Zadejte název',true);return;}
+  const uroven=document.getElementById('o-uroven').value;
+  let row;
+  if(uroven==='top'){
+    row={nazev,typ:document.getElementById('o-typ').value,parent_id:null};
+  }else{
+    const parent_id=parseInt(document.getElementById('o-parent').value);
+    if(!parent_id){toast('Vyberte nadřazenou kategorii',true);return;}
+    row={nazev,parent_id,typ:null};
+  }
+  setBtn('btn-osnova',true);syncSt('syncing');
   try{
-    const den=parseInt(document.getElementById('p-den').value)||null;
-    const mesice=document.getElementById('p-mesice').value.trim()||null;
-    const row={kategorie:document.getElementById('p-kategorie').value,popis:document.getElementById('p-popis').value.trim()||null,kdo:document.getElementById('p-kdo').value.trim()||null,castka,periodicita:perioda,den_v_mesici:den,mesice,typ:document.getElementById('p-typ').value,aktivni:true};
-    const res=await api('plan','POST',row);
-    planItems.push(res[0]);
-    ['p-popis','p-kdo','p-castka','p-mesice'].forEach(id=>document.getElementById(id).value='');
-    toast('Přidáno ✓');syncSt('ok');render();
+    const res=await api('osnova','POST',row);
+    osnova.push(res[0]);
+    document.getElementById('o-nazev').value='';
+    toast('Přidáno ✓');syncSt('ok');renderOsnova();updateCategorySelect();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
-  setBtn('btn-plan',false,'+ Přidat');
+  setBtn('btn-osnova',false,'+ Přidat');
 }
-
-async function togglePlan(id, aktivni){
+async function delOsnova(id){
+  if(osnova.some(o=>o.parent_id==id)){toast('Nejprve odeberte podkategorie',true);return;}
+  if(zaznamy.some(z=>z.kategorie_id==id)){toast('Nelze smazat – kategorie má záznamy',true);return;}
   syncSt('syncing');
   try{
-    await fetch(`${SB_URL}/rest/v1/plan?id=eq.${id}`,{method:'PATCH',headers:{...H,'Prefer':'return=representation'},body:JSON.stringify({aktivni})});
-    const idx=planItems.findIndex(p=>p.id===id);
-    if(idx>=0)planItems[idx].aktivni=aktivni;
-    toast(aktivni?'Aktivováno ✓':'Deaktivováno');syncSt('ok');render();
+    await api('osnova','DELETE',null,`id=eq.${id}`);
+    osnova=osnova.filter(o=>o.id!==id);
+    toast('Odstraněno');syncSt('ok');renderOsnova();updateCategorySelect();
+    if(document.getElementById('view-plan').classList.contains('active'))renderPlan();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
 }
 
-async function delPlan(id){
+// --- PLÁN SAVE ---
+async function savePlan(){
+  const k=mKey(), tops=catTop();
+  if(!tops.length){toast('Nejprve přidejte kategorie',true);return;}
   syncSt('syncing');
-  try{await api('plan','DELETE',null,`id=eq.${id}`);planItems=planItems.filter(p=>p.id!==id);toast('Odstraněno');syncSt('ok');render();}
-  catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
+  try{
+    const toSave=[];
+    tops.forEach(top=>{
+      const inp=document.getElementById(`plan-${top.id}`);
+      if(inp&&inp.value!==''){const castka=parseFloat(inp.value);if(!isNaN(castka)&&castka>0)toSave.push({mesic:k,kategorie_id:top.id,castka});}
+    });
+    await api('plan','DELETE',null,`mesic=eq.${k}`);
+    planItems=planItems.filter(p=>p.mesic!==k);
+    if(toSave.length){const res=await api('plan','POST',toSave);if(res)planItems.push(...(Array.isArray(res)?res:[res]));}
+    toast('Plán uložen ✓');syncSt('ok');render();
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
 }
 
+// --- INIT ---
+async function init(){
+  try{
+    const [z,w,o,p]=await Promise.all([
+      api('zaznamy','GET',null,'select=*&order=datum.desc'),
+      api('penezenky','GET',null,'select=*&order=created_at.asc'),
+      api('osnova','GET',null,'select=*&order=poradi.asc,id.asc'),
+      api('plan','GET',null,'select=*')
+    ]);
+    zaznamy=z||[];penezenky=w||[];osnova=o||[];planItems=p||[];
+    document.getElementById('loading').style.display='none';
+    document.getElementById('z-datum').value=new Date().toISOString().split('T')[0];
+    selectedColor=COLORS[0];
+    updateCategorySelect();updateWalletSelect();updateOsnovaForm();
+    render();
+  }catch(err){
+    document.getElementById('loading').innerHTML=`<div style="color:var(--red);text-align:center;padding:40px"><div style="font-size:36px;margin-bottom:12px">⚠️</div><div style="font-weight:700">Chyba připojení</div><div style="font-size:11px;color:var(--muted);margin-top:6px">${err.message}</div></div>`;
+  }
+}
 init();
 </script>
-
 </body>
 </html>
