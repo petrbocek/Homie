@@ -14,15 +14,18 @@
 --       (takhle se vytvoří účty pro domácnost; registrace z appky není možná)
 --
 -- Model přístupu: data jsou společná pro celou domácnost – každý
--- přihlášený uživatel vidí a edituje všechno. Oddělení dat po
--- uživatelích by vyžadovalo sloupec owner_id a jiné politiky.
+-- přihlášený uživatel vidí a edituje všechno.
 -- ============================================================
-
--- Volitelně: smaž staré tabulky
--- DROP TABLE IF EXISTS plan CASCADE;
--- DROP TABLE IF EXISTS zaznamy CASCADE;
--- DROP TABLE IF EXISTS penezenky CASCADE;
--- DROP TABLE IF EXISTS osnova CASCADE;
+--
+-- MODEL DAT (podle Google Sheetu „Utrata", list Odpovědi formuláře 1)
+--
+-- Skutečnost i plán leží ve stejné tabulce `zaznamy`, rozlišené
+-- sloupcem `typ_polozky`. Plánovaná položka je plnohodnotná budoucí
+-- transakce – má datum, částku, protistranu i podkategorii. Díky
+-- tomu jde dělat projekce cashflow na konkrétní dny a plánovat
+-- na úrovni podkategorií.
+--
+-- ============================================================
 
 -- ============================================================
 -- 1. Osnova (dvouúrovňové kategorie)
@@ -32,12 +35,20 @@ CREATE TABLE IF NOT EXISTS osnova (
   nazev        TEXT NOT NULL,
   parent_id    BIGINT REFERENCES osnova(id) ON DELETE CASCADE,
   typ          TEXT CHECK (typ IN ('prijem', 'vydaj')),  -- NULL pro podkategorie
+  kod          TEXT,                                     -- kód ze sheetu: 1.1, 10.8
   poradi       INTEGER DEFAULT 0,
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- kód je unikátní, ale jen tam, kde je vyplněný
+CREATE UNIQUE INDEX IF NOT EXISTS osnova_kod_uniq ON osnova(kod) WHERE kod IS NOT NULL;
+
 -- ============================================================
 -- 2. Peněženky
+--    Odpovídají sloupci „Typ placeni" ve zdrojovém sheetu.
+--    „Penezenka" z listu Pivot = „Hotovost" z deníku (totéž).
+--    „Budouci" z listu Pivot NENÍ peněženka – je to dopočítaný
+--    zůstatek po zahrnutí plánovaných položek.
 -- ============================================================
 CREATE TABLE IF NOT EXISTS penezenky (
   id                  BIGSERIAL PRIMARY KEY,
@@ -48,41 +59,42 @@ CREATE TABLE IF NOT EXISTS penezenky (
 );
 
 -- ============================================================
--- 3. Záznamy (příjmy a výdaje)
+-- 3. Záznamy – skutečnost i plán
 -- ============================================================
 CREATE TABLE IF NOT EXISTS zaznamy (
-  id            BIGSERIAL PRIMARY KEY,
-  datum         DATE NOT NULL,
-  castka        NUMERIC(12,2) NOT NULL,
-  typ           TEXT CHECK (typ IN ('prijem', 'vydaj')) NOT NULL,
-  kategorie_id  BIGINT REFERENCES osnova(id),
-  kde           TEXT,
-  poznamka      TEXT,
-  penezenka_id  BIGINT REFERENCES penezenky(id),
-  created_at    TIMESTAMPTZ DEFAULT NOW()
+  id              BIGSERIAL PRIMARY KEY,
+  datum           DATE NOT NULL,              -- kdy se to stalo
+  castka          NUMERIC(12,2) NOT NULL,     -- vždy kladná, směr určuje `typ`
+  typ             TEXT CHECK (typ IN ('prijem', 'vydaj')) NOT NULL,
+  typ_polozky     TEXT NOT NULL DEFAULT 'skutecnost',
+  kategorie_id    BIGINT REFERENCES osnova(id),
+  kde             TEXT,
+  poznamka        TEXT,
+  penezenka_id    BIGINT REFERENCES penezenky(id),
+  zapsano_dne     TIMESTAMPTZ,                -- „Časová značka" ze sheetu;
+                                              -- liší se od `datum` i o měsíce
+                                              -- (zpětné zápisy), proto ne created_at
+  potvrzeno       BOOLEAN NOT NULL DEFAULT FALSE,
+  prevod_skupina  TEXT,                       -- páruje obě nohy převodu mezi
+                                              -- peněženkami, aby šly vyloučit
+                                              -- ze součtů za kategorii
+  created_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
--- ============================================================
--- 4. Plán (měsíční rozpočet na kategorii)
---    UNIQUE(mesic, kategorie_id) je nutný pro upsert z appky
--- ============================================================
-CREATE TABLE IF NOT EXISTS plan (
-  id            BIGSERIAL PRIMARY KEY,
-  mesic         TEXT NOT NULL,       -- formát YYYY-MM
-  kategorie_id  BIGINT REFERENCES osnova(id) ON DELETE CASCADE,
-  castka        NUMERIC(12,2) NOT NULL,
-  created_at    TIMESTAMPTZ DEFAULT NOW(),
-  UNIQUE(mesic, kategorie_id)
-);
+ALTER TABLE zaznamy DROP CONSTRAINT IF EXISTS zaznamy_typ_polozky_chk;
+ALTER TABLE zaznamy ADD  CONSTRAINT zaznamy_typ_polozky_chk
+  CHECK (typ_polozky IN ('skutecnost', 'plan'));
 
 -- ============================================================
 -- Indexy
 -- ============================================================
-CREATE INDEX IF NOT EXISTS idx_zaznamy_datum      ON zaznamy(datum);
-CREATE INDEX IF NOT EXISTS idx_zaznamy_kategorie  ON zaznamy(kategorie_id);
-CREATE INDEX IF NOT EXISTS idx_zaznamy_penezenka  ON zaznamy(penezenka_id);
-CREATE INDEX IF NOT EXISTS idx_osnova_parent      ON osnova(parent_id);
-CREATE INDEX IF NOT EXISTS idx_plan_mesic         ON plan(mesic);
+CREATE INDEX IF NOT EXISTS idx_zaznamy_datum       ON zaznamy(datum);
+CREATE INDEX IF NOT EXISTS idx_zaznamy_kategorie   ON zaznamy(kategorie_id);
+CREATE INDEX IF NOT EXISTS idx_zaznamy_penezenka   ON zaznamy(penezenka_id);
+CREATE INDEX IF NOT EXISTS idx_zaznamy_typ_polozky ON zaznamy(typ_polozky);
+CREATE INDEX IF NOT EXISTS idx_zaznamy_prevod      ON zaznamy(prevod_skupina)
+  WHERE prevod_skupina IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_osnova_parent       ON osnova(parent_id);
 
 -- ============================================================
 -- RLS – přístup má jen přihlášený uživatel (role `authenticated`).
@@ -91,32 +103,40 @@ CREATE INDEX IF NOT EXISTS idx_plan_mesic         ON plan(mesic);
 ALTER TABLE osnova    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE penezenky ENABLE ROW LEVEL SECURITY;
 ALTER TABLE zaznamy   ENABLE ROW LEVEL SECURITY;
-ALTER TABLE plan      ENABLE ROW LEVEL SECURITY;
 
--- Shoď případné staré, veřejně otevřené politiky
 DROP POLICY IF EXISTS "anon_all" ON osnova;
 DROP POLICY IF EXISTS "anon_all" ON penezenky;
 DROP POLICY IF EXISTS "anon_all" ON zaznamy;
-DROP POLICY IF EXISTS "anon_all" ON plan;
 
 DROP POLICY IF EXISTS "auth_all" ON osnova;
 DROP POLICY IF EXISTS "auth_all" ON penezenky;
 DROP POLICY IF EXISTS "auth_all" ON zaznamy;
-DROP POLICY IF EXISTS "auth_all" ON plan;
 
 CREATE POLICY "auth_all" ON osnova    FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "auth_all" ON penezenky FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "auth_all" ON zaznamy   FOR ALL TO authenticated USING (true) WITH CHECK (true);
-CREATE POLICY "auth_all" ON plan      FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- ============================================================
--- VOLITELNÉ ZPEVNĚNÍ – allowlist e-mailů
--- Pojistka pro případ, že by registrace zůstala omylem zapnutá:
--- pak ani nově zaregistrovaný účet na data nedosáhne.
--- Doplň si e-maily a spusť místo politik výše.
+-- Výchozí peněženky (podle hodnot „Typ placeni" v deníku).
+-- Počáteční zůstatky nastaví import historie.
 -- ============================================================
--- DROP POLICY IF EXISTS "auth_all" ON osnova;
--- CREATE POLICY "auth_all" ON osnova FOR ALL TO authenticated
---   USING      (auth.jwt() ->> 'email' IN ('ja@example.com','partner@example.com'))
---   WITH CHECK (auth.jwt() ->> 'email' IN ('ja@example.com','partner@example.com'));
--- (a stejně pro penezenky, zaznamy, plan)
+INSERT INTO penezenky (nazev, pocatecni_zustatek, barva)
+SELECT * FROM (VALUES
+  ('Ucet',      0, '#c8f060'),
+  ('Hotovost',  0, '#60c8f0'),
+  ('Kreditka',  0, '#f0a860'),
+  ('Stravenka', 0, '#a860f0'),
+  ('SkipPay',   0, '#60f0a8'),
+  ('Unicredit', 0, '#f0d060')
+) AS v(nazev, pocatecni_zustatek, barva)
+WHERE NOT EXISTS (SELECT 1 FROM penezenky);
+
+-- ============================================================
+-- POZNÁMKA K MIGRACI ZE STARÉHO SCHÉMATU
+--
+-- Tabulka `plan` (měsíční částka na kategorii) byla nahrazena
+-- sloupcem `zaznamy.typ_polozky` a v databázi je přejmenovaná na
+-- `_archiv_plan`. Až si ověříš, že nic nechybí, smaž ji ručně
+-- v SQL editoru:
+--     DROP TABLE _archiv_plan;
+-- ============================================================
