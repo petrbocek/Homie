@@ -11,10 +11,25 @@
   .btn{display:block;width:100%;padding:14px;background:#c8f060;color:#0f0f0f;border:none;border-radius:8px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:16px;font-family:sans-serif;}
   .btn:active{background:#b0d840;}
   .ok{color:#4ade80;font-family:sans-serif;font-weight:700;display:none;margin-bottom:12px;}
+  .warn{background:rgba(240,168,96,0.1);border:1px solid #f0a860;border-radius:10px;padding:14px 18px;margin-bottom:16px;font-family:sans-serif;font-size:13px;line-height:1.6;}
+  .warn strong{color:#f0a860;}
+  .warn ol{margin:8px 0 8px 20px;}
+  .warn li{margin-bottom:5px;}
+  .warn em{color:#c8f060;font-style:normal;font-family:monospace;}
 </style>
 </head>
 <body>
 <h2>Domácí Finance – SQL Schema</h2>
+<div class="warn">
+  <strong>⚠️ Povinný krok v Supabase Dashboardu</strong> – bez něj je appka otevřená komukoli:
+  <ol>
+    <li><em>Authentication → Sign In / Providers → Email</em>: vypni <strong>„Allow new users to sign up"</strong>,
+        jinak se kdokoli zaregistruje a uvidí celou vaši evidenci.</li>
+    <li><em>Authentication → Users → Add user</em>: zadej e-mail + heslo a zaškrtni <strong>„Auto Confirm User"</strong>.
+        Takhle se zakládají účty pro domácnost – registrace z appky není možná.</li>
+  </ol>
+  Data jsou společná: každý přihlášený uživatel vidí a edituje všechno.
+</div>
 <button class="btn" onclick="kopirovat()">📋 Kopírovat SQL</button>
 <div class="ok" id="ok">✓ Zkopírováno!</div>
 <pre id="sql">-- Volitelně: smaž staré tabulky
@@ -22,7 +37,7 @@
 -- DROP TABLE IF EXISTS energie CASCADE;
 -- DROP TABLE IF EXISTS plan CASCADE;
 
-CREATE TABLE osnova (
+CREATE TABLE IF NOT EXISTS osnova (
   id           BIGSERIAL PRIMARY KEY,
   nazev        TEXT NOT NULL,
   parent_id    BIGINT REFERENCES osnova(id) ON DELETE CASCADE,
@@ -31,7 +46,7 @@ CREATE TABLE osnova (
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE penezenky (
+CREATE TABLE IF NOT EXISTS penezenky (
   id                  BIGSERIAL PRIMARY KEY,
   nazev               TEXT NOT NULL,
   pocatecni_zustatek  NUMERIC(12,2) DEFAULT 0,
@@ -39,7 +54,7 @@ CREATE TABLE penezenky (
   created_at          TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE zaznamy (
+CREATE TABLE IF NOT EXISTS zaznamy (
   id            BIGSERIAL PRIMARY KEY,
   datum         DATE NOT NULL,
   castka        NUMERIC(12,2) NOT NULL,
@@ -51,7 +66,7 @@ CREATE TABLE zaznamy (
   created_at    TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE TABLE plan (
+CREATE TABLE IF NOT EXISTS plan (
   id            BIGSERIAL PRIMARY KEY,
   mesic         TEXT NOT NULL,
   kategorie_id  BIGINT REFERENCES osnova(id) ON DELETE CASCADE,
@@ -60,20 +75,33 @@ CREATE TABLE plan (
   UNIQUE(mesic, kategorie_id)
 );
 
-CREATE INDEX idx_zaznamy_datum      ON zaznamy(datum);
-CREATE INDEX idx_zaznamy_kategorie  ON zaznamy(kategorie_id);
-CREATE INDEX idx_zaznamy_penezenka  ON zaznamy(penezenka_id);
-CREATE INDEX idx_plan_mesic         ON plan(mesic);
+CREATE INDEX IF NOT EXISTS idx_zaznamy_datum      ON zaznamy(datum);
+CREATE INDEX IF NOT EXISTS idx_zaznamy_kategorie  ON zaznamy(kategorie_id);
+CREATE INDEX IF NOT EXISTS idx_zaznamy_penezenka  ON zaznamy(penezenka_id);
+CREATE INDEX IF NOT EXISTS idx_osnova_parent      ON osnova(parent_id);
+CREATE INDEX IF NOT EXISTS idx_plan_mesic         ON plan(mesic);
 
+-- RLS: k datum se dostane jen prihlaseny uzivatel (role authenticated).
+-- Role anon (klic zapeceny v index.html) nema k datum nic.
 ALTER TABLE osnova    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE penezenky ENABLE ROW LEVEL SECURITY;
 ALTER TABLE zaznamy   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE plan      ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "anon_all" ON osnova    FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "anon_all" ON penezenky FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "anon_all" ON zaznamy   FOR ALL TO anon USING (true) WITH CHECK (true);
-CREATE POLICY "anon_all" ON plan      FOR ALL TO anon USING (true) WITH CHECK (true);</pre>
+DROP POLICY IF EXISTS "anon_all" ON osnova;
+DROP POLICY IF EXISTS "anon_all" ON penezenky;
+DROP POLICY IF EXISTS "anon_all" ON zaznamy;
+DROP POLICY IF EXISTS "anon_all" ON plan;
+
+DROP POLICY IF EXISTS "auth_all" ON osnova;
+DROP POLICY IF EXISTS "auth_all" ON penezenky;
+DROP POLICY IF EXISTS "auth_all" ON zaznamy;
+DROP POLICY IF EXISTS "auth_all" ON plan;
+
+CREATE POLICY "auth_all" ON osnova    FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_all" ON penezenky FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_all" ON zaznamy   FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_all" ON plan      FOR ALL TO authenticated USING (true) WITH CHECK (true);</pre>
 
 <script>
 function kopirovat(){

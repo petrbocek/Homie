@@ -137,8 +137,22 @@
   @keyframes spin{to{transform:rotate(360deg);}}
   .loading-text{font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;}
 
+  /* --- prihlaseni --- */
+  .auth-screen{position:fixed;inset:0;background:var(--bg);display:none;align-items:center;justify-content:center;padding:24px;z-index:300;}
+  body.locked .auth-screen{display:flex;}
+  body.locked header,body.locked .tabs,body.locked main,body.locked .loading-overlay,body.locked .toast{display:none !important;}
+  .auth-box{width:100%;max-width:340px;background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:26px;}
+  .auth-logo{font-size:22px;font-weight:800;letter-spacing:-0.5px;margin-bottom:4px;}
+  .auth-logo span{color:var(--accent);}
+  .auth-sub{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-bottom:20px;}
+  .auth-err{display:none;background:rgba(248,113,113,0.12);border:1px solid var(--red);color:var(--red);font-size:11px;padding:9px 11px;border-radius:8px;margin-bottom:14px;line-height:1.45;}
+  .user-chip{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .signout-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);padding:6px 11px;border-radius:8px;cursor:pointer;font-size:11px;font-family:'DM Mono',monospace;transition:all 0.15s;}
+  .signout-btn:hover{color:var(--text);border-color:var(--muted);}
+
   @media(max-width:768px){
     header{padding:13px 16px;} main{padding:16px;} .tabs{padding:12px 16px 0;}
+    .user-chip{display:none;}
     .split{grid-template-columns:1fr;} .form-card{position:static;}
     .summary-grid{grid-template-columns:1fr 1fr;}
     .plan-row{flex-wrap:wrap;} .plan-row-actual{width:auto;}
@@ -146,7 +160,20 @@
   @media(max-width:480px){.summary-grid{grid-template-columns:1fr;}}
 </style>
 </head>
-<body>
+<body class="locked">
+
+<div class="auth-screen" id="auth-screen">
+  <div class="auth-box">
+    <div class="auth-logo">domácí<span>.</span>finance</div>
+    <div class="auth-sub">přihlášení do domácí evidence</div>
+    <div class="auth-err" id="auth-err"></div>
+    <form id="auth-form">
+      <div class="field"><label>E-mail</label><input id="auth-email" type="email" autocomplete="username" required></div>
+      <div class="field"><label>Heslo</label><input id="auth-pass" type="password" autocomplete="current-password" required></div>
+      <button class="btn" id="btn-login" type="submit">Přihlásit se</button>
+    </form>
+  </div>
+</div>
 
 <div class="loading-overlay" id="loading">
   <div class="loading-spinner"></div>
@@ -165,6 +192,8 @@
       <span id="monthLabel"></span>
       <button onclick="changeMonth(1)">›</button>
     </div>
+    <span class="user-chip" id="user-email"></span>
+    <button class="signout-btn" onclick="signOut()" title="Odhlásit se">odhlásit</button>
   </div>
 </header>
 
@@ -270,7 +299,7 @@
   <div class="view" id="view-penezenky">
     <div class="split">
       <div class="form-card">
-        <div class="form-title">Přidat peněženku</div>
+        <div class="form-title" id="form-penezenka-title">Přidat peněženku</div>
         <div class="field"><label>Název</label><input id="w-nazev" type="text" placeholder="např. Hotovost, KB účet…"></div>
         <div class="field"><label>Počáteční zůstatek (Kč)</label><input id="w-zustatek" type="number" placeholder="0" step="0.01"></div>
         <div class="field">
@@ -278,7 +307,8 @@
           <div class="color-swatches" id="w-barva-swatches"></div>
           <input type="hidden" id="w-barva" value="#c8f060">
         </div>
-        <button class="btn" id="btn-penezenka" onclick="addPenezenka()">+ Přidat peněženku</button>
+        <button class="btn" id="btn-penezenka" onclick="savePenezenka()">+ Přidat peněženku</button>
+        <button class="btn secondary" id="btn-cancel-penezenka" onclick="cancelEditPenezenka()" style="display:none;margin-top:6px">Zrušit úpravy</button>
       </div>
       <div>
         <div class="section-title">Moje peněženky</div>
@@ -348,14 +378,18 @@
 <script>
 const SB_URL='https://fcycbzbzhuslmkfbgryb.supabase.co';
 const SB_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZjeWNiemJ6aHVzbG1rZmJncnliIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzgyMjcyNjksImV4cCI6MjA5MzgwMzI2OX0.Ho8tJ0GnL5pcF8uqHlEnuf4Dy6gza03jwrDslVTMrts';
-const H={'apikey':SB_KEY,'Authorization':`Bearer ${SB_KEY}`,'Content-Type':'application/json'};
 const COLORS=['#c8f060','#60c8f0','#f0a860','#a860f0','#f06060','#60f0a8','#f0d060','#f087b0'];
 const MONTHS_CS=['Leden','Únor','Březen','Duben','Květen','Červen','Červenec','Srpen','Září','Říjen','Listopad','Prosinec'];
 const MONTHS_SHORT=['Led','Úno','Bře','Dub','Kvě','Čer','Čvc','Srp','Zář','Říj','Lis','Pro'];
 
 let cY=new Date().getFullYear(), cM=new Date().getMonth();
 let zaznamy=[], penezenky=[], osnova=[], planItems=[];
-let editingZaznamId=null, selectedColor=COLORS[0];
+let editingZaznamId=null, editingPenezenkaId=null, selectedColor=COLORS[0];
+let session=null;
+const SESS_KEY='homie_session';
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'})[c]);}
+function col(c){return /^#[0-9a-fA-F]{3,8}$/.test(String(c||''))?String(c):'#888888';}
 
 function fmt(n){return Math.round(Number(n)).toLocaleString('cs-CZ')+' Kč';}
 function mKey(){return `${cY}-${String(cM+1).padStart(2,'0')}`;}
@@ -370,14 +404,84 @@ function toast(msg,err=false){
   t.textContent=msg;t.className='toast show'+(err?' err':'');
   setTimeout(()=>t.classList.remove('show'),2800);
 }
-function setBtn(id,loading,label){const b=document.getElementById(id);if(!b)return;b.disabled=loading;b.textContent=loading?'Ukládám…':label;}
+function setBtn(id,loading,label,loadingLabel){const b=document.getElementById(id);if(!b)return;b.disabled=loading;b.textContent=loading?(loadingLabel||'Ukládám…'):label;}
 
-async function api(table,method='GET',body=null,filter=''){
+// --- AUTH (Supabase GoTrue přes REST, bez SDK) ---
+function readStored(){try{const raw=localStorage.getItem(SESS_KEY);return raw?JSON.parse(raw):null;}catch(e){return null;}}
+function storeSession(s){session=s;try{s?localStorage.setItem(SESS_KEY,JSON.stringify(s)):localStorage.removeItem(SESS_KEY);}catch(e){}}
+async function authCall(path,body){
+  const res=await fetch(`${SB_URL}/auth/v1/${path}`,{method:'POST',headers:{'apikey':SB_KEY,'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const d=await res.json().catch(()=>null);
+  if(!res.ok)throw new Error((d&&(d.error_description||d.msg||d.message))||`HTTP ${res.status}`);
+  return d;
+}
+function sessionFrom(d){
+  if(!d||!d.access_token)throw new Error('Neplatná odpověď serveru');
+  return {access_token:d.access_token,refresh_token:d.refresh_token,
+          expires_at:Date.now()+((d.expires_in||3600)*1000),email:(d.user&&d.user.email)||''};
+}
+async function refreshSession(){
+  const rt=session&&session.refresh_token;
+  if(!rt)throw new Error('Nejsi přihlášen');
+  storeSession(sessionFrom(await authCall('token?grant_type=refresh_token',{refresh_token:rt})));
+}
+async function ensureToken(){
+  if(!session)throw new Error('Nejsi přihlášen');
+  if(Date.now()>session.expires_at-60000)await refreshSession();
+  return session.access_token;
+}
+function lock(msg){
+  storeSession(null);
+  document.body.classList.add('locked');
+  const e=document.getElementById('auth-err');
+  if(msg){e.textContent=msg;e.style.display='block';}else{e.textContent='';e.style.display='none';}
+  setBtn('btn-login',false,'Přihlásit se');
+}
+async function signOut(){
+  const t=session&&session.access_token;
+  if(t){try{await fetch(`${SB_URL}/auth/v1/logout`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':`Bearer ${t}`}});}catch(e){}}
+  zaznamy=[];penezenky=[];osnova=[];planItems=[];
+  editingZaznamId=null;editingPenezenkaId=null;
+  lock(null);
+  const pw=document.getElementById('auth-pass');if(pw)pw.value='';
+}
+async function doLogin(ev){
+  if(ev)ev.preventDefault();
+  const email=document.getElementById('auth-email').value.trim();
+  const pass=document.getElementById('auth-pass').value;
+  if(!email||!pass){lock('Zadej e-mail a heslo.');return;}
+  document.getElementById('auth-err').style.display='none';
+  setBtn('btn-login',true,'Přihlásit se','Přihlašuji…');
+  try{
+    storeSession(sessionFrom(await authCall('token?grant_type=password',{email,password:pass})));
+    document.getElementById('auth-pass').value='';
+    await unlock();
+  }catch(e){
+    lock(/invalid login credentials/i.test(e.message)?'Nesprávný e-mail nebo heslo.':e.message);
+  }
+}
+async function unlock(){
+  document.body.classList.remove('locked');
+  document.getElementById('loading').style.display='flex';
+  document.getElementById('user-email').textContent=(session&&session.email)||'';
+  setBtn('btn-login',false,'Přihlásit se');
+  await init();
+}
+
+async function api(table,method='GET',body=null,filter='',prefer=null,_retry=true){
+  const token=await ensureToken();
   const url=`${SB_URL}/rest/v1/${table}${filter?'?'+filter:''}`;
-  const opts={method,headers:{...H}};
-  if(method==='POST')opts.headers['Prefer']='return=representation';
+  const headers={'apikey':SB_KEY,'Authorization':`Bearer ${token}`,'Content-Type':'application/json'};
+  const pref=prefer||(method==='POST'?'return=representation':null);
+  if(pref)headers['Prefer']=pref;
+  const opts={method,headers};
   if(body)opts.body=JSON.stringify(body);
   const res=await fetch(url,opts);
+  if(res.status===401&&_retry){
+    try{await refreshSession();}
+    catch(e){lock('Přihlášení vypršelo, přihlas se prosím znovu.');throw new Error('Přihlášení vypršelo');}
+    return api(table,method,body,filter,prefer,false);
+  }
   if(!res.ok){const e=await res.json().catch(()=>{});throw new Error((e&&e.message)||`HTTP ${res.status}`);}
   const t=await res.text();return t?JSON.parse(t):null;
 }
@@ -402,8 +506,8 @@ function buildCatOptions(typFilter=null){
   if(!tops.length)return'<option value="">— nejprve přidejte osnovu —</option>';
   return tops.map(top=>{
     const subs=catSub(top.id);
-    if(!subs.length)return`<option value="${top.id}">${top.nazev}</option>`;
-    return`<optgroup label="${top.nazev}">${subs.map(s=>`<option value="${s.id}">${s.nazev}</option>`).join('')}</optgroup>`;
+    if(!subs.length)return`<option value="${top.id}">${esc(top.nazev)}</option>`;
+    return`<optgroup label="${esc(top.nazev)}">${subs.map(s=>`<option value="${s.id}">${esc(s.nazev)}</option>`).join('')}</optgroup>`;
   }).join('');
 }
 
@@ -433,14 +537,14 @@ function updateCategorySelect(){
   document.getElementById('z-kategorie').innerHTML='<option value="">— vybrat —</option>'+buildCatOptions(typ);
 }
 function updateWalletSelect(){
-  document.getElementById('z-penezenka').innerHTML='<option value="">— vybrat —</option>'+penezenky.map(w=>`<option value="${w.id}">${w.nazev}</option>`).join('');
+  document.getElementById('z-penezenka').innerHTML='<option value="">— vybrat —</option>'+penezenky.map(w=>`<option value="${w.id}">${esc(w.nazev)}</option>`).join('');
 }
 function updateOsnovaForm(){
   const uroven=document.getElementById('o-uroven').value;
   document.getElementById('o-typ-field').style.display=uroven==='top'?'block':'none';
   document.getElementById('o-parent-field').style.display=uroven==='sub'?'block':'none';
   if(uroven==='sub'){
-    document.getElementById('o-parent').innerHTML='<option value="">— vybrat —</option>'+catTop().map(t=>`<option value="${t.id}">${t.nazev} (${t.typ==='vydaj'?'výdaj':'příjem'})</option>`).join('');
+    document.getElementById('o-parent').innerHTML='<option value="">— vybrat —</option>'+catTop().map(t=>`<option value="${t.id}">${esc(t.nazev)} (${t.typ==='vydaj'?'výdaj':'příjem'})</option>`).join('');
   }
 }
 function selectColor(c){
@@ -482,7 +586,7 @@ function renderPrehled(){
   document.getElementById('sum-zbyva-sub').textContent=planVydaje?(zbyva>=0?'ještě nevyčerpáno':'překročeno o'):'plán nenastaveno';
 
   document.getElementById('prehled-wallets').innerHTML=penezenky.length
-    ?penezenky.map(w=>{const bal=walletBalance(w.id);return`<div class="wallet-preview" style="border-color:${w.barva}55"><div class="wallet-preview-name">${w.nazev}</div><div class="wallet-preview-balance" style="color:${w.barva}">${fmt(bal)}</div><div class="wallet-preview-init">počáteční: ${fmt(w.pocatecni_zustatek)}</div></div>`;}).join('')
+    ?penezenky.map(w=>{const bal=walletBalance(w.id),c=col(w.barva);return`<div class="wallet-preview" style="border-color:${c}55"><div class="wallet-preview-name">${esc(w.nazev)}</div><div class="wallet-preview-balance" style="color:${c}">${fmt(bal)}</div><div class="wallet-preview-init">počáteční: ${fmt(w.pocatecni_zustatek)}</div></div>`;}).join('')
     :'<div style="color:var(--muted);font-size:12px">Žádné peněženky</div>';
 
   const tops=catTop();
@@ -495,7 +599,7 @@ function renderPrehled(){
     const actual=mz.filter(z=>catIds.includes(z.kategorie_id)).reduce((s,z)=>s+Number(z.castka),0);
     let diff='—',cls='diff-none';
     if(planned!==null){const d=actual-planned;diff=(d>=0?'+':'')+fmt(Math.abs(d));cls=top.typ==='prijem'?(d>=0?'diff-ok':'diff-over'):(actual<=planned?'diff-ok':'diff-over');}
-    return`<tr><td><span class="badge ${top.typ==='vydaj'?'badge-vydaj':'badge-prijem'}">${top.typ==='vydaj'?'výdaj':'příjem'}</span> ${top.nazev}</td><td class="right mono">${planned!==null?fmt(planned):'—'}</td><td class="right mono">${fmt(actual)}</td><td class="right mono ${cls}">${diff}</td></tr>`;
+    return`<tr><td><span class="badge ${top.typ==='vydaj'?'badge-vydaj':'badge-prijem'}">${top.typ==='vydaj'?'výdaj':'příjem'}</span> ${esc(top.nazev)}</td><td class="right mono">${planned!==null?fmt(planned):'—'}</td><td class="right mono">${fmt(actual)}</td><td class="right mono ${cls}">${diff}</td></tr>`;
   }).join('');
 
   const months=[];
@@ -512,14 +616,14 @@ function renderZaznamy(){
   empty.style.display='none';
   tbody.innerHTML=mz.map(z=>{
     const isInc=z.typ==='prijem';
-    const kde=z.kde||'—';
-    const pozn=z.poznamka?`<div style="font-size:10px;color:var(--muted);margin-top:2px">${z.poznamka}</div>`:'';
-    const wColor=z.penezenka_id?walletColor(z.penezenka_id):'#888';
+    const kde=z.kde?esc(z.kde):'—';
+    const pozn=z.poznamka?`<div style="font-size:10px;color:var(--muted);margin-top:2px">${esc(z.poznamka)}</div>`:'';
+    const wColor=z.penezenka_id?col(walletColor(z.penezenka_id)):'#888888';
     return`<tr>
       <td class="mono">${z.datum}</td>
       <td>${kde}${pozn}</td>
-      <td>${catName(z.kategorie_id)}</td>
-      <td>${z.penezenka_id?`<span style="color:${wColor}">${walletName(z.penezenka_id)}</span>`:'—'}</td>
+      <td>${esc(catName(z.kategorie_id))}</td>
+      <td>${z.penezenka_id?`<span style="color:${wColor}">${esc(walletName(z.penezenka_id))}</span>`:'—'}</td>
       <td class="right ${isInc?'amount-positive':'amount-negative'}">${isInc?'+':'−'}${fmt(z.castka)}</td>
       <td style="white-space:nowrap">
         <button class="edit-btn" onclick="editZaznam(${z.id})" title="Upravit">✎</button>
@@ -538,9 +642,10 @@ function renderPenezenky(){
   list.innerHTML=penezenky.map(w=>{
     const bal=walletBalance(w.id);
     return`<div class="wallet-list-item">
-      <div class="wallet-dot" style="background:${w.barva}"></div>
-      <div class="wallet-info"><div class="wallet-name">${w.nazev}</div><div class="wallet-meta">počáteční: ${fmt(w.pocatecni_zustatek)}</div></div>
+      <div class="wallet-dot" style="background:${col(w.barva)}"></div>
+      <div class="wallet-info"><div class="wallet-name">${esc(w.nazev)}</div><div class="wallet-meta">počáteční: ${fmt(w.pocatecni_zustatek)}</div></div>
       <div class="wallet-balance-val" style="color:${bal>=0?'var(--green)':'var(--red)'}">${fmt(bal)}</div>
+      <button class="edit-btn" onclick="editPenezenka(${w.id})" title="Upravit">✎</button>
       <button class="del-btn" onclick="delPenezenka(${w.id})" title="Smazat">✕</button>
     </div>`;
   }).join('');
@@ -554,8 +659,8 @@ function renderOsnova(){
   empty.style.display='none';
   tree.innerHTML=tops.map(top=>{
     const subs=catSub(top.id);
-    const sub=subs.map(s=>`<div class="cat-item sub"><div class="cat-item-name">↳ ${s.nazev}</div><button class="del-btn" onclick="delOsnova(${s.id})">✕</button></div>`).join('');
-    return`<div class="cat-item top"><span class="badge ${top.typ==='vydaj'?'badge-vydaj':'badge-prijem'}">${top.typ==='vydaj'?'výdaj':'příjem'}</span><div class="cat-item-name">${top.nazev}</div><button class="del-btn" onclick="delOsnova(${top.id})">✕</button></div>${sub}`;
+    const sub=subs.map(s=>`<div class="cat-item sub"><div class="cat-item-name">↳ ${esc(s.nazev)}</div><button class="del-btn" onclick="delOsnova(${s.id})">✕</button></div>`).join('');
+    return`<div class="cat-item top"><span class="badge ${top.typ==='vydaj'?'badge-vydaj':'badge-prijem'}">${top.typ==='vydaj'?'výdaj':'příjem'}</span><div class="cat-item-name">${esc(top.nazev)}</div><button class="del-btn" onclick="delOsnova(${top.id})">✕</button></div>${sub}`;
   }).join('');
   updateOsnovaForm();
 }
@@ -581,7 +686,7 @@ function renderPlan(){
       const catIds=[top.id,...catSub(top.id).map(s=>s.id)];
       const actual=mz.filter(z=>catIds.includes(z.kategorie_id)).reduce((s,z)=>s+Number(z.castka),0);
       return`<div class="plan-row">
-        <div class="plan-row-label">${top.nazev}</div>
+        <div class="plan-row-label">${esc(top.nazev)}</div>
         <div class="plan-row-actual">${actual?fmt(actual):'0 Kč'} skut.</div>
         <input class="plan-input" type="number" id="plan-${top.id}" value="${planItem?planItem.castka:''}" placeholder="0">
       </div>`;
@@ -651,20 +756,52 @@ async function delZaznam(id){
 }
 
 // --- PENĚŽENKY CRUD ---
-async function addPenezenka(){
+async function savePenezenka(){
   const nazev=document.getElementById('w-nazev').value.trim();
   if(!nazev){toast('Zadejte název peněženky',true);return;}
+  const row={nazev,pocatecni_zustatek:parseFloat(document.getElementById('w-zustatek').value)||0,barva:document.getElementById('w-barva').value};
   setBtn('btn-penezenka',true);syncSt('syncing');
   try{
-    const res=await api('penezenky','POST',{nazev,pocatecni_zustatek:parseFloat(document.getElementById('w-zustatek').value)||0,barva:document.getElementById('w-barva').value});
-    penezenky.push(res[0]);
-    document.getElementById('w-nazev').value='';document.getElementById('w-zustatek').value='';
-    toast('Peněženka přidána ✓');syncSt('ok');render();updateWalletSelect();
-  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
+    if(editingPenezenkaId){
+      const res=await api('penezenky','PATCH',row,`id=eq.${editingPenezenkaId}`,'return=representation');
+      const idx=penezenky.findIndex(w=>w.id===editingPenezenkaId);
+      if(idx>=0)penezenky[idx]={...penezenky[idx],...(Array.isArray(res)&&res[0]?res[0]:row)};
+      toast('Peněženka upravena ✓');syncSt('ok');
+    }else{
+      const res=await api('penezenky','POST',row);
+      penezenky.push(res[0]);
+      toast('Peněženka přidána ✓');syncSt('ok');
+    }
+    cancelEditPenezenka();render();updateWalletSelect();
+  }catch(e){
+    toast('Chyba: '+e.message,true);syncSt('error');
+    setBtn('btn-penezenka',false,editingPenezenkaId?'Uložit změny':'+ Přidat peněženku');
+  }
+}
+function editPenezenka(id){
+  const w=penezenky.find(w=>w.id===id);if(!w)return;
+  editingPenezenkaId=id;
+  document.getElementById('w-nazev').value=w.nazev;
+  document.getElementById('w-zustatek').value=w.pocatecni_zustatek;
+  selectColor(col(w.barva));
+  document.getElementById('form-penezenka-title').textContent='Upravit peněženku';
+  document.getElementById('btn-penezenka').textContent='Uložit změny';
+  document.getElementById('btn-cancel-penezenka').style.display='block';
+  showTab('penezenky');
+  document.querySelector('#view-penezenky .form-card').scrollIntoView({behavior:'smooth',block:'start'});
+}
+function cancelEditPenezenka(){
+  editingPenezenkaId=null;
+  document.getElementById('w-nazev').value='';
+  document.getElementById('w-zustatek').value='';
+  selectColor(COLORS[0]);
+  document.getElementById('form-penezenka-title').textContent='Přidat peněženku';
+  document.getElementById('btn-cancel-penezenka').style.display='none';
   setBtn('btn-penezenka',false,'+ Přidat peněženku');
 }
 async function delPenezenka(id){
   if(zaznamy.some(z=>z.penezenka_id==id)){toast('Nelze smazat – peněženka má záznamy',true);return;}
+  if(editingPenezenkaId===id)cancelEditPenezenka();
   syncSt('syncing');
   try{await api('penezenky','DELETE',null,`id=eq.${id}`);penezenky=penezenky.filter(w=>w.id!==id);toast('Peněženka smazána');syncSt('ok');render();}
   catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
@@ -708,16 +845,31 @@ async function delOsnova(id){
 async function savePlan(){
   const k=mKey(), tops=catTop();
   if(!tops.length){toast('Nejprve přidejte kategorie',true);return;}
+  const toSave=[], toClear=[];
+  for(const top of tops){
+    const inp=document.getElementById(`plan-${top.id}`);
+    if(!inp)continue;
+    const raw=inp.value.trim();
+    if(raw===''){toClear.push(top.id);continue;}
+    const castka=parseFloat(raw);
+    if(isNaN(castka)||castka<0){toast(`Neplatná částka u „${top.nazev}“`,true);return;}
+    if(castka===0){toClear.push(top.id);continue;}
+    toSave.push({mesic:k,kategorie_id:top.id,castka});
+  }
   syncSt('syncing');
   try{
-    const toSave=[];
-    tops.forEach(top=>{
-      const inp=document.getElementById(`plan-${top.id}`);
-      if(inp&&inp.value!==''){const castka=parseFloat(inp.value);if(!isNaN(castka)&&castka>0)toSave.push({mesic:k,kategorie_id:top.id,castka});}
-    });
-    await api('plan','DELETE',null,`mesic=eq.${k}`);
-    planItems=planItems.filter(p=>p.mesic!==k);
-    if(toSave.length){const res=await api('plan','POST',toSave);if(res)planItems.push(...(Array.isArray(res)?res:[res]));}
+    // 1) nejdřív zapsat (upsert dle UNIQUE(mesic,kategorie_id)) – selhání nic nesmaže
+    let saved=null;
+    if(toSave.length){
+      saved=await api('plan','POST',toSave,'on_conflict=mesic,kategorie_id','resolution=merge-duplicates,return=representation');
+    }
+    // 2) teprve pak smazat jen vyprázdněné kategorie
+    if(toClear.length){
+      await api('plan','DELETE',null,`mesic=eq.${k}&kategorie_id=in.(${toClear.join(',')})`);
+    }
+    const savedIds=toSave.map(x=>Number(x.kategorie_id));
+    planItems=planItems.filter(pi=>!(pi.mesic===k&&(toClear.includes(Number(pi.kategorie_id))||savedIds.includes(Number(pi.kategorie_id)))));
+    if(saved)planItems.push(...(Array.isArray(saved)?saved:[saved]));
     toast('Plán uložen ✓');syncSt('ok');render();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
 }
@@ -738,10 +890,24 @@ async function init(){
     updateCategorySelect();updateWalletSelect();updateOsnovaForm();
     render();
   }catch(err){
-    document.getElementById('loading').innerHTML=`<div style="color:var(--red);text-align:center;padding:40px"><div style="font-size:36px;margin-bottom:12px">⚠️</div><div style="font-weight:700">Chyba připojení</div><div style="font-size:11px;color:var(--muted);margin-top:6px">${err.message}</div></div>`;
+    document.getElementById('loading').innerHTML=`<div style="color:var(--red);text-align:center;padding:40px"><div style="font-size:36px;margin-bottom:12px">⚠️</div><div style="font-weight:700">Chyba připojení</div><div style="font-size:11px;color:var(--muted);margin-top:6px">${esc(err.message)}</div><button class="btn secondary" style="margin-top:18px" onclick="signOut()">Odhlásit se</button></div>`;
   }
 }
-init();
+
+// --- BOOT ---
+async function boot(){
+  document.getElementById('auth-form').addEventListener('submit',doLogin);
+  session=readStored();
+  if(session&&session.refresh_token){
+    try{
+      if(Date.now()>session.expires_at-60000)await refreshSession();
+      await unlock();
+      return;
+    }catch(e){/* neplatná uložená session -> přihlašovací obrazovka */}
+  }
+  lock(null);
+}
+boot();
 </script>
 </body>
 </html>
