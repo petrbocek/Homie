@@ -639,16 +639,18 @@ function walletColor(wId){const w=penezenky.find(p=>p.id==wId);return w?w.barva:
 function dnes(){const d=new Date();
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;}
 
-// Záznamy typu skutečnost s datem v budoucnu. Jsou součástí `walletBalance`,
-// protože i list Pivot je do zůstatku počítá (jeho SUMIFS datum nefiltruje),
-// ale stojí za to je ukázat zvlášť – skutečnost zapsaná dopředu je nejspíš
-// překlep (mělo být `plán`). V Pivotu je z nich dopočítané pole `Budouci`.
-function walletNenastalo(wId){
+// Skutečnosti s datem v budoucnu: už zaplacené položky rozpuštěné do měsíců,
+// kterých se týkají (předplatné, pojistka dopředu…). Peníze z účtu odešly, tak
+// jsou právem součástí `walletBalance` — stejně jako v Pivotu, jehož SUMIFS
+// datum nefiltruje. Ukazujeme je zvlášť, aby bylo vidět, kolik ze zůstatku je
+// takhle dopředu utracených. Pivot si z nich dělá pole `Budouci`, s obráceným
+// znaménkem.
+function walletZaplacenoDopredu(wId){
   const t=dnes();
   return zaznamy.filter(z=>z.penezenka_id==wId&&!jePlan(z)&&z.datum>t)
                 .reduce((s,z)=>s+(z.typ==='prijem'?1:-1)*Number(z.castka),0);
 }
-// Plánované položky do budoucna – skutečný výhled, který sheet neukazuje.
+// Plánované položky do budoucna – to, co teprve přijde. Sheet je neukazuje.
 function walletPlan(wId){
   const t=dnes();
   return zaznamy.filter(z=>z.penezenka_id==wId&&jePlan(z)&&z.datum>t)
@@ -665,13 +667,13 @@ function renderZustatky(){
   const fmtZ=n=>Math.round(n).toLocaleString('cs-CZ');
   const radky=penezenky.map(w=>{
     const poc=Number(w.pocatecni_zustatek), zust=walletBalance(w.id);
-    return {w,poc,pohyby:zust-poc,zust,nenastalo:walletNenastalo(w.id),plan:walletPlan(w.id)};
+    return {w,poc,pohyby:zust-poc,zust,zaplaceno:walletZaplacenoDopredu(w.id),plan:walletPlan(w.id)};
   });
   const sum=k=>radky.reduce((a,x)=>a+x[k],0);
   const bunky=x=>`<td class="hodnota">${fmtZ(x.poc)}</td>`
     +`<td class="hodnota">${fmtZ(x.pohyby)}</td>`
     +`<td class="hodnota" style="color:${x.zust>=0?'var(--green)':'var(--red)'}">${fmtZ(x.zust)}</td>`
-    +`<td class="hodnota plan">${fmtM(x.nenastalo)}</td>`
+    +`<td class="hodnota plan">${fmtM(x.zaplaceno)}</td>`
     +`<td class="hodnota plan">${fmtM(x.plan)}</td>`
     +`<td class="hodnota">${fmtZ(x.zust+x.plan)}</td>`;
 
@@ -679,23 +681,24 @@ function renderZustatky(){
     `<thead><tr>
       <th class="kat">Peněženka</th>
       <th class="right">počáteční</th><th class="right">pohyby</th><th class="right">zůstatek</th>
-      <th class="right plan">nenastalo</th><th class="right plan">plán dopředu</th><th class="right">výhled</th>
+      <th class="right plan">zaplaceno dopředu</th><th class="right plan">plán dopředu</th><th class="right">výhled</th>
     </tr></thead><tbody>`
     + radky.map(x=>`<tr><td class="kat"><span style="background:${col(x.w.barva)};display:inline-block;width:8px;height:8px;border-radius:99px;margin-right:6px"></span>${esc(x.w.nazev)}</td>${bunky(x)}</tr>`).join('')
     + `<tr class="soucet"><td class="kat">Celkem</td>`
       + `<td class="hodnota">${fmtZ(sum('poc'))}</td><td class="hodnota">${fmtZ(sum('pohyby'))}</td>`
-      + `<td class="hodnota">${fmtZ(sum('zust'))}</td><td class="hodnota plan">${fmtM(sum('nenastalo'))}</td>`
+      + `<td class="hodnota">${fmtZ(sum('zust'))}</td><td class="hodnota plan">${fmtM(sum('zaplaceno'))}</td>`
       + `<td class="hodnota plan">${fmtM(sum('plan'))}</td><td class="hodnota">${fmtZ(sum('zust')+sum('plan'))}</td>`
     + `</tr></tbody>`;
 
-  const pocetN=zaznamy.filter(z=>!jePlan(z)&&z.datum>dnes()).length;
+  const pocetZ=zaznamy.filter(z=>!jePlan(z)&&z.datum>dnes()).length;
   pozn.innerHTML=
     `<strong>zůstatek</strong> = počáteční + všechny skutečnosti; tohle číslo odpovídá listu <span class="mono">Pivot</span>. `
-    +`<strong>plán dopředu</strong> se do něj nepočítá — ještě se nestal.<br>`
-    +`<strong>nenastalo</strong> jsou skutečnosti s datem v budoucnu, které v zůstatku `
-    +`už započítané <em>jsou</em> — Pivot je počítá taky a dělá si z nich pole „Budouci“, `
-    +`akorát s opačným znaménkem. `
-    +(pocetN?`Teď jich je ${pocetN} — skutečnost zapsaná dopředu bývá překlep, mělo být „plán“.`
+    +`<strong>plán dopředu</strong> se do něj nepočítá — teprve přijde.<br>`
+    +`<strong>zaplaceno dopředu</strong> jsou už zaplacené položky rozpuštěné do měsíců, `
+    +`kterých se týkají. Peníze z účtu odešly, takže v zůstatku započítané <em>jsou</em>; `
+    +`sloupec říká, kolik z něj je takhle utracené dopředu. Pivot totéž ukazuje jako `
+    +`„Budouci“, jen s obráceným znaménkem. `
+    +(pocetZ?`Teď jde o ${pocetZ} ${pocetZ===1?'položku':(pocetZ<5?'položky':'položek')}.`
             :`Teď žádné nejsou.`);
 }
 

@@ -216,7 +216,7 @@ const zu=await pg.evaluate(()=>{
   const cis=t=>{const v=t.textContent.replace(/[^\d+-]/g,'');return v?parseInt(v,10):0;};
   const radek=tr=>{const td=[...tr.querySelectorAll('td')];return{
     nazev:td[0].textContent.trim(),poc:cis(td[1]),pohyby:cis(td[2]),
-    zust:cis(td[3]),nenastalo:cis(td[4]),plan:cis(td[5]),vyhled:cis(td[6])};};
+    zust:cis(td[3]),zaplaceno:cis(td[4]),plan:cis(td[5]),vyhled:cis(td[6])};};
   return {
     radky:[...document.querySelectorAll('#zustatky-table tbody tr:not(.soucet)')].map(radek),
     celkem:radek(document.querySelector('#zustatky-table tr.soucet')),
@@ -232,7 +232,7 @@ check('součtový řádek sedí',zu.celkem.zust===zu.radky.reduce((a,r)=>a+r.zus
 check('zůstatek Účtu je 98 000 (plán se nepočítá)',zu.radky[0].zust===98000,JSON.stringify(zu.radky[0]));
 const zpozn=txt(await pg.textContent('#zustatky-pozn'));
 check('poznámka vysvětluje vztah k Pivotu',zpozn.includes('Pivot'),zpozn);
-check('poznámka mluví o skutečnostech v budoucnu',/nenastalo/.test(zpozn),zpozn);
+check('poznámka vysvětluje zaplaceno dopředu',/zaplaceno dopředu/.test(zpozn),zpozn);
 
 console.log('\n== 13. záložka Rok: matice plán vs. skutečnost ==');
 await pg.click('.tab:text-is("Rok")'); await pg.waitForTimeout(400);
