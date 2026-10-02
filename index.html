@@ -90,13 +90,29 @@
   @media(max-width:640px){
     .rok-table td.kat,.rok-table th.kat{min-width:104px;max-width:104px;overflow:hidden;text-overflow:ellipsis;}
     .rok-table .badge{display:none;}
+    /* Ve Spoření nese první sloupec i značku „odhad", takže potřebuje o kus víc. */
+    #sporeni-table td.kat,#sporeni-table th.kat{min-width:134px;max-width:134px;}
     .rok-table th,.rok-table td{padding:7px 7px;}
   }
 
   /* Značka neúplného měsíce v Energii. Není to .badge schválně: ten se na
      mobilu v .rok-table schovává a tady je to jediný signál, že čísla v řádku
      nejsou celá spotřeba. */
-  .vymena{color:var(--accent4);cursor:help;font-family:'DM Mono',monospace;}
+  .vymena,.mezera{color:var(--accent4);cursor:help;font-family:'DM Mono',monospace;}
+
+  /* Vývoj čistého jmění. Je celou historii záporné, takže sloupcový graf od
+     nuly by nic neukázal — tohle je spojnice škálovaná na rozsah dat. */
+  .cara{width:100%;height:180px;display:block;}
+  .cara-legenda{display:flex;gap:16px;font-size:10px;color:var(--muted);
+    font-family:'DM Mono',monospace;margin-top:10px;}
+  .cara-legenda span::before{content:'';display:inline-block;width:14px;height:0;
+    border-top:2px solid var(--accent);vertical-align:middle;margin-right:6px;}
+  .cara-legenda span.proj::before{border-top-style:dashed;border-color:var(--accent4);}
+  /* Taky ne .badge: ten se v .rok-table na mobilu schovává a „tohle je odhad,
+     ne skutečnost" je přesně to, co se schovat nesmí. */
+  .projekce{background:rgba(240,168,96,0.15);color:var(--accent4);padding:2px 8px;
+    border-radius:4px;font-size:9px;font-family:'DM Mono',monospace;font-weight:600;
+    letter-spacing:0.5px;}
 
   .split{display:grid;grid-template-columns:300px 1fr;gap:18px;}
   .form-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;height:fit-content;position:sticky;top:86px;}
@@ -243,6 +259,7 @@
   <div class="tab" onclick="showTab('penezenky')">Peněženky</div>
   <div class="tab" onclick="showTab('osnova')">Osnova</div>
   <div class="tab" onclick="showTab('energie')">Energie</div>
+  <div class="tab" onclick="showTab('sporeni')">Spoření</div>
   <div class="tab" onclick="showTab('plan')">Plán</div>
 </div>
 
@@ -332,6 +349,34 @@
 
     <div id="energie-empty" class="empty" style="display:none">
       <span class="emoji">⚡</span>Žádné odečty
+    </div>
+  </div>
+
+  <!-- SPOŘENÍ — měsíční snímek majetku a závazků (list Sporeni) -->
+  <div class="view" id="view-sporeni">
+    <div class="summary-grid" id="sporeni-karty"></div>
+
+    <div class="chart-wrap">
+      <div class="chart-title">Vývoj čistého jmění</div>
+      <div id="sporeni-graf"></div>
+      <div class="cara-legenda"><span>skutečnost</span><span class="proj">projekce</span></div>
+    </div>
+
+    <div class="section-title" style="margin-bottom:10px">Měsíční snímky</div>
+    <div class="rok-wrap">
+      <table class="rok-table" id="sporeni-table"></table>
+    </div>
+    <div class="rok-pozn">
+      Jiný pohled než deník: ten sleduje <strong>tok</strong> peněz, tohle je
+      <strong>stav</strong> majetku a závazků k prvnímu dni měsíce. Čisté jmění je součet
+      aktiv a závazků, změna je rozdíl proti předchozímu snímku. Řádky označené
+      <strong class="projekce">odhad</strong> nejsou skutečnost, ale dopředná projekce.
+      Cashflow je disponibilní zůstatek (Áčkarta + Účet) snížený o rezervu, kterou si
+      v sheetu drží bokem; její výše se v čase měnila (70 000 → 10 000 → 50 000 Kč).
+    </div>
+
+    <div id="sporeni-empty" class="empty" style="display:none">
+      <span class="emoji">🏦</span>Žádné snímky
     </div>
   </div>
 
@@ -517,7 +562,7 @@ const MONTHS_SHORT=['Led','Úno','Bře','Dub','Kvě','Čer','Čvc','Srp','Zář'
 let cY=new Date().getFullYear(), cM=new Date().getMonth();
 let rY=new Date().getFullYear();        // rok v záložce Rok, nezávislý na měsíci
 const rozbalene=new Set();              // hlavní kategorie rozkliknuté na podkategorie
-let zaznamy=[], penezenky=[], osnova=[], odecty=[], cenik=[];
+let zaznamy=[], penezenky=[], osnova=[], odecty=[], cenik=[], sporeni=[];
 let editingZaznamId=null, editingPenezenkaId=null, selectedColor=COLORS[0];
 let session=null;
 const SESS_KEY='homie_session';
@@ -759,13 +804,14 @@ function changeMonth(d){
 }
 function showTab(id){
   // pořadí musí odpovídat pořadí .tab v markupu – showTab je páruje podle indexu
-  const tabs=['prehled','rok','zaznamy','penezenky','osnova','energie','plan'];
+  const tabs=['prehled','rok','zaznamy','penezenky','osnova','energie','sporeni','plan'];
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===id));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+id).classList.add('active');
   if(id==='plan')renderPlan();
   if(id==='rok')renderRok(true);
   if(id==='energie')renderEnergie();
+  if(id==='sporeni')renderSporeni();
 }
 function updateCategorySelect(){
   const typ=document.getElementById('z-typ').value;
@@ -819,7 +865,7 @@ function render(){
   document.getElementById('records-month').textContent=label;
   document.getElementById('plan-month-label').textContent=label;
   document.getElementById('plan-mesic-label').textContent=label;
-  renderPrehled();renderRok();renderZaznamy();renderPenezenky();renderZustatky();renderOsnova();renderEnergie();renderPlan();
+  renderPrehled();renderRok();renderZaznamy();renderPenezenky();renderZustatky();renderOsnova();renderEnergie();renderSporeni();renderPlan();
 }
 
 function renderPrehled(){
@@ -1124,6 +1170,120 @@ function renderEnergie(){
     + '</tbody>';
 }
 
+// --- SPOŘENÍ ---
+// Snímky s dopočtem. Dopočty schválně nejsou v databázi: v sheetu jsou taky
+// jen vzorce a uložené by se při opravě jednoho vstupu rozešly s realitou.
+function sporeniRadky(){
+  const out=[];
+  let p=null;
+  for(const s of sporeni){
+    const aktiva=Number(s.penzijko)+Number(s.uniqua)+Number(s.amundi);
+    const zavazky=Number(s.garant)+Number(s.hypoteka)+Number(s.pujcky);
+    const ciste=aktiva+zavazky;
+    const disp=(s.akarta==null&&s.ucet==null)?null:Number(s.akarta||0)+Number(s.ucet||0);
+    out.push({...s,aktiva,zavazky,ciste,disp,
+      cashflow:(disp==null||s.rezerva==null)?null:disp-Number(s.rezerva),
+      zmena:p===null?null:ciste-p.ciste,
+      // V řadě chybí prosinec 2022. Změna je pak za dva měsíce, ne za jeden,
+      // a je potřeba to na řádku přiznat, ne to tiše schovat do čísla.
+      mezera:p!==null&&mesicPosun(p.datum,1)!==s.datum.slice(0,7)});
+    p=out[out.length-1];
+  }
+  return out;
+}
+// Měsíc o `o` dál, ve tvaru YYYY-MM.
+function mesicPosun(datum,o){
+  const r=+datum.slice(0,4), m=+datum.slice(5,7)-1+o;
+  return `${r+Math.floor(m/12)}-${String((m%12+12)%12+1).padStart(2,'0')}`;
+}
+
+// Spojnice čistého jmění. Projekce navazuje na poslední skutečný bod, aby v
+// čáře nebyla díra, a kreslí se čárkovaně — není to naměřený údaj.
+function sporeniGraf(radky){
+  if(radky.length<2)return '';
+  const W=760,H=180,OL=8,OP=8,OH=14,OD=22;
+  const hodnoty=radky.map(r=>r.ciste);
+  const min=Math.min(...hodnoty), max=Math.max(...hodnoty), rozpeti=(max-min)||1;
+  const x=i=>OL+i*(W-OL-OP)/(radky.length-1);
+  const y=v=>OH+(max-v)/rozpeti*(H-OH-OD);
+  const bod=(r,i)=>`${x(i).toFixed(1)},${y(r.ciste).toFixed(1)}`;
+  const prvniProj=radky.findIndex(r=>r.projekce);
+  const skut=prvniProj<0?radky:radky.slice(0,prvniProj);
+  // od posledního skutečného bodu, ať čára navazuje
+  const proj=prvniProj<=0?[]:radky.slice(prvniProj-1);
+  const body=(a,od)=>a.map((r,i)=>bod(r,od+i)).join(' ');
+  const popisek=(r,i,kam)=>`<text x="${x(i).toFixed(1)}" y="${kam}" fill="var(--muted)"`
+    +` font-size="9" font-family="DM Mono,monospace" text-anchor="${i?'end':'start'}">`
+    +`${esc(r.datum.slice(0,7))}</text>`;
+  return `<svg class="cara" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"`
+    +` aria-label="Vývoj čistého jmění od ${esc(radky[0].datum)} do ${esc(radky[radky.length-1].datum)}">`
+    +`<polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${body(skut,0)}"/>`
+    +(proj.length>1?`<polyline fill="none" stroke="var(--accent4)" stroke-width="2"`
+      +` stroke-dasharray="5 4" points="${body(proj,prvniProj-1)}"/>`:'')
+    +`<text x="${OL}" y="10" fill="var(--muted)" font-size="9" font-family="DM Mono,monospace">`
+    +`${esc(fmt(max))}</text>`
+    +`<text x="${OL}" y="${H-OD}" fill="var(--muted)" font-size="9" font-family="DM Mono,monospace">`
+    +`${esc(fmt(min))}</text>`
+    +popisek(radky[0],0,H-2)+popisek(radky[radky.length-1],radky.length-1,H-2)
+    +`</svg>`;
+}
+
+function renderSporeni(){
+  const empty=document.getElementById('sporeni-empty');
+  const karty=document.getElementById('sporeni-karty');
+  if(!sporeni.length){karty.innerHTML='';document.getElementById('sporeni-table').innerHTML='';
+    document.getElementById('sporeni-graf').innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+
+  const radky=sporeniRadky();
+  const skut=radky.filter(r=>!r.projekce);
+  const pos=skut.length?skut[skut.length-1]:radky[radky.length-1];
+  // Snímek o rok dřív; když přesně nesedí (chybí prosinec 2022), vezme se
+  // nejbližší starší, aby se roční změna nepočítala z ničeho.
+  const cilem=mesicPosun(pos.datum,-12);
+  const predRokem=[...radky].reverse().find(r=>r.datum.slice(0,7)<=cilem);
+  const rocni=predRokem?pos.ciste-predRokem.ciste:null;
+
+  karty.innerHTML=`
+    <div class="card accent"><div class="card-label">Čisté jmění</div>
+      <div class="card-value" style="color:${pos.ciste>=0?'var(--green)':'var(--red)'}">${fmt(pos.ciste)}</div>
+      <div class="card-sub">snímek ${esc(pos.datum)}</div></div>
+    <div class="card ${rocni>=0?'accent':'danger'}"><div class="card-label">Změna za 12 měsíců</div>
+      <div class="card-value" style="color:${rocni>=0?'var(--green)':'var(--red)'}">${rocni==null?'—':fmtZn(rocni)}</div>
+      <div class="card-sub">${predRokem?'proti '+esc(predRokem.datum):'není s čím srovnat'}</div></div>
+    <div class="card info"><div class="card-label">Spoření</div>
+      <div class="card-value">${fmt(pos.aktiva)}</div>
+      <div class="card-sub">penzijko ${fmt(pos.penzijko)} · UNIQUA ${fmt(pos.uniqua)}</div></div>
+    <div class="card danger"><div class="card-label">Závazky</div>
+      <div class="card-value" style="color:var(--red)">${fmt(Math.abs(pos.zavazky))}</div>
+      <div class="card-sub">hypotéka ${fmt(Math.abs(pos.hypoteka))} · půjčky ${fmt(Math.abs(pos.pujcky))}</div></div>`;
+
+  document.getElementById('sporeni-graf').innerHTML=sporeniGraf(radky);
+
+  const c=n=>n==null?'—':Math.round(n).toLocaleString('cs-CZ');
+  document.getElementById('sporeni-table').innerHTML=
+    `<thead><tr><th class="kat">Snímek</th><th class="right">Penzijko</th><th class="right">UNIQUA</th>
+      <th class="right">Amundi</th><th class="right">aktiva</th><th class="right plan">Garant</th>
+      <th class="right plan">Hypotéka</th><th class="right plan">Půjčky</th><th class="right">závazky</th>
+      <th class="right">čisté jmění</th><th class="right">změna</th><th class="right plan">Áčkarta</th>
+      <th class="right plan">Účet</th><th class="right">cashflow</th></tr></thead><tbody>`
+    + radky.slice().reverse().map(r=>
+      `<tr><td class="kat">${esc(r.datum)}`
+      + (r.projekce?' <span class="projekce">odhad</span>':'')
+      + (r.mezera?` <span class="mezera" title="předchozí snímek není o měsíc dřív — změna je za delší období">\u26a0</span>`:'')
+      + `</td>`
+      + `<td class="hodnota">${c(r.penzijko)}</td><td class="hodnota">${c(r.uniqua)}</td>`
+      + `<td class="hodnota">${c(r.amundi)}</td><td class="hodnota">${c(r.aktiva)}</td>`
+      + `<td class="hodnota plan">${c(r.garant)}</td><td class="hodnota plan">${c(r.hypoteka)}</td>`
+      + `<td class="hodnota plan">${c(r.pujcky)}</td><td class="hodnota">${c(r.zavazky)}</td>`
+      + `<td class="hodnota ${r.ciste>=0?'diff-ok':'diff-over'}">${c(r.ciste)}</td>`
+      + `<td class="hodnota ${r.zmena==null?'diff-none':(r.zmena>=0?'diff-ok':'diff-over')}">`
+      +   `${r.zmena==null?'—':fmtZnM(r.zmena)}</td>`
+      + `<td class="hodnota plan">${c(r.akarta)}</td><td class="hodnota plan">${c(r.ucet)}</td>`
+      + `<td class="hodnota">${c(r.cashflow)}</td></tr>`).join('')
+    + '</tbody>';
+}
+
 function renderZaznamy(){
   const f=(document.getElementById('z-filtr')||{}).value||'vse';
   const mz=mZaz().filter(z=>f==='vse'?true:f==='pravidelne'?z.pravidelna:(f==='plan')===jePlan(z))
@@ -1403,11 +1563,12 @@ async function init(){
     penezenky=w||[];osnova=o||[];
     // záznamů je přes 22 tisíc, takže stránkovaně a s rozstřelem podle id
     zaznamy=await apiAll('zaznamy','select=*&order=datum.desc,id.desc','záznamy');
-    const [od,ce]=await Promise.all([
+    const [od,ce,sp]=await Promise.all([
       apiAll('energie_odecty','select=*&order=datum.asc,zdroj_radek.asc'),
-      api('energie_cenik','GET',null,'select=*&order=platnost_od.asc')
+      api('energie_cenik','GET',null,'select=*&order=platnost_od.asc'),
+      apiAll('sporeni','select=*&order=datum.asc')
     ]);
-    odecty=od||[];cenik=ce||[];
+    odecty=od||[];cenik=ce||[];sporeni=sp||[];
     document.getElementById('loading').style.display='none';
     document.getElementById('z-datum').value=new Date().toISOString().split('T')[0];
     selectedColor=COLORS[0];

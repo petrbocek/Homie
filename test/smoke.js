@@ -55,6 +55,22 @@ const DB={
     {id:4,datum:'2026-04-30',voda:'12.00',t1:'1150.00',t2:'5600.00',
      vymena_vodomer:false,vymena_elektromer:false,poznamka:null,zdroj_radek:5},
   ],
+  // Snímky čistého jmění (#10). Mezi 2021-02 a 2021-04 schválně chybí měsíc —
+  // v reálných datech chybí prosinec 2022 a změna je pak za dvě období.
+  sporeni:[
+    {id:1,datum:'2021-01-01',penzijko:'100000.00',uniqua:'200000.00',amundi:'300000.00',
+     garant:'0.00',hypoteka:'-2000000.00',pujcky:'-100000.00',
+     akarta:null,ucet:null,rezerva:null,projekce:false,poznamka:null,zdroj_radek:2},
+    {id:2,datum:'2021-02-01',penzijko:'110000.00',uniqua:'210000.00',amundi:'310000.00',
+     garant:'0.00',hypoteka:'-1990000.00',pujcky:'-95000.00',
+     akarta:'5000.00',ucet:'45000.00',rezerva:'20000.00',projekce:false,poznamka:null,zdroj_radek:3},
+    {id:3,datum:'2021-04-01',penzijko:'120000.00',uniqua:'220000.00',amundi:'320000.00',
+     garant:'0.00',hypoteka:'-1980000.00',pujcky:'-90000.00',
+     akarta:'1000.00',ucet:'29000.00',rezerva:'20000.00',projekce:false,poznamka:null,zdroj_radek:4},
+    {id:4,datum:'2021-05-01',penzijko:'130000.00',uniqua:'230000.00',amundi:'330000.00',
+     garant:'0.00',hypoteka:'-1970000.00',pujcky:'-85000.00',
+     akarta:'0.00',ucet:'40000.00',rezerva:'20000.00',projekce:true,poznamka:null,zdroj_radek:5},
+  ],
   // Druhé období je dávno skončené a nese HTML v datu „do" — nesmí se
   // vyrenderovat jako kód a nesmí se vybrat pro odečty z roku 2026.
   energie_cenik:[
@@ -424,7 +440,75 @@ check('HTML v ceníku se vypíše jako text',
 const egraf=await pg.evaluate(()=>document.querySelectorAll('#energie-graf .bar-col').length);
 check('graf má sloupec za každý měsíc',egraf===4,String(egraf));
 
-console.log('\n== 16. stránkování: víc záznamů než strop PostgRESTu ==');
+console.log('\n== 16. spoření: čisté jmění, změna, projekce (#10) ==');
+await pg.click('.tab:text-is("Spoření")'); await pg.waitForTimeout(300);
+check('záložka Spoření je vidět',await pg.isVisible('#view-sporeni'));
+check('prázdný stav se neukazuje',!(await pg.isVisible('#sporeni-empty')));
+
+const sp=await pg.evaluate(()=>{
+  const r={};
+  for(const tr of document.querySelectorAll('#sporeni-table tbody tr')){
+    const td=[...tr.children].map(x=>x.textContent.replace(/[\s\u00a0\u202f]+/g,' ').trim());
+    r[td[0].slice(0,10)]=td;
+  }
+  return r;
+});
+// 2021-02: aktiva 110+210+310 = 630 000, závazky −2 085 000 → čisté −1 455 000
+// změna proti lednu (−1 500 000) = +45 000; cashflow 5 000 + 45 000 − 20 000 = 30 000
+check('aktiva jsou součet tří položek (630 000)',
+  sp['2021-02-01'] && sp['2021-02-01'][4]==='630 000',JSON.stringify(sp['2021-02-01']));
+check('závazky jsou součet tří položek (−2 085 000)',
+  sp['2021-02-01'] && /^[-−]2 085 000$/.test(sp['2021-02-01'][8]),JSON.stringify(sp['2021-02-01']));
+check('čisté jmění = aktiva + závazky (−1 455 000)',
+  sp['2021-02-01'] && /^[-−]1 455 000$/.test(sp['2021-02-01'][9]),JSON.stringify(sp['2021-02-01']));
+check('změna proti předchozímu snímku (+45 000)',
+  sp['2021-02-01'] && sp['2021-02-01'][10]==='+45 000',JSON.stringify(sp['2021-02-01']));
+check('cashflow = Áčkarta + Účet − rezerva (30 000)',
+  sp['2021-02-01'] && sp['2021-02-01'][13]==='30 000',JSON.stringify(sp['2021-02-01']));
+check('první snímek nemá s čím srovnat',
+  sp['2021-01-01'] && sp['2021-01-01'][10]==='—',JSON.stringify(sp['2021-01-01']));
+check('bez zůstatků zůstane cashflow prázdný, ne nula',
+  sp['2021-01-01'] && sp['2021-01-01'][13]==='—',JSON.stringify(sp['2021-01-01']));
+// Mezi únorem a dubnem chybí březen — změna je za dva měsíce a musí to být vidět.
+check('díra v řadě je na řádku označená',
+  sp['2021-04-01'] && /\u26a0/.test(sp['2021-04-01'][0]),JSON.stringify(sp['2021-04-01']));
+check('měsíc bez díry označený není',
+  sp['2021-02-01'] && !/\u26a0/.test(sp['2021-02-01'][0]),JSON.stringify(sp['2021-02-01']));
+check('projekce je odlišená od skutečnosti',
+  sp['2021-05-01'] && /odhad/.test(sp['2021-05-01'][0]),JSON.stringify(sp['2021-05-01']));
+check('skutečné snímky se za projekci nevydávají',
+  sp['2021-04-01'] && !/odhad/.test(sp['2021-04-01'][0]),JSON.stringify(sp['2021-04-01']));
+
+// Stejná past jako u Energie: .badge se v .rok-table pod 640 px schovává a
+// „tohle je odhad, ne skutečnost" je přesně to, co zmizet nesmí.
+await pg.setViewportSize({width:390,height:800}); await pg.waitForTimeout(200);
+check('označení projekce je vidět i na mobilu',
+  await pg.isVisible('#sporeni-table .projekce'));
+await pg.setViewportSize({width:1280,height:720}); await pg.waitForTimeout(200);
+
+const skarty=txt(await pg.textContent('#sporeni-karty'));
+// Karty berou poslední SKUTEČNÝ snímek (2021-04), ne projekci (2021-05).
+check('karta čistého jmění bere poslední skutečný snímek',
+  skarty.includes('2021-04-01')&&skarty.includes('1 410 000'),skarty);
+check('karta nepočítá s projekcí',!skarty.includes('2021-05-01'),skarty);
+check('karta spoření sečte aktiva (660 000)',skarty.includes('660 000 Kč'),skarty);
+check('karta závazků ukazuje kladné číslo (2 070 000)',skarty.includes('2 070 000 Kč'),skarty);
+
+const graf=await pg.evaluate(()=>{
+  const sv=document.querySelector('#sporeni-graf svg');
+  if(!sv)return null;
+  return [...sv.querySelectorAll('polyline')].map(p=>({
+    body:p.getAttribute('points').trim().split(/\s+/).length,
+    carkovana:!!p.getAttribute('stroke-dasharray')}));
+});
+check('graf je spojnice, ne sloupce',graf&&graf.length===2,JSON.stringify(graf));
+check('skutečnost je plná čára přes tři body',
+  graf&&graf[0].body===3&&!graf[0].carkovana,JSON.stringify(graf));
+// Projekce musí začít v posledním skutečném bodě, jinak je v čáře díra.
+check('projekce je čárkovaná a navazuje na skutečnost',
+  graf&&graf[1].body===2&&graf[1].carkovana,JSON.stringify(graf));
+
+console.log('\n== 17. stránkování: víc záznamů než strop PostgRESTu ==');
 // Po importu historie má tabulka 22 tisíc řádků. Jeden GET by vrátil jen
 // prvních MAX_ROWS a appka by tiše počítala s osekanými daty, takže tohle
 // hlídá, že se dotahují všechny stránky.

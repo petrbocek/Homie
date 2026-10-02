@@ -167,6 +167,38 @@ CREATE UNIQUE INDEX IF NOT EXISTS energie_odecty_zdroj_uniq ON energie_odecty(zd
   WHERE zdroj_radek IS NOT NULL;
 
 -- ============================================================
+-- SPOŘENÍ (#10) – měsíční snímek majetku a závazků z listu „Sporeni".
+-- Jiná agenda než deník: ten sleduje tok, tohle stav k prvnímu dni měsíce.
+-- Uloženy jsou jen vstupy; čisté jmění, změna a cashflow se dopočítávají
+-- v appce, stejně jako v sheetu, kde to jsou taky jen vzorce.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sporeni (
+  id          BIGSERIAL PRIMARY KEY,
+  datum       DATE NOT NULL UNIQUE,     -- snímek k prvnímu dni měsíce
+  -- aktiva
+  penzijko    NUMERIC(14,2) NOT NULL DEFAULT 0,
+  uniqua      NUMERIC(14,2) NOT NULL DEFAULT 0,
+  amundi      NUMERIC(14,2) NOT NULL DEFAULT 0,
+  -- závazky, ukládají se záporně (tak jsou i v sheetu)
+  garant      NUMERIC(14,2) NOT NULL DEFAULT 0,
+  hypoteka    NUMERIC(14,2) NOT NULL DEFAULT 0,
+  pujcky      NUMERIC(14,2) NOT NULL DEFAULT 0,
+  -- zůstatky; NULL = v daném snímku se ještě nesledovaly (před 1/2023)
+  akarta      NUMERIC(14,2),
+  ucet        NUMERIC(14,2),
+  -- Rezerva, kterou si sheet drží bokem: cashflow = akarta + ucet − rezerva.
+  -- V sheetu není sloupcem, je dopočtená z „Available balance" a „Cashflow";
+  -- její výše se v čase měnila (70 000 → 10 000 → 50 000 Kč).
+  rezerva     NUMERIC(14,2),
+  projekce    BOOLEAN NOT NULL DEFAULT FALSE,   -- dopředný odhad, ne skutečnost
+  poznamka    TEXT,
+  zdroj_radek INTEGER,
+  created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_sporeni_datum ON sporeni(datum);
+
+-- ============================================================
 -- RLS – přístup má jen přihlášený uživatel (role `authenticated`).
 -- Role `anon` (klíč zapečený v index.html) nemá k datům nic.
 -- ============================================================
@@ -175,6 +207,7 @@ ALTER TABLE penezenky ENABLE ROW LEVEL SECURITY;
 ALTER TABLE zaznamy   ENABLE ROW LEVEL SECURITY;
 ALTER TABLE energie_odecty ENABLE ROW LEVEL SECURITY;
 ALTER TABLE energie_cenik  ENABLE ROW LEVEL SECURITY;
+ALTER TABLE sporeni        ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "anon_all" ON osnova;
 DROP POLICY IF EXISTS "anon_all" ON penezenky;
@@ -185,12 +218,14 @@ DROP POLICY IF EXISTS "auth_all" ON penezenky;
 DROP POLICY IF EXISTS "auth_all" ON zaznamy;
 DROP POLICY IF EXISTS "auth_all" ON energie_odecty;
 DROP POLICY IF EXISTS "auth_all" ON energie_cenik;
+DROP POLICY IF EXISTS "auth_all" ON sporeni;
 
 CREATE POLICY "auth_all" ON osnova    FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "auth_all" ON penezenky FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "auth_all" ON zaznamy   FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "auth_all" ON energie_odecty FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "auth_all" ON energie_cenik  FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_all" ON sporeni        FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- ============================================================
 -- Výchozí peněženky (podle hodnot „Typ placeni" v deníku).
