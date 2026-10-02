@@ -42,6 +42,27 @@ projít výstupem modelu. Dají se také pustit ručně:
 cat out/cast-*.sql | psql "$CONNECTION_STRING"     # connection string z dashboardu
 ```
 
+## najdi-prevody.sql — označení převodů mezi peněženkami
+
+Splátka kreditky ani výběr z bankomatu nejsou výdaj domácnosti, ale v deníku
+sedí jako obyčejný řádek a nafukují součty výdajů (issue #11). Skript spáruje
+obě nohy převodu přes `zaznamy.prevod_skupina`:
+
+```
+psql "$CONNECTION_STRING" -f tools/najdi-prevody.sql
+```
+
+Je idempotentní a **záměrně konzervativní** — co nejde spárovat jistě, zůstane
+neoznačené. Kotvou je příjem na peněžence, na kterou příjem domácnosti nechodí
+(na kreditku nikomu nechodí mzda); protinoha se hledá jako výdaj z Účtu na
+stejnou částku do 7 dnů, a `kde` musí být banka nebo cílová peněženka. Bez té
+poslední podmínky vznikaly nesmysly: platba O2 za internet 500 Kč se spárovala
+s výběrem 500 Kč z bankomatu.
+
+Na naimportované historii označil 421 nohou ve 228 skupinách, z toho 35 skupin
+má jen jednu nohu (protinoha se nenašla — buď se nikdy nezapsala, nebo má jinou
+částku či datum).
+
 ## Vstup
 
 Buď **CSV** stažené z listu `Odpovědi formuláře 1` (File → Download →

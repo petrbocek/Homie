@@ -28,7 +28,8 @@ const DB={
     {id:10,nazev:'Ostatni',parent_id:null,typ:'vydaj',kod:'10',poradi:2},
   ],
   penezenky:[{id:1,nazev:'Ucet <img src=x onerror=alert(2)>',pocatecni_zustatek:'10000.00',
-              barva:'red;background:url(javascript:alert(3))'}],
+              barva:'red;background:url(javascript:alert(3))'},
+             {id:2,nazev:'Kreditka',pocatecni_zustatek:'0.00',barva:'#f0a860'}],
   zaznamy:[
     {id:100,datum:d(3),castka:'90000.00',typ:'prijem',typ_polozky:'skutecnost',kategorie_id:11,kde:'Demos',poznamka:null,penezenka_id:1},
     {id:101,datum:d(5),castka:'1200.00',typ:'vydaj',typ_polozky:'skutecnost',kategorie_id:91,kde:'Albert & <i>spol</i>',poznamka:'pozn "x" <hr>',penezenka_id:1},
@@ -41,6 +42,12 @@ const DB={
     // a mimo aktuální měsíc, ať to nerozhodí oddíly počítané po měsíci.
     {id:103,datum:d2(10),castka:'4000.00',typ:'vydaj',typ_polozky:'skutecnost',kategorie_id:10,kde:'Přetah',poznamka:null,penezenka_id:null},
     {id:203,datum:d2(12),castka:'1000.00',typ:'vydaj',typ_polozky:'plan',kategorie_id:10,kde:'Přetah plán',poznamka:null,penezenka_id:null},
+    // Převod: splátka kreditky 2 000 Kč z Účtu. Obě nohy mají stejnou skupinu.
+    // Do výdajů ani příjmů měsíce se počítat nesmí, do zůstatků peněženek ano.
+    {id:300,datum:d(7),castka:'2000.00',typ:'vydaj',typ_polozky:'skutecnost',kategorie_id:10,
+     kde:'Kreditka',poznamka:'splátka',penezenka_id:1,prevod_skupina:'u-test'},
+    {id:301,datum:d(7),castka:'2000.00',typ:'prijem',typ_polozky:'skutecnost',kategorie_id:10,
+     kde:'Ucet',poznamka:'splátka',penezenka_id:2,prevod_skupina:'u-test'},
   ],
   // Odečty měřidel (#9). Datumy jsou schválně fixní — záložka Energie se
   // neváže na aktuální měsíc, bere posledních N odečtů. Třetí řádek je výměna
@@ -187,19 +194,22 @@ console.log('\n== 6. Záznamy: odznak a filtr ==');
 await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
 check('kde/poznámka jako text',(await pg.textContent('#zaznamy-table')).includes('Albert & <i>spol</i>'));
 check('žádný <i> ze záznamu',(await pg.locator('#zaznamy-table i').count())===0);
-check('výchozí Vše = 6 řádků',(await pg.locator('#zaznamy-table tr').count())===6);
+check('výchozí Vše = 8 řádků',(await pg.locator('#zaznamy-table tr').count())===8);
 check('3 odznaky plán',(await pg.locator('#zaznamy-table .badge-plan').count())===3);
 await pg.selectOption('#z-filtr','skutecnost'); await pg.waitForTimeout(200);
-check('filtr skutečnost = 3 řádky bez odznaku',
-  (await pg.locator('#zaznamy-table tr').count())===3&&(await pg.locator('#zaznamy-table .badge-plan').count())===0);
+check('filtr skutečnost = 5 řádků bez odznaku',
+  (await pg.locator('#zaznamy-table tr').count())===5&&(await pg.locator('#zaznamy-table .badge-plan').count())===0);
 await pg.selectOption('#z-filtr','plan'); await pg.waitForTimeout(200);
 check('filtr plán = 3 řádky s odznakem',
   (await pg.locator('#zaznamy-table tr').count())===3&&(await pg.locator('#zaznamy-table .badge-plan').count())===3);
+await pg.selectOption('#z-filtr','prevody'); await pg.waitForTimeout(200);
+check('filtr převody = obě nohy jednoho převodu',
+  (await pg.locator('#zaznamy-table tr').count())===2&&(await pg.locator('#zaznamy-table .prevod').count())===2);
 await pg.selectOption('#z-filtr','vse'); await pg.waitForTimeout(200);
 
 console.log('\n== 7. editace peněženky ==');
 await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
-check('tlačítko upravit existuje',(await pg.locator('#penezenky-list .edit-btn').count())===1);
+check('tlačítko upravit u každé peněženky',(await pg.locator('#penezenky-list .edit-btn').count())===2);
 await pg.click('#penezenky-list .edit-btn'); await pg.waitForTimeout(300);
 check('zůstatek předplněn',(await pg.inputValue('#w-zustatek'))==='10000.00');
 check('titulek = Upravit peněženku',(await pg.textContent('#form-penezenka-title'))==='Upravit peněženku');
@@ -292,14 +302,16 @@ const zu=await pg.evaluate(()=>{
     celkem:radek(document.querySelector('#zustatky-table tr.soucet')),
   };
 });
-check('řádek na každou peněženku',zu.radky.length===1,JSON.stringify(zu.radky));
+check('řádek na každou peněženku',zu.radky.length===2,JSON.stringify(zu.radky));
 // Invarianty, ne konkrétní čísla: mock datuje záznamy dny v aktuálním měsíci,
 // takže „je to v budoucnu" závisí na tom, kolikátého test běží.
 check('zůstatek = počáteční + pohyby',zu.radky.every(r=>r.zust===r.poc+r.pohyby),JSON.stringify(zu.radky));
 check('výhled = zůstatek + plán dopředu',zu.radky.every(r=>r.vyhled===r.zust+r.plan),JSON.stringify(zu.radky));
 check('součtový řádek sedí',zu.celkem.zust===zu.radky.reduce((a,r)=>a+r.zust,0)
   &&zu.celkem.vyhled===zu.celkem.zust+zu.celkem.plan,JSON.stringify(zu.celkem));
-check('zůstatek Účtu je 98 000 (plán se nepočítá)',zu.radky[0].zust===98000,JSON.stringify(zu.radky[0]));
+// 10 000 + 90 000 − 1 200 − 800 − 2 000 (odchozí noha převodu)
+check('zůstatek Účtu je 96 000 (plán ne, převod ano)',zu.radky[0].zust===96000,JSON.stringify(zu.radky[0]));
+check('příchozí noha převodu je na cílové peněžence (2 000)',zu.radky[1].zust===2000,JSON.stringify(zu.radky[1]));
 const zpozn=txt(await pg.textContent('#zustatky-pozn'));
 check('poznámka vysvětluje vztah k Pivotu',zpozn.includes('Pivot'),zpozn);
 check('poznámka vysvětluje zaplaceno dopředu',/zaplaceno dopředu/.test(zpozn),zpozn);
@@ -508,7 +520,78 @@ check('skutečnost je plná čára přes tři body',
 check('projekce je čárkovaná a navazuje na skutečnost',
   graf&&graf[1].body===2&&graf[1].carkovana,JSON.stringify(graf));
 
-console.log('\n== 17. stránkování: víc záznamů než strop PostgRESTu ==');
+console.log('\n== 17. převody mezi peněženkami (#11) ==');
+await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
+const pr=await pg.evaluate(()=>{
+  const c=s=>{const t=(document.getElementById(s)||{}).textContent||'';
+    const v=t.replace(/[^\d-]/g,'');return v?parseInt(v,10):null;};
+  return {vydaje:c('sum-vydaje'),prijmy:c('sum-prijmy'),zustatek:c('sum-zustatek'),
+          mand:(document.getElementById('sum-vydaje-mand')||{}).textContent||''};
+});
+// Skutečné výdaje měsíce jsou 1 200 + 800. Odchozí noha převodu (2 000) se
+// nepočítá — kdyby ano, vyšlo by 4 000 a podíl mandatorních by spadl na půlku.
+check('odchozí noha převodu není výdaj (2 000, ne 4 000)',pr.vydaje===2000,JSON.stringify(pr));
+// Příjem měsíce je mzda 90 000. Příchozí noha (2 000) není příjem domácnosti.
+check('příchozí noha převodu není příjem (90 000, ne 92 000)',pr.prijmy===90000,JSON.stringify(pr));
+// Zůstatek naopak obě nohy počítá: 10 000 + 90 000 − 1 200 − 800 − 2 000 + 2 000.
+check('zůstatek obě nohy započítá (98 000)',pr.zustatek===98000,JSON.stringify(pr));
+// 800 z 2 000 je 40 %; se započítaným převodem by to bylo 20 %.
+check('podíl mandatorních se počítá z výdajů bez převodů (40 %)',
+  /40 % výdajů/.test(pr.mand),pr.mand);
+
+await pg.click('.tab:text-is("Rok")'); await pg.waitForTimeout(400);
+const rokPrevod=await pg.evaluate(()=>{
+  const tr=document.querySelector('#rok-table tr.soucet');
+  return tr?[...tr.children].map(x=>x.textContent.replace(/[\s\u00a0\u202f]+/g,' ').trim()):null;
+});
+// Buňka aktuálního měsíce: sloupec 0 je kategorie, pak 12× dvojice plán|skut.
+// 90 000 − 1 200 − 800 = 88 000. S převodem by to bylo 86 000 a v rozpadu po
+// kategoriích by u Ostatni seděly 2 000 navíc; obě nohy by se v součtu
+// vyrušily, takže na celkovém čísle by to nebylo vidět.
+const mIdx=new Date().getMonth();
+check('matice Rok převod ignoruje (88 000 za aktuální měsíc)',
+  rokPrevod&&rokPrevod[2+2*mIdx]==='88 000',JSON.stringify(rokPrevod&&rokPrevod[2+2*mIdx]));
+const katOstatni=await pg.evaluate(()=>{
+  for(const tr of document.querySelectorAll('#rok-table tbody tr')){
+    if(tr.children[0].textContent.includes('Ostatni'))
+      return [...tr.children].map(x=>x.textContent.replace(/[\s\u00a0\u202f]+/g,' ').trim());
+  }
+  return null;
+});
+check('kategorie převodu nesebrala jeho částku',
+  katOstatni&&!katOstatni.some(v=>v==='-2 800'||v==='−2 800'),JSON.stringify(katOstatni));
+
+// Zápis převodu: dvě nohy, jedna skupina, obě bez kategorie.
+await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
+calls.length=0;
+await pg.selectOption('#pr-z','1'); await pg.selectOption('#pr-do','2');
+await pg.fill('#pr-castka','1500'); await pg.fill('#pr-datum',d(9));
+await pg.fill('#pr-pozn','test převod');
+await pg.click('#btn-prevod'); await pg.waitForTimeout(500);
+const postPr=calls.find(c=>c.method==='POST'&&c.url.includes('/rest/v1/zaznamy'));
+const telo=postPr?JSON.parse(postPr.body):null;
+check('převod posílá dvě nohy najednou',Array.isArray(telo)&&telo.length===2,JSON.stringify(telo));
+check('nohy mají opačný typ',telo&&telo[0].typ==='vydaj'&&telo[1].typ==='prijem',JSON.stringify(telo));
+check('nohy jsou na různých peněženkách',telo&&telo[0].penezenka_id===1&&telo[1].penezenka_id===2,
+  JSON.stringify(telo));
+check('nohy sdílí jednu skupinu',telo&&telo[0].prevod_skupina&&telo[0].prevod_skupina===telo[1].prevod_skupina,
+  JSON.stringify(telo));
+check('převod nedostane kategorii',telo&&telo[0].kategorie_id===null&&telo[1].kategorie_id===null,
+  JSON.stringify(telo));
+
+// Pojistky ve formuláři. Stejná peněženka na obou stranách není převod.
+calls.length=0;
+await pg.selectOption('#pr-do','1'); await pg.fill('#pr-castka','100');
+await pg.click('#btn-prevod'); await pg.waitForTimeout(300);
+check('převod na sebe sama neprojde',
+  !calls.some(c=>c.method==='POST'),calls.map(c=>c.method+' '+c.url).join(' | '));
+await pg.selectOption('#pr-do','2'); await pg.fill('#pr-castka','-50');
+await pg.click('#btn-prevod'); await pg.waitForTimeout(300);
+check('záporná částka neprojde',
+  !calls.some(c=>c.method==='POST'),calls.map(c=>c.method+' '+c.url).join(' | '));
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
+
+console.log('\n== 18. stránkování: víc záznamů než strop PostgRESTu ==');
 // Po importu historie má tabulka 22 tisíc řádků. Jeden GET by vrátil jen
 // prvních MAX_ROWS a appka by tiše počítala s osekanými daty, takže tohle
 // hlídá, že se dotahují všechny stránky.

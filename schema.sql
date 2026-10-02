@@ -76,8 +76,12 @@ CREATE TABLE IF NOT EXISTS zaznamy (
                                               -- (zpětné zápisy), proto ne created_at
   potvrzeno       BOOLEAN NOT NULL DEFAULT FALSE,
   prevod_skupina  TEXT,                       -- páruje obě nohy převodu mezi
-                                              -- peněženkami, aby šly vyloučit
-                                              -- ze součtů za kategorii
+                                              -- peněženkami (#11): vyloučeno
+                                              -- ze součtů příjmů a výdajů,
+                                              -- započítáno v zůstatcích.
+                                              -- Skupina s jednou nohou = druhá
+                                              -- se nenašla, viz
+                                              -- tools/najdi-prevody.sql
   pravidelna      BOOLEAN NOT NULL DEFAULT FALSE,  -- mandatorní pravidelná
                                               -- platba (hypotéka, zálohy,
                                               -- pojistky, investice) – výdaj,

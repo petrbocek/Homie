@@ -83,6 +83,8 @@
   .rok-sipka{display:inline-block;width:12px;color:var(--muted);font-size:9px;}
   .rok-pozn{font-size:10px;color:var(--muted);margin-top:-14px;margin-bottom:24px;}
   .badge-pravidelna{background:rgba(96,200,240,0.15);color:var(--accent2);}
+  /* Značka převodu. Ne .badge — ten se v tabulkách na mobilu schovává. */
+  .prevod{color:var(--accent4);cursor:help;font-family:'DM Mono',monospace;font-weight:700;}
   .rok-table td.rozdil{font-family:'DM Mono',monospace;text-align:right;opacity:0.85;}
   /* Na mobilu sežere přilepený sloupec s kategorií většinu šířky a na měsíce
      nezbyde místo, tak ho zúžíme, ořízneme názvy a odznak typu schováme —
@@ -401,6 +403,9 @@
       Výdaje jsou se znaménkem mínus, stejně jako v listu <span class="mono">Pivot</span>.
       Červeně, kde skutečnost zaostala za plánem — u výdajů překročení, u příjmů nedotažení.
       Kliknutím na kategorii se rozbalí podkategorie (vyplňují se od 1/2026).
+      <strong>Převody mezi peněženkami</strong> (splátka kreditky, výběr z bankomatu)
+      se sem nepočítají — nejsou to peníze, které by z domácnosti odešly. V zůstatcích
+      peněženek naopak jsou, tam je přesun z kapsy do kapsy správně.
     </div>
 
     <div id="rok-souhrn-blok">
@@ -454,6 +459,7 @@
             <option value="skutecnost">Jen skutečnost</option>
             <option value="plan">Jen plán</option>
             <option value="pravidelne">Jen pravidelné</option>
+            <option value="prevody">Jen převody</option>
           </select>
         </div>
         <div style="overflow-x:auto">
@@ -486,6 +492,18 @@
         </div>
         <button class="btn" id="btn-penezenka" onclick="savePenezenka()">+ Přidat peněženku</button>
         <button class="btn secondary" id="btn-cancel-penezenka" onclick="cancelEditPenezenka()" style="display:none;margin-top:6px">Zrušit úpravy</button>
+
+        <div class="form-title" style="margin-top:26px">Převod mezi peněženkami</div>
+        <div class="field"><label>Z peněženky</label><select id="pr-z"></select></div>
+        <div class="field"><label>Do peněženky</label><select id="pr-do"></select></div>
+        <div class="field"><label>Částka (Kč)</label><input id="pr-castka" type="number" placeholder="0" step="0.01"></div>
+        <div class="field"><label>Datum</label><input id="pr-datum" type="date"></div>
+        <div class="field"><label>Poznámka</label><input id="pr-pozn" type="text" placeholder="např. splátka kreditky"></div>
+        <button class="btn" id="btn-prevod" onclick="savePrevod()">⇄ Zapsat převod</button>
+        <div class="rok-pozn" style="margin-top:10px">
+          Zapíše dva spárované záznamy — odchozí a příchozí. Do zůstatků peněženek
+          se promítne, do součtů příjmů a výdajů ne.
+        </div>
       </div>
       <div>
         <div class="section-title">Zůstatky</div>
@@ -576,8 +594,12 @@ function polozek(n){return n+'\u00a0'+(n===1?'položka':(n>=2&&n<=4?'položky':'
 function mKey(){return `${cY}-${String(cM+1).padStart(2,'0')}`;}
 function mZaz(){const k=mKey();return zaznamy.filter(z=>z.datum&&z.datum.startsWith(k));}
 function jePlan(z){return z.typ_polozky==='plan';}
-function mSkut(){return mZaz().filter(z=>!jePlan(z));}   // skutečnost za měsíc
-function mPlan(){return mZaz().filter(jePlan);}          // plán za měsíc
+// Převod mezi peněženkami. Není to tok peněz z/do domácnosti, jen přesun
+// mezi kapsami — do součtů příjmů a výdajů nepatří. Do zůstatků peněženek
+// naopak ano: tam je odečet na jedné straně a přičtení na druhé správně.
+function jePrevod(z){return !!z.prevod_skupina;}
+function mSkut(){return mZaz().filter(z=>!jePlan(z)&&!jePrevod(z));}  // skutečnost za měsíc
+function mPlan(){return mZaz().filter(z=>jePlan(z)&&!jePrevod(z));}   // plán za měsíc
 
 function syncSt(s){
   document.getElementById('sync-dot').className='sync-dot'+(s==='syncing'?' syncing':s==='error'?' error':'');
@@ -841,7 +863,10 @@ function navrhniPravidelnou(){
 }
 
 function updateWalletSelect(){
-  document.getElementById('z-penezenka').innerHTML='<option value="">— vybrat —</option>'+penezenky.map(w=>`<option value="${w.id}">${esc(w.nazev)}</option>`).join('');
+  const volby=penezenky.map(w=>`<option value="${w.id}">${esc(w.nazev)}</option>`).join('');
+  document.getElementById('z-penezenka').innerHTML='<option value="">— vybrat —</option>'+volby;
+  document.getElementById('pr-z').innerHTML='<option value="">— vybrat —</option>'+volby;
+  document.getElementById('pr-do').innerHTML='<option value="">— vybrat —</option>'+volby;
 }
 function updateOsnovaForm(){
   const uroven=document.getElementById('o-uroven').value;
@@ -909,7 +934,7 @@ function renderPrehled(){
   }).join('');
 
   const months=[];
-  for(let i=5;i>=0;i--){let m=cM-i,y=cY;if(m<0){m+=12;y--;}const kk=`${y}-${String(m+1).padStart(2,'0')}`;months.push({label:MONTHS_SHORT[m],total:zaznamy.filter(z=>z.typ==='vydaj'&&!jePlan(z)&&z.datum&&z.datum.startsWith(kk)).reduce((s,z)=>s+Number(z.castka),0)});}
+  for(let i=5;i>=0;i--){let m=cM-i,y=cY;if(m<0){m+=12;y--;}const kk=`${y}-${String(m+1).padStart(2,'0')}`;months.push({label:MONTHS_SHORT[m],total:zaznamy.filter(z=>z.typ==='vydaj'&&!jePlan(z)&&!jePrevod(z)&&z.datum&&z.datum.startsWith(kk)).reduce((s,z)=>s+Number(z.castka),0)});}
   const max=Math.max(...months.map(m=>m.total),1);
   document.getElementById('trend-chart').innerHTML=months.map((m,i)=>`<div class="bar-col"><div class="bar-col-val">${m.total?Math.round(m.total/1000)+'k':''}</div><div class="bar-col-bar" style="height:${Math.round(m.total/max*90)+4}px;background:${i===5?'var(--accent)':'var(--surface2)'}"></div><div class="bar-col-label">${m.label}</div></div>`).join('');
 }
@@ -1020,6 +1045,7 @@ function renderRok(skocNaDnes=false){
   let maData=false;
   for(const z of zaznamy){
     if(!z.datum||!z.datum.startsWith(rok+'-'))continue;
+    if(jePrevod(z))continue;   // přesun mezi kapsami, ne tok domácnosti
     const m=parseInt(z.datum.slice(5,7),10)-1;
     if(!(m>=0&&m<=11))continue;
     maData=true;
@@ -1286,7 +1312,8 @@ function renderSporeni(){
 
 function renderZaznamy(){
   const f=(document.getElementById('z-filtr')||{}).value||'vse';
-  const mz=mZaz().filter(z=>f==='vse'?true:f==='pravidelne'?z.pravidelna:(f==='plan')===jePlan(z))
+  const mz=mZaz().filter(z=>f==='vse'?true:f==='pravidelne'?z.pravidelna
+                          :f==='prevody'?jePrevod(z):(f==='plan')===jePlan(z))
                  .sort((a,b)=>b.datum.localeCompare(a.datum));
   const tbody=document.getElementById('zaznamy-table');
   const empty=document.getElementById('zaznamy-empty');
@@ -1298,7 +1325,7 @@ function renderZaznamy(){
     const pozn=z.poznamka?`<div style="font-size:10px;color:var(--muted);margin-top:2px">${esc(z.poznamka)}</div>`:'';
     const wColor=z.penezenka_id?col(walletColor(z.penezenka_id)):'#888888';
     return`<tr>
-      <td class="mono">${esc(z.datum)}${jePlan(z)?' <span class="badge badge-plan">plán</span>':''}${z.pravidelna?' <span class="badge badge-pravidelna" title="mandatorní pravidelná platba">⟳</span>':''}</td>
+      <td class="mono">${esc(z.datum)}${jePlan(z)?' <span class="badge badge-plan">plán</span>':''}${z.pravidelna?' <span class="badge badge-pravidelna" title="mandatorní pravidelná platba">⟳</span>':''}${jePrevod(z)?' <span class="prevod" title="převod mezi peněženkami — do součtů příjmů a výdajů se nepočítá">⇄</span>':''}</td>
       <td>${kde}${pozn}</td>
       <td>${esc(catName(z.kategorie_id))}</td>
       <td>${z.penezenka_id?`<span style="color:${wColor}">${esc(walletName(z.penezenka_id))}</span>`:'—'}</td>
@@ -1430,6 +1457,35 @@ async function saveZaznam(){
     }
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');setBtn('btn-zaznam',false,editingZaznamId?'Uložit změny':'+ Přidat');}
 }
+// Převod se zapisuje jako dvě nohy se stejnou skupinou — odchozí z jedné
+// peněženky, příchozí do druhé. Kategorie zůstává prázdná: převod do osnovy
+// výdajů nepatří, a kdyby ji dostal, zase by se někde přičetl.
+async function savePrevod(){
+  const z=parseInt(document.getElementById('pr-z').value)||null;
+  const doP=parseInt(document.getElementById('pr-do').value)||null;
+  const castka=parseFloat(document.getElementById('pr-castka').value);
+  const datum=document.getElementById('pr-datum').value;
+  if(!z||!doP){toast('Vyberte obě peněženky',true);return;}
+  if(z===doP){toast('Z a do musí být jiná peněženka',true);return;}
+  if(!castka||castka<=0||!datum){toast('Vyplňte kladnou částku a datum',true);return;}
+  setBtn('btn-prevod',true);syncSt('syncing');
+  try{
+    const pozn=document.getElementById('pr-pozn').value.trim()||null;
+    // Skupina musí být unikátní napříč zařízeními, proto náhodná, ne podle času.
+    const skupina='u-'+(crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(36).slice(2));
+    const spolecne={typ_polozky:'skutecnost',datum,castka,kategorie_id:null,
+      poznamka:pozn,pravidelna:false,prevod_skupina:skupina};
+    const res=await api('zaznamy','POST',[
+      {...spolecne,typ:'vydaj', penezenka_id:z,   kde:walletName(doP)},
+      {...spolecne,typ:'prijem',penezenka_id:doP, kde:walletName(z)}]);
+    zaznamy.unshift(...res);
+    ['pr-castka','pr-pozn'].forEach(id=>document.getElementById(id).value='');
+    toast('Převod zapsán ✓');syncSt('ok');render();
+    setBtn('btn-prevod',false,'⇄ Zapsat převod');
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');
+    setBtn('btn-prevod',false,'⇄ Zapsat převod');}
+}
+
 function editZaznam(id){
   const z=zaznamy.find(z=>z.id===id);if(!z)return;
   editingZaznamId=id;
@@ -1570,7 +1626,8 @@ async function init(){
     ]);
     odecty=od||[];cenik=ce||[];sporeni=sp||[];
     document.getElementById('loading').style.display='none';
-    document.getElementById('z-datum').value=new Date().toISOString().split('T')[0];
+    document.getElementById('z-datum').value=dnes();
+    document.getElementById('pr-datum').value=dnes();
     selectedColor=COLORS[0];
     updateCategorySelect();updateWalletSelect();updateOsnovaForm();
     render();
