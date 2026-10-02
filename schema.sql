@@ -78,8 +78,17 @@ CREATE TABLE IF NOT EXISTS zaznamy (
   prevod_skupina  TEXT,                       -- páruje obě nohy převodu mezi
                                               -- peněženkami, aby šly vyloučit
                                               -- ze součtů za kategorii
+  zdroj_radek     INTEGER,                    -- číslo řádku ve zdrojovém
+                                              -- sheetu; klíč importu historie,
+                                              -- viz unikátní index níž
   created_at      TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- `zdroj_radek` drží číslo řádku ve zdrojovém sheetu „Utrata". Je to klíč
+-- importu historie (`on conflict (zdroj_radek) do update`), takže import jde
+-- pustit opakovaně, aniž by se řádky zduplikovaly. Záznamy zadané v appce ho
+-- nemají, proto je unikátní index částečný.
+ALTER TABLE zaznamy ADD COLUMN IF NOT EXISTS zdroj_radek INTEGER;
 
 ALTER TABLE zaznamy DROP CONSTRAINT IF EXISTS zaznamy_typ_polozky_chk;
 ALTER TABLE zaznamy ADD  CONSTRAINT zaznamy_typ_polozky_chk
@@ -95,6 +104,15 @@ CREATE INDEX IF NOT EXISTS idx_zaznamy_typ_polozky ON zaznamy(typ_polozky);
 CREATE INDEX IF NOT EXISTS idx_zaznamy_prevod      ON zaznamy(prevod_skupina)
   WHERE prevod_skupina IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_osnova_parent       ON osnova(parent_id);
+
+-- Na tomhle indexu stojí idempotence importu deníku. Je částečný záměrně:
+-- unikátnost se vynucuje jen u importovaných řádků. Důsledek, na který je
+-- potřeba myslet — `ON CONFLICT` musí predikát zopakovat
+-- (`on conflict (zdroj_radek) where zdroj_radek is not null`), jinak ho
+-- Postgres neodvodí; a PostgREST z částečného indexu konflikt odvodit neumí
+-- vůbec, takže `Prefer: resolution=merge-duplicates` tady nefunguje.
+CREATE UNIQUE INDEX IF NOT EXISTS zaznamy_zdroj_radek_uniq ON zaznamy(zdroj_radek)
+  WHERE zdroj_radek IS NOT NULL;
 
 -- ============================================================
 -- RLS – přístup má jen přihlášený uživatel (role `authenticated`).
