@@ -7,8 +7,8 @@ Jako knihovna dává `preved()` — tu používá `nahraj-denik.py`, který zapi
 přes REST API. Jako skript vysype SQL soubory; to je cesta pro Supabase MCP
 `execute_sql`, když není k dispozici service_role klíč:
 
-    python3 tools/import-denik.py --vstup denik.json --mapovani mapovani.json \
-                                  --vystup out/ --po 1000
+    python3 tools/import-denik.py --vstup denik.csv --mapovani mapovani.json \
+                                  --vystup out/ --po 500
 
 Vstup je CSV stažené ze sheetu, nebo JSON: pole objektů se surovými hodnotami
   {radek, zapsano, datum, castka, kat, kde, koment, polozka, placeni, potvrzeni, kod}
@@ -37,6 +37,15 @@ CSV_POLE = [
     'potvrzeni',  # M Potvrzeni
     'kod',        # N Osnova (kód)
 ]
+
+# Kontrola, že sloupce ve sheetu nikdo nepřehodil — klíč je index v CSV_POLE,
+# hodnota je očekávaný název hlavičky po normalizaci přes klic().
+CSV_HLAVICKA = {0: 'casova znacka', 1: 'datum', 2: 'castka', 3: 'kategorie',
+                9: 'typ polozky', 11: 'typ placeni', 13: 'osnova'}
+
+# Čárka v částce je desetinná (1 500,50). Kdyby ji ale export použil jako
+# oddělovač tisíců, vyšlo by z „1,500" tiše 1.5 místo 1500 — tohle to najde.
+RE_PODEZRELA_CASTKA = re.compile(r',\d{3}(\D|$)')
 
 RE_DATUM = re.compile(r'^(\d{1,2})\.(\d{1,2})\.(\d{4})$')
 # časová značka má v datech 6 podob včetně překlepů (21.23 místo 21:23)
@@ -96,6 +105,23 @@ def pole_text(s):
     return s
 
 
+def zkontroluj_hlavicku(row):
+    """Ověř, že jde o export listu „Odpovědi formuláře 1" se sloupci v pořadí A..N.
+
+    Kdyby se sloupce v sheetu přehodily nebo přibyl nový, čtení podle pozice by
+    tiše načetlo data do špatných polí. Radši spadnout.
+    """
+    if len(row) < len(CSV_POLE):
+        raise SystemExit(
+            'hlavička má %d sloupců, čekám aspoň %d. Je to export listu '
+            '„Odpovědi formuláře 1"? Načteno: %r' % (len(row), len(CSV_POLE), row))
+    for j, cekam in CSV_HLAVICKA.items():
+        if klic(row[j]) != cekam:
+            raise SystemExit(
+                'sloupec %d hlavičky je %r, čekám %r — pořadí sloupců ve sheetu '
+                'se změnilo, uprav CSV_POLE' % (j + 1, row[j], cekam))
+
+
 def nacti(cesta):
     """Vstup: buď JSON (pole objektů), nebo CSV stažené ze sheetu.
 
@@ -107,9 +133,19 @@ def nacti(cesta):
         return json.load(open(cesta, encoding='utf-8'))
 
     recs = []
+    # newline='' je podstatné: komentář se zalomením řádku je ve CSV uvozený a
+    # csv.reader ho vrátí jako JEDEN záznam, takže číslování řádků drží.
     with open(cesta, encoding='utf-8-sig', newline='') as f:
-        for i, row in enumerate(csv.reader(f)):
-            if i == 0:          # hlavička
+        vzorek = f.read(8192)
+        f.seek(0)
+        try:
+            # Sheets exportuje čárkou, ale ať to nespadne na středníkovém exportu
+            dialekt = csv.Sniffer().sniff(vzorek, delimiters=',;\t')
+        except csv.Error:
+            dialekt = csv.excel
+        for i, row in enumerate(csv.reader(f, dialekt)):
+            if i == 0:
+                zkontroluj_hlavicku(row)
                 continue
             if not any(str(x).strip() for x in row):
                 continue        # prázdný řádek ve zdroji
@@ -143,6 +179,8 @@ def preved(cesta_vstup, cesta_mapovani):
         if d is None or c is None:
             preskocene.append((r.get('radek'), 'bez data nebo částky'))
             continue
+        if RE_PODEZRELA_CASTKA.search(str(r.get('castka') or '')):
+            stat['POZOR: čárka možná jako oddělovač tisíců'] += 1
 
         # kategorie: přednost má kód osnovy, jinak plochá kategorie → hlavní kategorie
         kod = str(r.get('kod') or '').strip()

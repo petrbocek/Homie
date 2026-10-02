@@ -90,6 +90,11 @@ def main():
         print('  řádek %s: %s' % (radek, duvod))
     if radky:
         print('rozsah zdroj_radek: %d–%d' % (radky[0]['zdroj_radek'], radky[-1]['zdroj_radek']))
+        # Součet je kontrola, že se CSV rozparsovalo stejně jako dřív ověřená
+        # data — hlavně že desetinná čárka nespadla na oddělovač tisíců.
+        print('součet částek: %.2f' % sum(r['castka'] for r in radky))
+        print('  z toho příjmy: %.2f' % sum(r['castka'] for r in radky if r['typ'] == 'prijem'))
+        print('  z toho výdaje: %.2f' % sum(r['castka'] for r in radky if r['typ'] == 'vydaj'))
 
     if a.nasucho:
         print('\nnasucho — nic se neposílá')
