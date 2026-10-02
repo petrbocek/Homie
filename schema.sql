@@ -124,12 +124,57 @@ CREATE UNIQUE INDEX IF NOT EXISTS zaznamy_zdroj_radek_uniq ON zaznamy(zdroj_rade
   WHERE zdroj_radek IS NOT NULL;
 
 -- ============================================================
+-- ENERGIE (#9) – odečty měřidel a ceník. Zdroj je list „Energie" ze
+-- sheetu; `zdroj_radek` drží číslo řádku, aby šel import pustit znovu.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS energie_odecty (
+  id                BIGSERIAL PRIMARY KEY,
+  datum             DATE NOT NULL,
+  voda              NUMERIC(12,2),      -- stav vodoměru v m³
+  t1                NUMERIC(12,2),      -- stav elektroměru VT (kWh)
+  t2                NUMERIC(12,2),      -- stav elektroměru NT (kWh)
+  -- Příznak „tímhle odečtem začíná nové měřidlo". Spotřebu za daný řádek
+  -- nelze spočítat — stav starého měřidla v okamžiku výměny nikdo nezapsal
+  -- — a naivní odčítání by vyrobilo nesmysl (skok ze 767 na 10 m³).
+  vymena_vodomer    BOOLEAN NOT NULL DEFAULT FALSE,
+  vymena_elektromer BOOLEAN NOT NULL DEFAULT FALSE,
+  poznamka          TEXT,
+  zdroj_radek       INTEGER,
+  created_at        TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS energie_cenik (
+  id               BIGSERIAL PRIMARY KEY,
+  platnost_od      DATE NOT NULL,
+  platnost_do      DATE,               -- NULL = platí dosud
+  vt               NUMERIC(10,4) NOT NULL,   -- Kč/kWh ve vysokém tarifu
+  nt               NUMERIC(10,4) NOT NULL,   -- Kč/kWh v nízkém tarifu
+  mesicni_fix      NUMERIC(10,2) NOT NULL DEFAULT 0,
+  -- Cena vody a zálohy nejsou v sheetu rozlišené podle období; jsou
+  -- převzaté z jediné buňky a ve všech obdobích stejné.
+  voda             NUMERIC(10,2),
+  zaloha_elektrina NUMERIC(10,2),
+  zaloha_voda      NUMERIC(10,2),
+  poznamka         TEXT,
+  created_at       TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_energie_odecty_datum ON energie_odecty(datum);
+CREATE INDEX IF NOT EXISTS idx_energie_cenik_od     ON energie_cenik(platnost_od);
+
+-- Stejná logika jako u zaznamy_zdroj_radek_uniq: idempotence importu.
+CREATE UNIQUE INDEX IF NOT EXISTS energie_odecty_zdroj_uniq ON energie_odecty(zdroj_radek)
+  WHERE zdroj_radek IS NOT NULL;
+
+-- ============================================================
 -- RLS – přístup má jen přihlášený uživatel (role `authenticated`).
 -- Role `anon` (klíč zapečený v index.html) nemá k datům nic.
 -- ============================================================
 ALTER TABLE osnova    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE penezenky ENABLE ROW LEVEL SECURITY;
 ALTER TABLE zaznamy   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE energie_odecty ENABLE ROW LEVEL SECURITY;
+ALTER TABLE energie_cenik  ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "anon_all" ON osnova;
 DROP POLICY IF EXISTS "anon_all" ON penezenky;
@@ -138,10 +183,14 @@ DROP POLICY IF EXISTS "anon_all" ON zaznamy;
 DROP POLICY IF EXISTS "auth_all" ON osnova;
 DROP POLICY IF EXISTS "auth_all" ON penezenky;
 DROP POLICY IF EXISTS "auth_all" ON zaznamy;
+DROP POLICY IF EXISTS "auth_all" ON energie_odecty;
+DROP POLICY IF EXISTS "auth_all" ON energie_cenik;
 
 CREATE POLICY "auth_all" ON osnova    FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "auth_all" ON penezenky FOR ALL TO authenticated USING (true) WITH CHECK (true);
 CREATE POLICY "auth_all" ON zaznamy   FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_all" ON energie_odecty FOR ALL TO authenticated USING (true) WITH CHECK (true);
+CREATE POLICY "auth_all" ON energie_cenik  FOR ALL TO authenticated USING (true) WITH CHECK (true);
 
 -- ============================================================
 -- Výchozí peněženky (podle hodnot „Typ placeni" v deníku).

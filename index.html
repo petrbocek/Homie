@@ -93,6 +93,11 @@
     .rok-table th,.rok-table td{padding:7px 7px;}
   }
 
+  /* Značka neúplného měsíce v Energii. Není to .badge schválně: ten se na
+     mobilu v .rok-table schovává a tady je to jediný signál, že čísla v řádku
+     nejsou celá spotřeba. */
+  .vymena{color:var(--accent4);cursor:help;font-family:'DM Mono',monospace;}
+
   .split{display:grid;grid-template-columns:300px 1fr;gap:18px;}
   .form-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;height:fit-content;position:sticky;top:86px;}
   .form-title{font-size:14px;font-weight:700;margin-bottom:14px;}
@@ -237,6 +242,7 @@
   <div class="tab" onclick="showTab('zaznamy')">Záznamy</div>
   <div class="tab" onclick="showTab('penezenky')">Peněženky</div>
   <div class="tab" onclick="showTab('osnova')">Osnova</div>
+  <div class="tab" onclick="showTab('energie')">Energie</div>
   <div class="tab" onclick="showTab('plan')">Plán</div>
 </div>
 
@@ -293,6 +299,42 @@
   </div>
 
   <!-- ZÁZNAMY -->
+  <!-- ENERGIE — odečty měřidel, spotřeba a vyúčtování proti zálohám -->
+  <div class="view" id="view-energie">
+    <div class="summary-grid" id="energie-karty"></div>
+
+    <div class="section-title" style="margin-bottom:10px">Spotřeba po měsících</div>
+    <div class="chart-wrap">
+      <div class="chart-title">Elektřina celkem (kWh), posledních 24 měsíců</div>
+      <div class="bar-chart" id="energie-graf"></div>
+    </div>
+
+    <div class="rok-wrap">
+      <table class="rok-table" id="energie-mesice"></table>
+    </div>
+    <div class="rok-pozn">
+      Spotřeba je rozdíl proti předchozímu odečtu. Odečet, kterým začíná nové měřidlo
+      (nebo celá historie), se nemá od čeho odečíst — starý stav v okamžiku výměny nikdo
+      nezapsal — takže se do měsíce nezapočítá vůbec a měsíc je označený
+      <strong class="vymena">⚠</strong>: jeho spotřeba je neúplná, ne nulová. Naivní odčítání by tam
+      vyrobilo nesmysl (skok z 767 na 10 m³). Náklad se počítá sazbou platnou k poslednímu
+      odečtu v měsíci.
+    </div>
+
+    <div class="section-title" style="margin-bottom:10px">Ceník</div>
+    <div class="rok-wrap">
+      <table class="rok-table" id="energie-cenik"></table>
+    </div>
+    <div class="rok-pozn">
+      Cena vody a výše záloh nejsou v sheetu rozlišené podle období — jsou převzaté
+      z jediné buňky a platí pro celou historii stejně.
+    </div>
+
+    <div id="energie-empty" class="empty" style="display:none">
+      <span class="emoji">⚡</span>Žádné odečty
+    </div>
+  </div>
+
   <!-- ROK — plán vs. skutečnost po měsících (hlavní blok listu Pivot) -->
   <div class="view" id="view-rok">
     <div class="list-head">
@@ -475,7 +517,7 @@ const MONTHS_SHORT=['Led','Úno','Bře','Dub','Kvě','Čer','Čvc','Srp','Zář'
 let cY=new Date().getFullYear(), cM=new Date().getMonth();
 let rY=new Date().getFullYear();        // rok v záložce Rok, nezávislý na měsíci
 const rozbalene=new Set();              // hlavní kategorie rozkliknuté na podkategorie
-let zaznamy=[], penezenky=[], osnova=[];
+let zaznamy=[], penezenky=[], osnova=[], odecty=[], cenik=[];
 let editingZaznamId=null, editingPenezenkaId=null, selectedColor=COLORS[0];
 let session=null;
 const SESS_KEY='homie_session';
@@ -717,12 +759,13 @@ function changeMonth(d){
 }
 function showTab(id){
   // pořadí musí odpovídat pořadí .tab v markupu – showTab je páruje podle indexu
-  const tabs=['prehled','rok','zaznamy','penezenky','osnova','plan'];
+  const tabs=['prehled','rok','zaznamy','penezenky','osnova','energie','plan'];
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===id));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+id).classList.add('active');
   if(id==='plan')renderPlan();
   if(id==='rok')renderRok(true);
+  if(id==='energie')renderEnergie();
 }
 function updateCategorySelect(){
   const typ=document.getElementById('z-typ').value;
@@ -776,7 +819,7 @@ function render(){
   document.getElementById('records-month').textContent=label;
   document.getElementById('plan-month-label').textContent=label;
   document.getElementById('plan-mesic-label').textContent=label;
-  renderPrehled();renderRok();renderZaznamy();renderPenezenky();renderZustatky();renderOsnova();renderPlan();
+  renderPrehled();renderRok();renderZaznamy();renderPenezenky();renderZustatky();renderOsnova();renderEnergie();renderPlan();
 }
 
 function renderPrehled(){
@@ -966,6 +1009,119 @@ function renderRok(skocNaDnes=false){
     </thead>`
     +`<tbody>${rokRadky(tops,bucket,souhrnBunky)}`
     +`<tr class="soucet"><td class="kat">Celkový součet</td>${souhrnBunky(celkem)}</tr></tbody>`;
+}
+
+// --- ENERGIE ---
+// Sazba platná k datu. Ceník je spojitý, ale kdyby v něm vznikla díra,
+// radši vrátíme null než špatnou cenu.
+function sazbaK(datum){
+  return cenik.find(c=>c.platnost_od<=datum&&(!c.platnost_do||datum<=c.platnost_do))||null;
+}
+
+// Odečty s dopočtenou spotřebou. V řádku s výměnou měřidla je spotřeba null:
+// stav starého měřidla v okamžiku výměny nikdo nezapsal, takže ji spočítat nelze.
+function odectySeSpotrebou(){
+  const out=[];
+  let p=null;
+  for(const o of odecty){
+    out.push({...o,
+      sp_voda:(p&&!o.vymena_vodomer)?Number(o.voda)-Number(p.voda):null,
+      sp_t1:(p&&!o.vymena_elektromer)?Number(o.t1)-Number(p.t1):null,
+      sp_t2:(p&&!o.vymena_elektromer)?Number(o.t2)-Number(p.t2):null});
+    p=o;
+  }
+  return out;
+}
+
+// Měsíční vyúčtování: spotřeba za měsíc × sazba platná k poslednímu odečtu
+// v tom měsíci, proti zaplacené záloze.
+function energieMesice(){
+  const mapa=new Map();
+  for(const o of odectySeSpotrebou()){
+    const k=o.datum.slice(0,7);
+    if(!mapa.has(k))mapa.set(k,{mesic:k,voda:0,t1:0,t2:0,chybi:false,posledni:o.datum});
+    const m=mapa.get(k);
+    if(o.sp_voda===null||o.sp_t1===null)m.chybi=true;
+    m.voda+=o.sp_voda||0; m.t1+=o.sp_t1||0; m.t2+=o.sp_t2||0;
+    if(o.datum>m.posledni)m.posledni=o.datum;
+  }
+  return [...mapa.values()].map(m=>{
+    const c=sazbaK(m.posledni);
+    const el=c?m.t1*Number(c.vt)+m.t2*Number(c.nt)+Number(c.mesicni_fix):null;
+    const vo=c&&c.voda!=null?m.voda*Number(c.voda):null;
+    const zal=c?Number(c.zaloha_elektrina||0)+Number(c.zaloha_voda||0):null;
+    const naklad=(el==null&&vo==null)?null:(el||0)+(vo||0);
+    return {...m,sazba:c,naklad_el:el,naklad_voda:vo,naklad,zaloha:zal,
+            rozdil:(naklad==null||zal==null)?null:zal-naklad};
+  }).sort((a,b)=>a.mesic.localeCompare(b.mesic));
+}
+
+function renderEnergie(){
+  const empty=document.getElementById('energie-empty');
+  const karty=document.getElementById('energie-karty');
+  if(!odecty.length){karty.innerHTML='';document.getElementById('energie-mesice').innerHTML='';
+    document.getElementById('energie-cenik').innerHTML='';
+    document.getElementById('energie-graf').innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+
+  const mesice=energieMesice();
+  const posledni=odecty[odecty.length-1];
+  const rok=mesice.slice(-12);
+  const sum=(a,k)=>a.reduce((s,x)=>s+x[k],0);
+  const cis=n=>Math.round(n).toLocaleString('cs-CZ');
+
+  karty.innerHTML=`
+    <div class="card accent"><div class="card-label">Poslední odečet</div>
+      <div class="card-value" style="font-size:18px">${esc(posledni.datum)}</div>
+      <div class="card-sub">voda ${cis(posledni.voda)} m³ · VT ${cis(posledni.t1)} · NT ${cis(posledni.t2)}</div></div>
+    <div class="card info"><div class="card-label">Elektřina za 12 měsíců</div>
+      <div class="card-value">${cis(sum(rok,'t1')+sum(rok,'t2'))} kWh</div>
+      <div class="card-sub">VT ${cis(sum(rok,'t1'))} · NT ${cis(sum(rok,'t2'))}</div></div>
+    <div class="card info"><div class="card-label">Voda za 12 měsíců</div>
+      <div class="card-value">${cis(sum(rok,'voda'))} m³</div>
+      <div class="card-sub">${rok.length} ${rok.length===1?'měsíc':(rok.length<5?'měsíce':'měsíců')}</div></div>
+    <div class="card ${sum(rok.filter(m=>m.rozdil!=null),'rozdil')>=0?'accent':'danger'}">
+      <div class="card-label">Zálohy − náklad za 12 měsíců</div>
+      <div class="card-value" style="color:${sum(rok.filter(m=>m.rozdil!=null),'rozdil')>=0?'var(--green)':'var(--red)'}">
+        ${fmt(Math.abs(sum(rok.filter(m=>m.rozdil!=null),'rozdil')))}</div>
+      <div class="card-sub">${sum(rok.filter(m=>m.rozdil!=null),'rozdil')>=0?'přeplatek':'nedoplatek'}</div></div>`;
+
+  const graf=mesice.slice(-24);
+  const max=Math.max(...graf.map(m=>m.t1+m.t2),1);
+  document.getElementById('energie-graf').innerHTML=graf.map(m=>{
+    const v=m.t1+m.t2;
+    return `<div class="bar-col"><div class="bar-col-val">${v?cis(v):''}</div>`
+      +`<div class="bar-col-bar" style="height:${Math.round(v/max*90)+4}px;background:${m.chybi?'var(--surface2)':'var(--accent)'}"></div>`
+      +`<div class="bar-col-label">${m.mesic.slice(5)}/${m.mesic.slice(2,4)}</div></div>`;
+  }).join('');
+
+  const bunka=(v,cls)=>`<td class="hodnota ${cls||''}">${v==null?'—':v}</td>`;
+  document.getElementById('energie-mesice').innerHTML=
+    `<thead><tr><th class="kat">Měsíc</th><th class="right">voda m³</th><th class="right">VT kWh</th>
+      <th class="right">NT kWh</th><th class="right plan">náklad el.</th><th class="right plan">náklad voda</th>
+      <th class="right">celkem</th><th class="right plan">záloha</th><th class="right">rozdíl</th></tr></thead><tbody>`
+    + mesice.slice().reverse().slice(0,36).map(m=>
+      `<tr><td class="kat">${m.mesic}${m.chybi?' <span class="vymena" title="v měsíci začalo nové měřidlo — spotřeba je neúplná">\u26a0</span>':''}</td>`
+      + bunka(cis(m.voda)) + bunka(cis(m.t1)) + bunka(cis(m.t2))
+      + bunka(m.naklad_el==null?null:cis(m.naklad_el),'plan')
+      + bunka(m.naklad_voda==null?null:cis(m.naklad_voda),'plan')
+      + bunka(m.naklad==null?null:cis(m.naklad))
+      + bunka(m.zaloha==null?null:cis(m.zaloha),'plan')
+      + `<td class="hodnota ${m.rozdil==null?'':(m.rozdil>=0?'diff-ok':'diff-over')}">${m.rozdil==null?'—':cis(m.rozdil)}</td></tr>`
+    ).join('')
+    + '</tbody>';
+
+  document.getElementById('energie-cenik').innerHTML=
+    `<thead><tr><th class="kat">Platnost od</th><th class="kat">do</th><th class="right">VT Kč/kWh</th>
+      <th class="right">NT Kč/kWh</th><th class="right">měsíční fix</th><th class="right">voda Kč/m³</th>
+      <th class="right plan">záloha el.</th><th class="right plan">záloha voda</th></tr></thead><tbody>`
+    + cenik.slice().reverse().map(c=>
+      `<tr><td class="kat">${esc(c.platnost_od)}</td><td class="kat">${esc(c.platnost_do||'—')}</td>`
+      + `<td class="hodnota">${esc(c.vt)}</td><td class="hodnota">${esc(c.nt)}</td>`
+      + `<td class="hodnota">${cis(c.mesicni_fix)}</td><td class="hodnota">${c.voda==null?'—':cis(c.voda)}</td>`
+      + `<td class="hodnota plan">${c.zaloha_elektrina==null?'—':cis(c.zaloha_elektrina)}</td>`
+      + `<td class="hodnota plan">${c.zaloha_voda==null?'—':cis(c.zaloha_voda)}</td></tr>`).join('')
+    + '</tbody>';
 }
 
 function renderZaznamy(){
@@ -1247,6 +1403,11 @@ async function init(){
     penezenky=w||[];osnova=o||[];
     // záznamů je přes 22 tisíc, takže stránkovaně a s rozstřelem podle id
     zaznamy=await apiAll('zaznamy','select=*&order=datum.desc,id.desc','záznamy');
+    const [od,ce]=await Promise.all([
+      apiAll('energie_odecty','select=*&order=datum.asc,zdroj_radek.asc'),
+      api('energie_cenik','GET',null,'select=*&order=platnost_od.asc')
+    ]);
+    odecty=od||[];cenik=ce||[];
     document.getElementById('loading').style.display='none';
     document.getElementById('z-datum').value=new Date().toISOString().split('T')[0];
     selectedColor=COLORS[0];

@@ -42,6 +42,29 @@ const DB={
     {id:103,datum:d2(10),castka:'4000.00',typ:'vydaj',typ_polozky:'skutecnost',kategorie_id:10,kde:'Přetah',poznamka:null,penezenka_id:null},
     {id:203,datum:d2(12),castka:'1000.00',typ:'vydaj',typ_polozky:'plan',kategorie_id:10,kde:'Přetah plán',poznamka:null,penezenka_id:null},
   ],
+  // Odečty měřidel (#9). Datumy jsou schválně fixní — záložka Energie se
+  // neváže na aktuální měsíc, bere posledních N odečtů. Třetí řádek je výměna
+  // vodoměru: stav spadne ze 110 na 5 m³ a naivní odčítání by vyrobilo −105.
+  energie_odecty:[
+    {id:1,datum:'2026-01-31',voda:'100.00',t1:'1000.00',t2:'5000.00',
+     vymena_vodomer:false,vymena_elektromer:false,poznamka:null,zdroj_radek:2},
+    {id:2,datum:'2026-02-28',voda:'110.00',t1:'1050.00',t2:'5200.00',
+     vymena_vodomer:false,vymena_elektromer:false,poznamka:null,zdroj_radek:3},
+    {id:3,datum:'2026-03-31',voda:'5.00',t1:'1100.00',t2:'5400.00',
+     vymena_vodomer:true,vymena_elektromer:false,poznamka:'nový vodoměr',zdroj_radek:4},
+    {id:4,datum:'2026-04-30',voda:'12.00',t1:'1150.00',t2:'5600.00',
+     vymena_vodomer:false,vymena_elektromer:false,poznamka:null,zdroj_radek:5},
+  ],
+  // Druhé období je dávno skončené a nese HTML v datu „do" — nesmí se
+  // vyrenderovat jako kód a nesmí se vybrat pro odečty z roku 2026.
+  energie_cenik:[
+    {id:2,platnost_od:'2015-01-01',platnost_do:'2015-11-30 <script>alert(9)</script>',
+     vt:'4.00',nt:'2.00',mesicni_fix:'50.00',voda:'80.00',
+     zaloha_elektrina:'1000.00',zaloha_voda:'300.00',poznamka:null},
+    {id:1,platnost_od:'2015-12-01',platnost_do:null,
+     vt:'6.00',nt:'3.00',mesicni_fix:'100.00',voda:'90.00',
+     zaloha_elektrina:'2000.00',zaloha_voda:'500.00',poznamka:null},
+  ],
 };
 
 // Strop PostgRESTu na počet řádků v jedné odpovědi (u Supabase bývá 1000).
@@ -338,7 +361,70 @@ check('v prázdném roce se souhrn schová',!(await pg.isVisible('#rok-souhrn-bl
 await pg.click('#view-rok .month-nav button:last-child'); await pg.waitForTimeout(400);
 check('zpět na letošek',(await pg.textContent('#rok-label'))===letos);
 
-console.log('\n== 15. stránkování: víc záznamů než strop PostgRESTu ==');
+console.log('\n== 15. energie: odečty, spotřeba, výměna měřidla (#9) ==');
+await pg.click('.tab:text-is("Energie")'); await pg.waitForTimeout(300);
+check('záložka Energie je vidět',await pg.isVisible('#view-energie'));
+check('prázdný stav se neukazuje',!(await pg.isVisible('#energie-empty')));
+
+const en=await pg.evaluate(()=>{
+  const r={};
+  for(const tr of document.querySelectorAll('#energie-mesice tbody tr')){
+    const td=[...tr.children].map(x=>x.textContent.replace(/[\s\u00a0\u202f]+/g,' ').trim());
+    r[td[0].slice(0,7)]=td;
+  }
+  return r;
+});
+// 2026-02: voda 110−100=10 m³, VT 1050−1000=50, NT 5200−5000=200 kWh
+// náklad el. 50×6 + 200×3 + 100 fix = 1 000, voda 10×90 = 900, celkem 1 900
+// záloha 2 000 + 500 = 2 500 → přeplatek 600
+check('spotřeba je rozdíl proti předchozímu odečtu (10 / 50 / 200)',
+  en['2026-02'] && en['2026-02'][1]==='10' && en['2026-02'][2]==='50' && en['2026-02'][3]==='200',
+  JSON.stringify(en['2026-02']));
+check('náklad sazbou platnou k odečtu (1 000 / 900 / 1 900)',
+  en['2026-02'] && en['2026-02'][4]==='1 000' && en['2026-02'][5]==='900' && en['2026-02'][6]==='1 900',
+  JSON.stringify(en['2026-02']));
+check('rozdíl proti zálohám (2 500 − 1 900 = 600)',
+  en['2026-02'] && en['2026-02'][7]==='2 500' && en['2026-02'][8]==='600',
+  JSON.stringify(en['2026-02']));
+// Výměna vodoměru: 5 − 110 = −105 m³ je nesmysl, ten řádek se nesmí započítat.
+check('měsíc s výměnou měřidla je označený',
+  en['2026-03'] && /\u26a0/.test(en['2026-03'][0]),JSON.stringify(en['2026-03']));
+// Odznaky .badge se v .rok-table na mobilu schovávají (v Roku je typ vidět ze
+// znaménka). Tady je značka jediný signál, že měsíc není celý — musí zůstat.
+await pg.setViewportSize({width:390,height:800}); await pg.waitForTimeout(200);
+check('značka neúplného měsíce je vidět i na mobilu',
+  await pg.isVisible('#energie-mesice .vymena'));
+await pg.setViewportSize({width:1280,height:720}); await pg.waitForTimeout(200);
+
+check('výměna nevyrobí negativní spotřebu vody (0, ne −105)',
+  en['2026-03'] && en['2026-03'][1]==='0',JSON.stringify(en['2026-03']));
+check('elektřina se přes výměnu vodoměru počítá dál (50 / 200)',
+  en['2026-03'] && en['2026-03'][2]==='50' && en['2026-03'][3]==='200',JSON.stringify(en['2026-03']));
+check('první odečet v historii nemá od čeho odečítat',
+  en['2026-01'] && /\u26a0/.test(en['2026-01'][0]) && en['2026-01'][1]==='0',
+  JSON.stringify(en['2026-01']));
+check('nikde negativní spotřeba',
+  Object.values(en).every(r=>!r.slice(1,4).some(v=>v.startsWith('-')||v.startsWith('−'))),
+  JSON.stringify(en));
+
+const ekarty=txt(await pg.textContent('#energie-karty'));
+// VT 3×50 = 150, NT 3×200 = 600 → 750 kWh; voda 10 + 0 + 7 = 17 m³
+check('karta elektřiny sečte celé okno (750 kWh)',ekarty.includes('750 kWh'),ekarty);
+check('karta vody sečte celé okno (17 m³)',ekarty.includes('17 m³'),ekarty);
+check('karta ukazuje poslední odečet',ekarty.includes('2026-04-30'),ekarty);
+
+const ecen=await pg.evaluate(()=>[...document.querySelectorAll('#energie-cenik tbody tr')]
+  .map(tr=>[...tr.children].map(x=>x.textContent.replace(/[\s\u00a0\u202f]+/g,' ').trim())));
+check('ceník má obě období',ecen.length===2,JSON.stringify(ecen));
+check('platné období je první (nejnovější nahoře)',ecen[0][0]==='2015-12-01'&&ecen[0][1]==='—',
+  JSON.stringify(ecen[0]));
+check('HTML v ceníku se vypíše jako text',
+  ecen[1][1]==='2015-11-30 <script>alert(9)</script>',JSON.stringify(ecen[1]));
+
+const egraf=await pg.evaluate(()=>document.querySelectorAll('#energie-graf .bar-col').length);
+check('graf má sloupec za každý měsíc',egraf===4,String(egraf));
+
+console.log('\n== 16. stránkování: víc záznamů než strop PostgRESTu ==');
 // Po importu historie má tabulka 22 tisíc řádků. Jeden GET by vrátil jen
 // prvních MAX_ROWS a appka by tiše počítala s osekanými daty, takže tohle
 // hlídá, že se dotahují všechny stránky.
