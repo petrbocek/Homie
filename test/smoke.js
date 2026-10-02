@@ -36,6 +36,9 @@ const DB={
   ],
 };
 
+// Strop PostgRESTu na počet řádků v jedné odpovědi (u Supabase bývá 1000).
+const MAX_ROWS=1000;
+
 const calls=[], fails=[];
 function check(name,ok,detail){
   if(!ok)fails.push(name);
@@ -67,7 +70,17 @@ await pg.route(SB+'/**',async route=>{
   }
   if(url.includes('/auth/v1/'))return route.fulfill({status:204,body:''});
   const t=url.replace(SB+'/rest/v1/','').split('?')[0];
-  if(method==='GET')return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(DB[t]||[])});
+  if(method==='GET'){
+    // PostgREST vrací nejvýš `db-max-rows` řádků a nijak to nehlásí. Mock to
+    // musí dělat taky, jinak by test neodhalil, že appka nestránkuje a tiše
+    // pracuje jen s první tisícovkou záznamů.
+    const rows=DB[t]||[];
+    const q=new URL(url).searchParams;
+    const od=parseInt(q.get('offset')||'0',10);
+    const chce=parseInt(q.get('limit')||String(MAX_ROWS),10);
+    return route.fulfill({status:200,contentType:'application/json',
+      body:JSON.stringify(rows.slice(od,od+Math.min(chce,MAX_ROWS)))});
+  }
   if(method==='POST'){const r=JSON.parse(req.postData());const a=Array.isArray(r)?r:[r];
     return route.fulfill({status:201,contentType:'application/json',body:JSON.stringify(a.map((x,i)=>({id:900+i,...x})))});}
   if(method==='PATCH')return route.fulfill({status:200,contentType:'application/json',
@@ -187,6 +200,34 @@ await pg.fill('#auth-email','test@domacnost.cz'); await pg.fill('#auth-pass','sp
 await pg.click('#btn-login'); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(300);
 await pg.reload(); await pg.waitForTimeout(800);
 check('po reloadu přihlášen bez hesla',await pg.isVisible('main'));
+
+console.log('\n== 12. stránkování: víc záznamů než strop PostgRESTu ==');
+// Po importu historie má tabulka 22 tisíc řádků. Jeden GET by vrátil jen
+// prvních MAX_ROWS a appka by tiše počítala s osekanými daty, takže tohle
+// hlídá, že se dotahují všechny stránky.
+const POCET=2500;
+const puvodni=DB.zaznamy;
+DB.zaznamy=Array.from({length:POCET},(_,i)=>({
+  id:10000+i,datum:d((i%28)+1),castka:'1.00',typ:'vydaj',typ_polozky:'skutecnost',
+  kategorie_id:9,kde:'Řádek '+i,poznamka:null,penezenka_id:1}));
+calls.length=0;
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(1200);
+const nacteno=await pg.evaluate(()=>zaznamy.length);
+check(`načteno všech ${POCET} záznamů, ne jen ${MAX_ROWS}`,nacteno===POCET,'načteno '+nacteno);
+const strankyZaznamu=calls.filter(c=>c.method==='GET'&&c.url.includes('/rest/v1/zaznamy'));
+check('dotahovalo se po stránkách',strankyZaznamu.length>=Math.ceil(POCET/MAX_ROWS),
+  strankyZaznamu.length+' dotazů');
+check('každá stránka má limit i offset',
+  strankyZaznamu.every(c=>c.url.includes('limit=')&&c.url.includes('offset=')),
+  strankyZaznamu.map(c=>c.url).join(' | '));
+check('řazení je deterministické (rozstřel podle id)',
+  strankyZaznamu.every(c=>/order=datum\.desc,id\.desc/.test(decodeURIComponent(c.url))),
+  strankyZaznamu.map(c=>c.url).join(' | '));
+// 2500 výdajů po 1 Kč z počátečního zůstatku 10 000
+check('zůstatek počítá se všemi záznamy (7 500)',
+  txt(await pg.textContent('#sum-zustatek')).includes('7 500'),
+  await pg.textContent('#sum-zustatek'));
+DB.zaznamy=puvodni;
 
 console.log('\n== chyby v konzoli ==');
 // 400 = záměrně špatné heslo v testu 2

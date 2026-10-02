@@ -181,7 +181,7 @@
 
 <div class="loading-overlay" id="loading">
   <div class="loading-spinner"></div>
-  <div class="loading-text">Načítám data…</div>
+  <div class="loading-text" id="loading-text">Načítám data…</div>
 </div>
 
 <header>
@@ -502,6 +502,31 @@ async function api(table,method='GET',body=null,filter='',prefer=null,_retry=tru
   if(!res.ok){const e=await res.json().catch(()=>{});throw new Error((e&&e.message)||`HTTP ${res.status}`);}
   const t=await res.text();return t?JSON.parse(t):null;
 }
+
+// PostgREST vrací na jeden dotaz nejvýš `db-max-rows` řádků (u Supabase bývá
+// 1000) a mlčí o tom. Při 22 tisících záznamů by jeden GET tabulku tiše osekal
+// a všechna čísla v appce by byla špatná, tak si to stránkujeme sami.
+//
+// Dvě věci, na kterých to stojí:
+//   - `filter` MUSÍ mít deterministické řazení včetně `id`. Samotné
+//     `order=datum.desc` nestačí, protože tisíce záznamů mají stejné datum a
+//     Postgres u shodných klíčů nezaručuje pořadí — stránky by se překrývaly
+//     a jiné řádky by vypadly.
+//   - stránka je 1000, tedy ne víc než ten strop. Kdybychom chtěli 5000 a
+//     server vrátil 1000, brali bychom to jako konec dat a o zbytek přišli.
+async function apiAll(table,filter,popis){
+  const STRANA=1000;
+  const vse=[];
+  for(let od=0;;od+=STRANA){
+    const cast=await api(table,'GET',null,`${filter}&limit=${STRANA}&offset=${od}`);
+    if(!cast||!cast.length)break;
+    vse.push(...cast);
+    if(popis)loadingText(`Načítám ${popis}… ${vse.length}`);
+    if(cast.length<STRANA)break;
+  }
+  return vse;
+}
+function loadingText(s){const e=document.getElementById('loading-text');if(e)e.textContent=s;}
 
 // --- Category helpers ---
 function catTop(){return osnova.filter(o=>o.parent_id===null).sort((a,b)=>a.poradi-b.poradi||a.id-b.id);}
@@ -891,12 +916,14 @@ async function delOsnova(id){
 // --- INIT ---
 async function init(){
   try{
-    const [z,w,o]=await Promise.all([
-      api('zaznamy','GET',null,'select=*&order=datum.desc'),
+    loadingText('Načítám data…');
+    const [w,o]=await Promise.all([
       api('penezenky','GET',null,'select=*&order=created_at.asc'),
       api('osnova','GET',null,'select=*&order=poradi.asc,id.asc')
     ]);
-    zaznamy=z||[];penezenky=w||[];osnova=o||[];
+    penezenky=w||[];osnova=o||[];
+    // záznamů je přes 22 tisíc, takže stránkovaně a s rozstřelem podle id
+    zaznamy=await apiAll('zaznamy','select=*&order=datum.desc,id.desc','záznamy');
     document.getElementById('loading').style.display='none';
     document.getElementById('z-datum').value=new Date().toISOString().split('T')[0];
     selectedColor=COLORS[0];
