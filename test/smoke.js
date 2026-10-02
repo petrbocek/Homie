@@ -13,6 +13,9 @@ const CHROME=process.env.CHROME_PATH||'/opt/pw-browsers/chromium-1194/chrome-lin
 const APP='file://'+require('path').resolve(__dirname,'..','index.html');
 const M=new Date().toISOString().slice(0,7);
 const d=n=>`${M}-${String(n).padStart(2,'0')}`;
+// jiný měsíc, ale vždy ve stejném roce – v prosinci se vrací na leden
+const M2=(()=>{const y=+M.slice(0,4),m=+M.slice(5,7);return `${y}-${String(m===12?1:m+1).padStart(2,'0')}`;})();
+const d2=n=>`${M2}-${String(n).padStart(2,'0')}`;
 
 // Data schválně obsahují HTML, uvozovky a nesmyslnou barvu – nic z toho
 // se nesmí dostat do DOM jako kód.
@@ -33,6 +36,11 @@ const DB={
     {id:200,datum:d(15),castka:'88000.00',typ:'prijem',typ_polozky:'plan',kategorie_id:11,kde:'Demos',poznamka:'Plat',penezenka_id:1},
     {id:201,datum:d(20),castka:'5000.00',typ:'vydaj',typ_polozky:'plan',kategorie_id:91,kde:'NA',poznamka:null,penezenka_id:1},
     {id:202,datum:d(25),castka:'3300.00',typ:'vydaj',typ_polozky:'plan',kategorie_id:null,kde:'Colliery',poznamka:'Bez kategorie',penezenka_id:1},
+    // Jiný měsíc téhož roku, kvůli matici v záložce Rok: skutečnost přetáhla
+    // plán, takže musí zčervenat. Bez peněženky, ať to nerozhodí zůstatek,
+    // a mimo aktuální měsíc, ať to nerozhodí oddíly počítané po měsíci.
+    {id:103,datum:d2(10),castka:'4000.00',typ:'vydaj',typ_polozky:'skutecnost',kategorie_id:10,kde:'Přetah',poznamka:null,penezenka_id:null},
+    {id:203,datum:d2(12),castka:'1000.00',typ:'vydaj',typ_polozky:'plan',kategorie_id:10,kde:'Přetah plán',poznamka:null,penezenka_id:null},
   ],
 };
 
@@ -137,7 +145,7 @@ check('plán vs skutečnost: 5 000 / 1 200',tab.includes('5 000')&&tab.includes(
 check('kategorie bez plánu má pomlčku',tab.includes('—'));
 
 console.log('\n== 6. Záznamy: odznak a filtr ==');
-await pg.click('.tab:nth-child(2)'); await pg.waitForTimeout(300);
+await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
 check('kde/poznámka jako text',(await pg.textContent('#zaznamy-table')).includes('Albert & <i>spol</i>'));
 check('žádný <i> ze záznamu',(await pg.locator('#zaznamy-table i').count())===0);
 check('výchozí Vše = 6 řádků',(await pg.locator('#zaznamy-table tr').count())===6);
@@ -151,7 +159,7 @@ check('filtr plán = 3 řádky s odznakem',
 await pg.selectOption('#z-filtr','vse'); await pg.waitForTimeout(200);
 
 console.log('\n== 7. editace peněženky ==');
-await pg.click('.tab:nth-child(3)'); await pg.waitForTimeout(300);
+await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
 check('tlačítko upravit existuje',(await pg.locator('#penezenky-list .edit-btn').count())===1);
 await pg.click('#penezenky-list .edit-btn'); await pg.waitForTimeout(300);
 check('zůstatek předplněn',(await pg.inputValue('#w-zustatek'))==='10000.00');
@@ -165,7 +173,7 @@ check('PATCH míří na id=eq.1',!!patch&&patch.url.includes('id=eq.1'));
 check('formulář se resetoval',(await pg.textContent('#form-penezenka-title'))==='Přidat peněženku');
 
 console.log('\n== 8. záložka Plán ==');
-await pg.click('.tab:nth-child(5)'); await pg.waitForTimeout(400);
+await pg.click('.tab:text-is("Plán")'); await pg.waitForTimeout(400);
 const souhrn=txt(await pg.textContent('#plan-souhrn'));
 check('souhrn: příjmy 88 000',souhrn.includes('88 000'),souhrn);
 check('souhrn: výdaje 8 300',souhrn.includes('8 300'));
@@ -186,7 +194,7 @@ const post=calls.find(c=>c.method==='POST');
 check('POST posílá typ_polozky=plan',!!post&&JSON.parse(post.body).typ_polozky==='plan',post&&post.body);
 
 console.log('\n== 10. editace plánované položky si drží typ ==');
-await pg.click('.tab:nth-child(5)'); await pg.waitForTimeout(300);
+await pg.click('.tab:text-is("Plán")'); await pg.waitForTimeout(300);
 await pg.click('#plan-skupiny .edit-btn'); await pg.waitForTimeout(400);
 check('formulář má plán',(await pg.inputValue('#z-polozka'))==='plan');
 await pg.click('#btn-cancel-zaznam'); await pg.waitForTimeout(200);
@@ -201,7 +209,45 @@ await pg.click('#btn-login'); await pg.waitForSelector('main',{state:'visible'})
 await pg.reload(); await pg.waitForTimeout(800);
 check('po reloadu přihlášen bez hesla',await pg.isVisible('main'));
 
-console.log('\n== 12. stránkování: víc záznamů než strop PostgRESTu ==');
+console.log('\n== 12. záložka Rok: matice plán vs. skutečnost ==');
+await pg.click('.tab:text-is("Rok")'); await pg.waitForTimeout(400);
+check('pohled Rok je vidět',await pg.isVisible('#view-rok'));
+check('hlavička má 12 měsíců',(await pg.locator('#rok-table th.mesic').count())===12);
+const rRadky=pg.locator('#rok-table tbody tr');
+// kategorie bez jediného čísla za rok se nevypisuje; tady mají data všechny tři
+check('3 kategorie + součet',(await rRadky.count())===4,String(await rRadky.count()));
+const rTxt=async sel=>txt(await pg.locator(sel).textContent());
+const mzda=await rTxt('#rok-table tbody tr:nth-child(1)');
+check('Mzda: plán 88 000 a skutečnost 90 000',mzda.includes('88 000')&&mzda.includes('90 000'),mzda);
+const jidlo=await rTxt('#rok-table tbody tr:nth-child(2)');
+check('Jídlo: plán −5 000 a skutečnost −1 200',jidlo.includes('-5 000')&&jidlo.includes('-1 200'),jidlo);
+// Součet bere i plán bez kategorie (−3 300), takže NENÍ součtem vypsaných řádků:
+// plán 88 000 − 5 000 − 3 300 = 79 700, skutečnost 90 000 − 1 200 − 800 = 88 000
+const soucet=await rTxt('#rok-table tr.soucet');
+check('součet 79 700 / 88 000 (včetně položky bez kategorie)',
+  soucet.includes('79 700')&&soucet.includes('88 000'),soucet);
+check('překročení plánu je červené',(await pg.locator('#rok-table td.diff-over').count())>=1,
+  'diff-over: '+(await pg.locator('#rok-table td.diff-over').count()));
+check('nepřekročené je zelené',(await pg.locator('#rok-table td.diff-ok').count())>=2);
+check('buňka bez plánu nic neradí',
+  (await pg.locator('#rok-table tbody tr:nth-child(3) td.diff-over, #rok-table tbody tr:nth-child(3) td.diff-ok').count())<24);
+check('názvy kategorií jako text',mzda.includes('<script>'),mzda);
+check('žádný <script> z názvu',(await pg.locator('#view-rok script').count())===0);
+
+await pg.click('#rok-table tbody tr:nth-child(1) td.kat'); await pg.waitForTimeout(300);
+check('rozklik ukáže podkategorii',(await rTxt('#rok-table')).includes('Peta'));
+check('po rozkliku je o řádek víc',(await rRadky.count())===5,String(await rRadky.count()));
+await pg.click('#rok-table tbody tr:nth-child(1) td.kat'); await pg.waitForTimeout(300);
+check('druhý klik zabalí',!(await rTxt('#rok-table')).includes('Peta'));
+
+const letos=await pg.textContent('#rok-label');
+await pg.click('#view-rok .month-nav button:first-child'); await pg.waitForTimeout(400);
+check('přepnutí roku zpět',(await pg.textContent('#rok-label'))===String(+letos-1));
+check('rok bez dat má prázdný stav',await pg.isVisible('#rok-empty'));
+await pg.click('#view-rok .month-nav button:last-child'); await pg.waitForTimeout(400);
+check('zpět na letošek',(await pg.textContent('#rok-label'))===letos);
+
+console.log('\n== 13. stránkování: víc záznamů než strop PostgRESTu ==');
 // Po importu historie má tabulka 22 tisíc řádků. Jeden GET by vrátil jen
 // prvních MAX_ROWS a appka by tiše počítala s osekanými daty, takže tohle
 // hlídá, že se dotahují všechny stránky.

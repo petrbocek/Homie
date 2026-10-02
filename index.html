@@ -63,6 +63,33 @@
   tr:hover td{background:rgba(255,255,255,0.015);}
   .pill{display:inline-block;padding:2px 8px;border-radius:99px;font-size:10px;font-weight:600;}
 
+  /* Roční matice: 12 měsíců × (plán | skutečnost) je 25 sloupců, takže
+     vodorovný posun a přilepený první sloupec, ať je na mobilu vidět, o jakou
+     kategorii jde. .table-wrap má overflow:hidden, proto vlastní obal. */
+  .rok-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow-x:auto;margin-bottom:24px;}
+  .rok-table{width:auto;min-width:100%;white-space:nowrap;}
+  .rok-table th,.rok-table td{padding:7px 10px;font-size:11px;}
+  .rok-table th.mesic{text-align:center;border-left:1px solid var(--border);}
+  .rok-table th.podhlavicka{text-transform:none;letter-spacing:0;font-size:9px;text-align:right;}
+  .rok-table td.kat,.rok-table th.kat{position:sticky;left:0;background:var(--surface);z-index:1;min-width:150px;}
+  .rok-table td.hodnota{text-align:right;font-family:'DM Mono',monospace;}
+  .rok-table td.plan{color:var(--muted);border-left:1px solid var(--border);}
+  .rok-table th.plan{border-left:1px solid var(--border);}
+  .rok-table tr.rozbalitelna td.kat{cursor:pointer;}
+  .rok-table tr.rozbalitelna:hover td.kat{color:var(--accent);}
+  .rok-table tr.podkat td{color:var(--muted);font-size:10px;}
+  .rok-table tr.podkat td.kat{padding-left:26px;}
+  .rok-table tr.soucet td{border-top:2px solid var(--border);font-weight:700;background:var(--surface);}
+  .rok-sipka{display:inline-block;width:12px;color:var(--muted);font-size:9px;}
+  /* Na mobilu sežere přilepený sloupec s kategorií většinu šířky a na měsíce
+     nezbyde místo, tak ho zúžíme, ořízneme názvy a odznak typu schováme —
+     příjem vs. výdaj je stejně vidět na znaménku. */
+  @media(max-width:640px){
+    .rok-table td.kat,.rok-table th.kat{min-width:104px;max-width:104px;overflow:hidden;text-overflow:ellipsis;}
+    .rok-table .badge{display:none;}
+    .rok-table th,.rok-table td{padding:7px 7px;}
+  }
+
   .split{display:grid;grid-template-columns:300px 1fr;gap:18px;}
   .form-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;height:fit-content;position:sticky;top:86px;}
   .form-title{font-size:14px;font-weight:700;margin-bottom:14px;}
@@ -203,6 +230,7 @@
 
 <div class="tabs">
   <div class="tab active" onclick="showTab('prehled')">Přehled</div>
+  <div class="tab" onclick="showTab('rok')">Rok</div>
   <div class="tab" onclick="showTab('zaznamy')">Záznamy</div>
   <div class="tab" onclick="showTab('penezenky')">Peněženky</div>
   <div class="tab" onclick="showTab('osnova')">Osnova</div>
@@ -261,6 +289,30 @@
   </div>
 
   <!-- ZÁZNAMY -->
+  <!-- ROK — plán vs. skutečnost po měsících (hlavní blok listu Pivot) -->
+  <div class="view" id="view-rok">
+    <div class="list-head">
+      <div class="section-title">Plán vs. skutečnost — <span id="rok-label"></span></div>
+      <div class="month-nav">
+        <button onclick="changeRok(-1)">‹</button>
+        <span id="rok-nav-label"></span>
+        <button onclick="changeRok(1)">›</button>
+      </div>
+    </div>
+
+    <div class="rok-wrap">
+      <table class="rok-table" id="rok-table"></table>
+    </div>
+    <div id="rok-empty" class="empty" style="display:none">
+      <span class="emoji">📊</span>Za tento rok nejsou žádné záznamy ani plán
+    </div>
+    <div style="font-size:10px;color:var(--muted);margin-top:-14px">
+      Výdaje jsou se znaménkem mínus, stejně jako v listu <span class="mono">Pivot</span>.
+      Červeně, kde skutečnost zaostala za plánem — u výdajů překročení, u příjmů nedotažení.
+      Kliknutím na kategorii se rozbalí podkategorie (vyplňují se od 1/2026).
+    </div>
+  </div>
+
   <div class="view" id="view-zaznamy">
     <div class="split">
       <div class="form-card">
@@ -395,6 +447,8 @@ const MONTHS_CS=['Leden','Únor','Březen','Duben','Květen','Červen','Červene
 const MONTHS_SHORT=['Led','Úno','Bře','Dub','Kvě','Čer','Čvc','Srp','Zář','Říj','Lis','Pro'];
 
 let cY=new Date().getFullYear(), cM=new Date().getMonth();
+let rY=new Date().getFullYear();        // rok v záložce Rok, nezávislý na měsíci
+const rozbalene=new Set();              // hlavní kategorie rozkliknuté na podkategorie
 let zaznamy=[], penezenky=[], osnova=[];
 let editingZaznamId=null, editingPenezenkaId=null, selectedColor=COLORS[0];
 let session=null;
@@ -569,11 +623,13 @@ function changeMonth(d){
   render();
 }
 function showTab(id){
-  const tabs=['prehled','zaznamy','penezenky','osnova','plan'];
+  // pořadí musí odpovídat pořadí .tab v markupu – showTab je páruje podle indexu
+  const tabs=['prehled','rok','zaznamy','penezenky','osnova','plan'];
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===id));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+id).classList.add('active');
   if(id==='plan')renderPlan();
+  if(id==='rok')renderRok(true);
 }
 function updateCategorySelect(){
   const typ=document.getElementById('z-typ').value;
@@ -604,7 +660,7 @@ function render(){
   document.getElementById('records-month').textContent=label;
   document.getElementById('plan-month-label').textContent=label;
   document.getElementById('plan-mesic-label').textContent=label;
-  renderPrehled();renderZaznamy();renderPenezenky();renderOsnova();renderPlan();
+  renderPrehled();renderRok();renderZaznamy();renderPenezenky();renderOsnova();renderPlan();
 }
 
 function renderPrehled(){
@@ -647,6 +703,101 @@ function renderPrehled(){
   for(let i=5;i>=0;i--){let m=cM-i,y=cY;if(m<0){m+=12;y--;}const kk=`${y}-${String(m+1).padStart(2,'0')}`;months.push({label:MONTHS_SHORT[m],total:zaznamy.filter(z=>z.typ==='vydaj'&&!jePlan(z)&&z.datum&&z.datum.startsWith(kk)).reduce((s,z)=>s+Number(z.castka),0)});}
   const max=Math.max(...months.map(m=>m.total),1);
   document.getElementById('trend-chart').innerHTML=months.map((m,i)=>`<div class="bar-col"><div class="bar-col-val">${m.total?Math.round(m.total/1000)+'k':''}</div><div class="bar-col-bar" style="height:${Math.round(m.total/max*90)+4}px;background:${i===5?'var(--accent)':'var(--surface2)'}"></div><div class="bar-col-label">${m.label}</div></div>`).join('');
+}
+
+// --- ROK: matice kategorie × měsíce, v každé buňce plán a skutečnost ---
+function changeRok(d){rY+=d;renderRok(true);}
+
+// Matice je široká 25 sloupců, takže po otevření odrolujeme na aktuální měsíc —
+// jinak uživatel kouká na devět sloupců pomlček a to podstatné má za okrajem.
+// Jen při otevření pohledu nebo přepnutí roku, ne při každém překreslení, aby
+// uložení záznamu neposunulo rozkoukaný pohled zpátky.
+function rokSkocNaDnes(tabulka){
+  const wrap=tabulka.parentElement;
+  if(!wrap)return;
+  if(rY!==new Date().getFullYear()){wrap.scrollLeft=0;return;}
+  const th=tabulka.querySelectorAll('th.mesic')[new Date().getMonth()];
+  if(th)wrap.scrollLeft=Math.max(0,th.offsetLeft+th.offsetWidth-wrap.clientWidth+4);
+}
+function toggleKat(id){rozbalene.has(id)?rozbalene.delete(id):rozbalene.add(id);renderRok();}
+
+// Celé koruny se znaménkem; nula je pomlčka, ať se v matici neutopí čísla.
+function fmtM(n){return n?Math.round(n).toLocaleString('cs-CZ'):'—';}
+
+// Barva buňky: `skut < plan` je špatně v obou směrech — u výdajů (obě hodnoty
+// záporné) to znamená překročení, u příjmů nedotažení plánu. Bez plánu neradíme.
+function cellCls(plan,skut){return !plan?'':(skut<plan?'diff-over':'diff-ok');}
+
+function rokBunky(radek){
+  let html='';
+  for(let m=0;m<12;m++){
+    const {plan,skut}=radek[m];
+    html+=`<td class="hodnota plan">${fmtM(plan)}</td>`
+        + `<td class="hodnota ${cellCls(plan,skut)}">${fmtM(skut)}</td>`;
+  }
+  return html;
+}
+
+function renderRok(skocNaDnes=false){
+  const rok=String(rY);
+  document.getElementById('rok-label').textContent=rok;
+  document.getElementById('rok-nav-label').textContent=rok;
+  const tabulka=document.getElementById('rok-table');
+  const empty=document.getElementById('rok-empty');
+  const tops=catTop();
+  if(!tops.length){tabulka.innerHTML='';empty.style.display='block';return;}
+
+  // Mapa id → id hlavní kategorie. Předpočítat, ne hledat pro každý z 22 tisíc
+  // záznamů (osnova.find v cyklu by z toho udělalo kvadratickou záležitost).
+  const doTop=new Map(osnova.map(o=>[o.id,o.parent_id||o.id]));
+  const prazdny=()=>Array.from({length:12},()=>({plan:0,skut:0}));
+  const bucket=new Map();
+  const celkem=prazdny();
+  const pridej=(kat,m,plan,v)=>{
+    if(!bucket.has(kat))bucket.set(kat,prazdny());
+    bucket.get(kat)[m][plan?'plan':'skut']+=v;
+  };
+
+  let maData=false;
+  for(const z of zaznamy){
+    if(!z.datum||!z.datum.startsWith(rok+'-'))continue;
+    const m=parseInt(z.datum.slice(5,7),10)-1;
+    if(!(m>=0&&m<=11))continue;
+    maData=true;
+    // znaménko bere typ záznamu, ne typ kategorie – přesně jako list Pivot
+    const v=(z.typ==='prijem'?1:-1)*Number(z.castka);
+    const jp=jePlan(z);
+    celkem[m][jp?'plan':'skut']+=v;
+    if(z.kategorie_id==null)continue;
+    pridej(z.kategorie_id,m,jp,v);
+    const top=doTop.get(z.kategorie_id)||z.kategorie_id;
+    if(top!==z.kategorie_id)pridej(top,m,jp,v);   // a ještě do hlavní kategorie
+  }
+  if(!maData){tabulka.innerHTML='';empty.style.display='block';return;}
+  empty.style.display='none';
+
+  const hlavicka=
+    `<thead>
+      <tr><th class="kat">Kategorie</th>${MONTHS_SHORT.map(m=>`<th class="mesic" colspan="2">${m}</th>`).join('')}</tr>
+      <tr><th class="kat"></th>${MONTHS_SHORT.map(()=>'<th class="podhlavicka plan">plán</th><th class="podhlavicka">skut.</th>').join('')}</tr>
+    </thead>`;
+
+  const radky=tops.map(top=>{
+    const r=bucket.get(top.id);
+    // kategorie bez jediného čísla za celý rok se nevypisuje (např. Najem)
+    if(!r||!r.some(m=>m.plan||m.skut))return'';
+    const subs=catSub(top.id).filter(s=>{const sr=bucket.get(s.id);return sr&&sr.some(m=>m.plan||m.skut);});
+    const otevreno=rozbalene.has(top.id);
+    const sipka=subs.length?`<span class="rok-sipka">${otevreno?'▾':'▸'}</span>`:'<span class="rok-sipka"></span>';
+    const klik=subs.length?` class="rozbalitelna" onclick="toggleKat(${top.id})"`:'';
+    let html=`<tr${klik}><td class="kat">${sipka}<span class="badge ${top.typ==='vydaj'?'badge-vydaj':'badge-prijem'}">${top.typ==='vydaj'?'výdaj':'příjem'}</span> ${esc(top.nazev)}</td>${rokBunky(r)}</tr>`;
+    if(otevreno)html+=subs.map(s=>`<tr class="podkat"><td class="kat">↳ ${esc(s.nazev)}</td>${rokBunky(bucket.get(s.id))}</tr>`).join('');
+    return html;
+  }).join('');
+
+  tabulka.innerHTML=hlavicka+`<tbody>${radky}`
+    +`<tr class="soucet"><td class="kat">Celkový součet</td>${rokBunky(celkem)}</tr></tbody>`;
+  if(skocNaDnes)rokSkocNaDnes(tabulka);
 }
 
 function renderZaznamy(){
