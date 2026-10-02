@@ -209,7 +209,32 @@ await pg.click('#btn-login'); await pg.waitForSelector('main',{state:'visible'})
 await pg.reload(); await pg.waitForTimeout(800);
 check('po reloadu přihlášen bez hesla',await pg.isVisible('main'));
 
-console.log('\n== 12. záložka Rok: matice plán vs. skutečnost ==');
+console.log('\n== 12. zůstatky peněženek ==');
+await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(400);
+check('tabulka zůstatků je vidět',await pg.isVisible('#zustatky-table'));
+const zu=await pg.evaluate(()=>{
+  const cis=t=>{const v=t.textContent.replace(/[^\d+-]/g,'');return v?parseInt(v,10):0;};
+  const radek=tr=>{const td=[...tr.querySelectorAll('td')];return{
+    nazev:td[0].textContent.trim(),poc:cis(td[1]),pohyby:cis(td[2]),
+    zust:cis(td[3]),nenastalo:cis(td[4]),plan:cis(td[5]),vyhled:cis(td[6])};};
+  return {
+    radky:[...document.querySelectorAll('#zustatky-table tbody tr:not(.soucet)')].map(radek),
+    celkem:radek(document.querySelector('#zustatky-table tr.soucet')),
+  };
+});
+check('řádek na každou peněženku',zu.radky.length===1,JSON.stringify(zu.radky));
+// Invarianty, ne konkrétní čísla: mock datuje záznamy dny v aktuálním měsíci,
+// takže „je to v budoucnu" závisí na tom, kolikátého test běží.
+check('zůstatek = počáteční + pohyby',zu.radky.every(r=>r.zust===r.poc+r.pohyby),JSON.stringify(zu.radky));
+check('výhled = zůstatek + plán dopředu',zu.radky.every(r=>r.vyhled===r.zust+r.plan),JSON.stringify(zu.radky));
+check('součtový řádek sedí',zu.celkem.zust===zu.radky.reduce((a,r)=>a+r.zust,0)
+  &&zu.celkem.vyhled===zu.celkem.zust+zu.celkem.plan,JSON.stringify(zu.celkem));
+check('zůstatek Účtu je 98 000 (plán se nepočítá)',zu.radky[0].zust===98000,JSON.stringify(zu.radky[0]));
+const zpozn=txt(await pg.textContent('#zustatky-pozn'));
+check('poznámka vysvětluje vztah k Pivotu',zpozn.includes('Pivot'),zpozn);
+check('poznámka mluví o skutečnostech v budoucnu',/nenastalo/.test(zpozn),zpozn);
+
+console.log('\n== 13. záložka Rok: matice plán vs. skutečnost ==');
 await pg.click('.tab:text-is("Rok")'); await pg.waitForTimeout(400);
 check('pohled Rok je vidět',await pg.isVisible('#view-rok'));
 check('hlavička má 12 měsíců',(await pg.locator('#rok-table th.mesic').count())===12);
@@ -282,7 +307,7 @@ check('v prázdném roce se souhrn schová',!(await pg.isVisible('#rok-souhrn-bl
 await pg.click('#view-rok .month-nav button:last-child'); await pg.waitForTimeout(400);
 check('zpět na letošek',(await pg.textContent('#rok-label'))===letos);
 
-console.log('\n== 13. stránkování: víc záznamů než strop PostgRESTu ==');
+console.log('\n== 14. stránkování: víc záznamů než strop PostgRESTu ==');
 // Po importu historie má tabulka 22 tisíc řádků. Jeden GET by vrátil jen
 // prvních MAX_ROWS a appka by tiše počítala s osekanými daty, takže tohle
 // hlídá, že se dotahují všechny stránky.
