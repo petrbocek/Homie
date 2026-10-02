@@ -78,6 +78,10 @@ CREATE TABLE IF NOT EXISTS zaznamy (
   prevod_skupina  TEXT,                       -- páruje obě nohy převodu mezi
                                               -- peněženkami, aby šly vyloučit
                                               -- ze součtů za kategorii
+  pravidelna      BOOLEAN NOT NULL DEFAULT FALSE,  -- mandatorní pravidelná
+                                              -- platba (hypotéka, zálohy,
+                                              -- pojistky, investice) – výdaj,
+                                              -- kterého se nejde zbavit
   zdroj_radek     INTEGER,                    -- číslo řádku ve zdrojovém
                                               -- sheetu; klíč importu historie,
                                               -- viz unikátní index níž
@@ -89,6 +93,11 @@ CREATE TABLE IF NOT EXISTS zaznamy (
 -- pustit opakovaně, aniž by se řádky zduplikovaly. Záznamy zadané v appce ho
 -- nemají, proto je unikátní index částečný.
 ALTER TABLE zaznamy ADD COLUMN IF NOT EXISTS zdroj_radek INTEGER;
+
+-- Pravidelné (mandatorní) platby se neodvozují z pravidla, ale označují přímo
+-- na pohybu. Nastavují se hromadně podle dvojice „kde + hlavní kategorie“;
+-- appka je u nového záznamu navrhne, když stejnou dvojici v historii najde.
+ALTER TABLE zaznamy ADD COLUMN IF NOT EXISTS pravidelna BOOLEAN NOT NULL DEFAULT FALSE;
 
 ALTER TABLE zaznamy DROP CONSTRAINT IF EXISTS zaznamy_typ_polozky_chk;
 ALTER TABLE zaznamy ADD  CONSTRAINT zaznamy_typ_polozky_chk

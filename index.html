@@ -82,6 +82,7 @@
   .rok-table tr.soucet td{border-top:2px solid var(--border);font-weight:700;background:var(--surface);}
   .rok-sipka{display:inline-block;width:12px;color:var(--muted);font-size:9px;}
   .rok-pozn{font-size:10px;color:var(--muted);margin-top:-14px;margin-bottom:24px;}
+  .badge-pravidelna{background:rgba(96,200,240,0.15);color:var(--accent2);}
   .rok-table td.rozdil{font-family:'DM Mono',monospace;text-align:right;opacity:0.85;}
   /* Na mobilu sežere přilepený sloupec s kategorií většinu šířky a na měsíce
      nezbyde místo, tak ho zúžíme, ořízneme názvy a odznak typu schováme —
@@ -258,6 +259,7 @@
         <div class="card-label">Výdaje měsíce</div>
         <div class="card-value" id="sum-vydaje">—</div>
         <div class="card-sub" id="sum-vydaje-plan">plán: —</div>
+        <div class="card-sub" id="sum-vydaje-mand">mandatorní: —</div>
       </div>
       <div class="card warn">
         <div class="card-label">Zbývá dle plánu</div>
@@ -346,10 +348,14 @@
           <div class="field"><label>Datum</label><input id="z-datum" type="date"></div>
           <div class="field"><label>Částka (Kč)</label><input id="z-castka" type="number" placeholder="0" min="0" step="0.01"></div>
         </div>
-        <div class="field"><label>Kategorie</label><select id="z-kategorie"><option value="">— vybrat —</option></select></div>
-        <div class="field"><label>Kde / U koho</label><input id="z-kde" type="text" placeholder="např. Albert, Shell…"></div>
+        <div class="field"><label>Kategorie</label><select id="z-kategorie" onchange="navrhniPravidelnou()"><option value="">— vybrat —</option></select></div>
+        <div class="field"><label>Kde / U koho</label><input id="z-kde" type="text" placeholder="např. Albert, Shell…" onchange="navrhniPravidelnou()"></div>
         <div class="field"><label>Poznámka</label><textarea id="z-poznamka" placeholder="volitelná poznámka"></textarea></div>
         <div class="field"><label>Peněženka</label><select id="z-penezenka"><option value="">— vybrat —</option></select></div>
+        <div class="field" style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="z-pravidelna" style="width:auto;margin:0">
+          <label for="z-pravidelna" style="margin:0;text-transform:none;letter-spacing:0;font-size:11px">Pravidelná platba — mandatorní výdaj</label>
+        </div>
         <button class="btn" id="btn-zaznam" onclick="saveZaznam()">+ Přidat</button>
         <button class="btn secondary" id="btn-cancel-zaznam" onclick="cancelEditZaznam()" style="display:none;margin-top:6px">Zrušit úpravy</button>
       </div>
@@ -360,6 +366,7 @@
             <option value="vse">Vše</option>
             <option value="skutecnost">Jen skutečnost</option>
             <option value="plan">Jen plán</option>
+            <option value="pravidelne">Jen pravidelné</option>
           </select>
         </div>
         <div style="overflow-x:auto">
@@ -721,6 +728,29 @@ function updateCategorySelect(){
   const typ=document.getElementById('z-typ').value;
   document.getElementById('z-kategorie').innerHTML='<option value="">— vybrat —</option>'+buildCatOptions(typ);
 }
+// Dvojice „kde|hlavní kategorie“, u kterých už nějaký záznam jako pravidelný
+// označený je. Slouží k navržení u nového záznamu, ať označení nezůstane jen
+// na historii a nezačne po pár měsících zase lhát.
+function pravidelneKlice(){
+  const doTop=new Map(osnova.map(o=>[o.id,o.parent_id||o.id]));
+  const klice=new Set();
+  for(const z of zaznamy){
+    if(!z.pravidelna||!z.kde||!z.kategorie_id)continue;
+    klice.add(z.kde.trim().toLowerCase()+'|'+doTop.get(z.kategorie_id));
+  }
+  return klice;
+}
+function navrhniPravidelnou(){
+  if(editingZaznamId)return;                 // u editace volbu nepřepisujeme
+  const kde=(document.getElementById('z-kde').value||'').trim().toLowerCase();
+  const kat=parseInt(document.getElementById('z-kategorie').value)||null;
+  if(!kde||!kat)return;
+  const c=osnova.find(o=>o.id==kat);
+  if(!c)return;
+  if(pravidelneKlice().has(kde+'|'+(c.parent_id||c.id)))
+    document.getElementById('z-pravidelna').checked=true;
+}
+
 function updateWalletSelect(){
   document.getElementById('z-penezenka').innerHTML='<option value="">— vybrat —</option>'+penezenky.map(w=>`<option value="${w.id}">${esc(w.nazev)}</option>`).join('');
 }
@@ -762,6 +792,10 @@ function renderPrehled(){
   document.getElementById('sum-prijmy-plan').textContent=`plán: ${planPrijmy?fmt(planPrijmy):'nenastaveno'}`;
   document.getElementById('sum-vydaje').textContent=fmt(realVydaje);
   document.getElementById('sum-vydaje-plan').textContent=`plán: ${planVydaje?fmt(planVydaje):'nenastaveno'}`;
+  const mandVydaje=mz.filter(z=>z.typ==='vydaj'&&z.pravidelna).reduce((s,z)=>s+Number(z.castka),0);
+  document.getElementById('sum-vydaje-mand').textContent=mandVydaje
+    ?`mandatorní: ${fmt(mandVydaje)}${realVydaje?` · ${Math.round(mandVydaje/realVydaje*100)} % výdajů`:''}`
+    :'mandatorní: —';
   const zbyva=planVydaje-realVydaje;
   const el=document.getElementById('sum-zbyva');
   el.textContent=planVydaje?fmt(Math.abs(zbyva)):'—';
@@ -936,7 +970,8 @@ function renderRok(skocNaDnes=false){
 
 function renderZaznamy(){
   const f=(document.getElementById('z-filtr')||{}).value||'vse';
-  const mz=mZaz().filter(z=>f==='vse'||(f==='plan')===jePlan(z)).sort((a,b)=>b.datum.localeCompare(a.datum));
+  const mz=mZaz().filter(z=>f==='vse'?true:f==='pravidelne'?z.pravidelna:(f==='plan')===jePlan(z))
+                 .sort((a,b)=>b.datum.localeCompare(a.datum));
   const tbody=document.getElementById('zaznamy-table');
   const empty=document.getElementById('zaznamy-empty');
   if(!mz.length){tbody.innerHTML='';empty.style.display='block';return;}
@@ -947,7 +982,7 @@ function renderZaznamy(){
     const pozn=z.poznamka?`<div style="font-size:10px;color:var(--muted);margin-top:2px">${esc(z.poznamka)}</div>`:'';
     const wColor=z.penezenka_id?col(walletColor(z.penezenka_id)):'#888888';
     return`<tr>
-      <td class="mono">${esc(z.datum)}${jePlan(z)?' <span class="badge badge-plan">plán</span>':''}</td>
+      <td class="mono">${esc(z.datum)}${jePlan(z)?' <span class="badge badge-plan">plán</span>':''}${z.pravidelna?' <span class="badge badge-pravidelna" title="mandatorní pravidelná platba">⟳</span>':''}</td>
       <td>${kde}${pozn}</td>
       <td>${esc(catName(z.kategorie_id))}</td>
       <td>${z.penezenka_id?`<span style="color:${wColor}">${esc(walletName(z.penezenka_id))}</span>`:'—'}</td>
@@ -1063,7 +1098,8 @@ async function saveZaznam(){
       kategorie_id:parseInt(document.getElementById('z-kategorie').value)||null,
       penezenka_id:parseInt(document.getElementById('z-penezenka').value)||null,
       kde:document.getElementById('z-kde').value.trim()||null,
-      poznamka:document.getElementById('z-poznamka').value.trim()||null};
+      poznamka:document.getElementById('z-poznamka').value.trim()||null,
+      pravidelna:document.getElementById('z-pravidelna').checked};
     if(editingZaznamId){
       await api('zaznamy','PATCH',row,`id=eq.${editingZaznamId}`);
       const idx=zaznamy.findIndex(z=>z.id===editingZaznamId);
@@ -1090,6 +1126,7 @@ function editZaznam(id){
   document.getElementById('z-castka').value=z.castka;
   document.getElementById('z-kde').value=z.kde||'';
   document.getElementById('z-poznamka').value=z.poznamka||'';
+  document.getElementById('z-pravidelna').checked=!!z.pravidelna;
   updateWalletSelect();
   if(z.penezenka_id)document.getElementById('z-penezenka').value=z.penezenka_id;
   document.getElementById('form-zaznam-title').textContent='Upravit záznam';
@@ -1101,7 +1138,8 @@ function editZaznam(id){
 function cancelEditZaznam(){
   editingZaznamId=null;
   ['z-kde','z-poznamka','z-castka'].forEach(id=>document.getElementById(id).value='');
-  document.getElementById('z-datum').value=new Date().toISOString().split('T')[0];
+  document.getElementById('z-pravidelna').checked=false;
+  document.getElementById('z-datum').value=dnes();
   document.getElementById('z-polozka').value='skutecnost';
   document.getElementById('form-zaznam-title').textContent='Přidat záznam';
   document.getElementById('btn-cancel-zaznam').style.display='none';

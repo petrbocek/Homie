@@ -32,7 +32,7 @@ const DB={
   zaznamy:[
     {id:100,datum:d(3),castka:'90000.00',typ:'prijem',typ_polozky:'skutecnost',kategorie_id:11,kde:'Demos',poznamka:null,penezenka_id:1},
     {id:101,datum:d(5),castka:'1200.00',typ:'vydaj',typ_polozky:'skutecnost',kategorie_id:91,kde:'Albert & <i>spol</i>',poznamka:'pozn "x" <hr>',penezenka_id:1},
-    {id:102,datum:d(6),castka:'800.00',typ:'vydaj',typ_polozky:'skutecnost',kategorie_id:10,kde:'Action',poznamka:null,penezenka_id:1},
+    {id:102,datum:d(6),castka:'800.00',typ:'vydaj',typ_polozky:'skutecnost',kategorie_id:10,kde:'Action',poznamka:null,penezenka_id:1,pravidelna:true},
     {id:200,datum:d(15),castka:'88000.00',typ:'prijem',typ_polozky:'plan',kategorie_id:11,kde:'Demos',poznamka:'Plat',penezenka_id:1},
     {id:201,datum:d(20),castka:'5000.00',typ:'vydaj',typ_polozky:'plan',kategorie_id:91,kde:'NA',poznamka:null,penezenka_id:1},
     {id:202,datum:d(25),castka:'3300.00',typ:'vydaj',typ_polozky:'plan',kategorie_id:null,kde:'Colliery',poznamka:'Bez kategorie',penezenka_id:1},
@@ -209,7 +209,38 @@ await pg.click('#btn-login'); await pg.waitForSelector('main',{state:'visible'})
 await pg.reload(); await pg.waitForTimeout(800);
 check('po reloadu přihlášen bez hesla',await pg.isVisible('main'));
 
-console.log('\n== 12. zůstatky peněženek ==');
+console.log('\n== 12. pravidelné (mandatorní) platby ==');
+await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
+check('souhrn ukazuje mandatorní výdaje',txt(await pg.textContent('#sum-vydaje-mand')).includes('800'),
+  await pg.textContent('#sum-vydaje-mand'));
+check('souhrn ukazuje podíl na výdajích',/%/.test(await pg.textContent('#sum-vydaje-mand')),
+  await pg.textContent('#sum-vydaje-mand'));
+await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
+check('pravidelná platba má odznak',(await pg.locator('#zaznamy-table .badge-pravidelna').count())===1,
+  String(await pg.locator('#zaznamy-table .badge-pravidelna').count()));
+await pg.selectOption('#z-filtr','pravidelne'); await pg.waitForTimeout(300);
+check('filtr Jen pravidelné nechá 1 řádek',(await pg.locator('#zaznamy-table tr').count())===1,
+  String(await pg.locator('#zaznamy-table tr').count()));
+await pg.selectOption('#z-filtr','vse'); await pg.waitForTimeout(300);
+// Stejná dvojice kde+kategorie jako u označeného záznamu → appka ji navrhne sama,
+// aby označení nezůstalo jen na historii.
+await pg.fill('#z-kde','Action'); await pg.selectOption('#z-kategorie','10'); await pg.waitForTimeout(300);
+check('u shodné dvojice se pravidelná navrhne',await pg.isChecked('#z-pravidelna'));
+await pg.fill('#z-kde','Neznámý obchod'); await pg.waitForTimeout(200);
+await pg.uncheck('#z-pravidelna');
+await pg.selectOption('#z-kategorie','91'); await pg.waitForTimeout(300);
+check('u neznámé dvojice se nenavrhuje',!(await pg.isChecked('#z-pravidelna')));
+await pg.fill('#z-castka','123'); await pg.fill('#z-datum',d(14));
+await pg.check('#z-pravidelna');
+calls.length=0;
+await pg.click('#btn-zaznam'); await pg.waitForTimeout(500);
+const postP=calls.find(c=>c.method==='POST');
+check('POST posílá pravidelna=true',!!postP&&JSON.parse(postP.body).pravidelna===true,postP&&postP.body);
+// Uložený záznam zůstává v paměti appky a posunul by čísla v dalších oddílech,
+// tak načteme čistý stav z mocku – stejně jako to dělá oddíl 11.
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(900);
+
+console.log('\n== 13. zůstatky peněženek ==');
 await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(400);
 check('tabulka zůstatků je vidět',await pg.isVisible('#zustatky-table'));
 const zu=await pg.evaluate(()=>{
@@ -234,7 +265,7 @@ const zpozn=txt(await pg.textContent('#zustatky-pozn'));
 check('poznámka vysvětluje vztah k Pivotu',zpozn.includes('Pivot'),zpozn);
 check('poznámka vysvětluje zaplaceno dopředu',/zaplaceno dopředu/.test(zpozn),zpozn);
 
-console.log('\n== 13. záložka Rok: matice plán vs. skutečnost ==');
+console.log('\n== 14. záložka Rok: matice plán vs. skutečnost ==');
 await pg.click('.tab:text-is("Rok")'); await pg.waitForTimeout(400);
 check('pohled Rok je vidět',await pg.isVisible('#view-rok'));
 check('hlavička má 12 měsíců',(await pg.locator('#rok-table th.mesic').count())===12);
@@ -307,7 +338,7 @@ check('v prázdném roce se souhrn schová',!(await pg.isVisible('#rok-souhrn-bl
 await pg.click('#view-rok .month-nav button:last-child'); await pg.waitForTimeout(400);
 check('zpět na letošek',(await pg.textContent('#rok-label'))===letos);
 
-console.log('\n== 14. stránkování: víc záznamů než strop PostgRESTu ==');
+console.log('\n== 15. stránkování: víc záznamů než strop PostgRESTu ==');
 // Po importu historie má tabulka 22 tisíc řádků. Jeden GET by vrátil jen
 // prvních MAX_ROWS a appka by tiše počítala s osekanými daty, takže tohle
 // hlídá, že se dotahují všechny stránky.
