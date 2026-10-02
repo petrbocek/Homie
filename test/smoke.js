@@ -240,10 +240,45 @@ check('po rozkliku je o řádek víc',(await rRadky.count())===5,String(await rR
 await pg.click('#rok-table tbody tr:nth-child(1) td.kat'); await pg.waitForTimeout(300);
 check('druhý klik zabalí',!(await rTxt('#rok-table')).includes('Peta'));
 
+// --- souhrn za kvartály, pololetí a rok (#6) ---
+const sou=await pg.evaluate(()=>{
+  const tds=[...document.querySelectorAll('#rok-souhrn tr.soucet td')].slice(1);
+  const cis=t=>{const v=t.textContent.replace(/[^\d+-]/g,'');return v?parseInt(v,10):0;};
+  const out={};
+  ['Q1','Q2','Q3','Q4','H1','H2','Rok'].forEach((k,i)=>{
+    out[k]={plan:cis(tds[i*3]),skut:cis(tds[i*3+1]),rozdil:cis(tds[i*3+2])};
+  });
+  return out;
+});
+check('souhrn má 7 skupin × 3 sloupce',
+  (await pg.locator('#rok-souhrn tr.soucet td').count())===22,
+  String(await pg.locator('#rok-souhrn tr.soucet td').count()));
+// Kritérium z #6: kvartály i pololetí musí dát totéž co roční sloupec.
+check('Q1+Q2+Q3+Q4 = Rok (plán)',sou.Q1.plan+sou.Q2.plan+sou.Q3.plan+sou.Q4.plan===sou.Rok.plan,JSON.stringify(sou));
+check('Q1+Q2+Q3+Q4 = Rok (skutečnost)',sou.Q1.skut+sou.Q2.skut+sou.Q3.skut+sou.Q4.skut===sou.Rok.skut,JSON.stringify(sou));
+check('H1+H2 = Rok (plán)',sou.H1.plan+sou.H2.plan===sou.Rok.plan,JSON.stringify(sou));
+check('H1+H2 = Rok (skutečnost)',sou.H1.skut+sou.H2.skut===sou.Rok.skut,JSON.stringify(sou));
+check('rozdíl = skutečnost − plán',sou.Rok.rozdil===sou.Rok.skut-sou.Rok.plan,JSON.stringify(sou.Rok));
+// a totéž proti měsíční matici z #5
+const mesicniSoucet=await pg.evaluate(()=>{
+  const tds=[...document.querySelectorAll('#rok-table tr.soucet td')].slice(1);
+  const cis=t=>{const v=t.textContent.replace(/[^\d+-]/g,'');return v?parseInt(v,10):0;};
+  let plan=0,skut=0;
+  for(let i=0;i<12;i++){plan+=cis(tds[i*2]);skut+=cis(tds[i*2+1]);}
+  return {plan,skut};
+});
+check('součet 12 měsíců = roční sloupec',
+  mesicniSoucet.plan===sou.Rok.plan&&mesicniSoucet.skut===sou.Rok.skut,
+  JSON.stringify({mesicni:mesicniSoucet,rok:sou.Rok}));
+// plán 88 000 − 5 000 − 3 300 − 1 000, skutečnost 90 000 − 1 200 − 800 − 4 000
+check('roční čísla sedí na data (78 700 / 84 000)',
+  sou.Rok.plan===78700&&sou.Rok.skut===84000,JSON.stringify(sou.Rok));
+
 const letos=await pg.textContent('#rok-label');
 await pg.click('#view-rok .month-nav button:first-child'); await pg.waitForTimeout(400);
 check('přepnutí roku zpět',(await pg.textContent('#rok-label'))===String(+letos-1));
 check('rok bez dat má prázdný stav',await pg.isVisible('#rok-empty'));
+check('v prázdném roce se souhrn schová',!(await pg.isVisible('#rok-souhrn-blok')));
 await pg.click('#view-rok .month-nav button:last-child'); await pg.waitForTimeout(400);
 check('zpět na letošek',(await pg.textContent('#rok-label'))===letos);
 
