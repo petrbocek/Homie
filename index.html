@@ -442,6 +442,20 @@
       kladné číslo pak znamená „lépe, než bylo v plánu" u výdajů i u příjmů.
     </div>
     </div>
+
+    <div id="roky-kat-blok">
+    <div class="section-title" style="margin-bottom:10px">Všechny roky po kategoriích</div>
+    <div class="rok-wrap">
+      <table class="rok-table" id="roky-kat-table"></table>
+    </div>
+    <div class="rok-pozn">
+      Jediná tabulka, která se <strong>neřídí přepínačem roku</strong> nad maticí — je to
+      pohled napříč celou historií. V buňce je skutečnost, plán je v tabulkách nad tím;
+      tady jde o to, jak se kategorie vyvíjela v čase. Bez převodů mezi peněženkami.
+      Rok označený <strong class="mezera">⚠</strong> není celý, takže se s ostatními
+      nedá srovnávat. Kliknutím na kategorii se rozbalí podkategorie, stejně jako v matici.
+    </div>
+    </div>
   </div>
 
   <div class="view" id="view-zaznamy">
@@ -982,20 +996,22 @@ function renderPrehled(){
 function rokySouhrn(){
   const letos=new Date().getFullYear();
   const m=new Map();
+  let zacatek=null;
   for(const z of zaznamy){
     if(!z.datum||jePlan(z)||jePrevod(z))continue;
     const r=z.datum.slice(0,4);
     if(!/^\d{4}$/.test(r))continue;
-    if(!m.has(r))m.set(r,{rok:r,prijmy:0,vydaje:0,prvni:z.datum});
+    if(zacatek===null||z.datum<zacatek)zacatek=z.datum;
+    if(!m.has(r))m.set(r,{rok:r,prijmy:0,vydaje:0});
     const a=m.get(r);
     a[z.typ==='prijem'?'prijmy':'vydaje']+=Number(z.castka);
-    if(z.datum<a.prvni)a.prvni=z.datum;
   }
   return [...m.values()].sort((a,b)=>a.rok.localeCompare(b.rok)).map(a=>({...a,
     saldo:a.prijmy-a.vydaje,
-    // Neúplný rok nejde srovnávat s ostatními: buď ještě neskončil, nebo
-    // v něm historie teprve začala (deník se vede od srpna 2015).
-    uplny:+a.rok<letos&&a.prvni.slice(5,7)==='01'}));
+    // Rok je úplný, když už skončil a deník se v něm vedl od začátku.
+    // Schválně ne „má záznam v lednu": prázdný leden se stát může a celý rok
+    // by se kvůli tomu označil za neúplný.
+    uplny:+a.rok<letos&&zacatek<a.rok+'-01-01'}));
 }
 
 // Třináct let se na šířku nevejde a zajímavé jsou poslední roky, ne rok 2015.
@@ -1103,7 +1119,59 @@ function rokRadky(tops,bucket,bunky){
   }).join('');
 }
 
+// --- VŠECHNY ROKY PO KATEGORIÍCH ---
+// Stejný tvar bucketu jako matice (pole {plan,skut}), jen místo dvanácti
+// měsíců jsou to roky — díky tomu se dá použít tentýž rokRadky() i rozbalování.
+function rokyKatBucket(roky){
+  const doTop=new Map(osnova.map(o=>[o.id,o.parent_id||o.id]));
+  const idx=new Map(roky.map((r,i)=>[r.rok,i]));
+  const prazdny=()=>roky.map(()=>({plan:0,skut:0}));
+  const bucket=new Map();
+  const celkem=prazdny();
+  const pridej=(kat,i,v)=>{
+    if(!bucket.has(kat))bucket.set(kat,prazdny());
+    bucket.get(kat)[i].skut+=v;
+  };
+  for(const z of zaznamy){
+    if(!z.datum||jePlan(z)||jePrevod(z))continue;
+    const i=idx.get(z.datum.slice(0,4));
+    if(i===undefined)continue;
+    const v=(z.typ==='prijem'?1:-1)*Number(z.castka);
+    celkem[i].skut+=v;
+    if(z.kategorie_id==null)continue;
+    pridej(z.kategorie_id,i,v);
+    const top=doTop.get(z.kategorie_id)||z.kategorie_id;
+    if(top!==z.kategorie_id)pridej(top,i,v);
+  }
+  return {bucket,celkem};
+}
+function rokyKatBunky(radek){
+  return radek.map(c=>`<td class="hodnota">${fmtM(c.skut)}</td>`).join('');
+}
+function renderRokyKat(skoc=false){
+  const blok=document.getElementById('roky-kat-blok');
+  const tabulka=document.getElementById('roky-kat-table');
+  const tops=catTop();
+  // Neúplné roky bere stejná funkce jako graf v Přehledu, ať to značí stejně.
+  const roky=rokySouhrn();
+  if(!tops.length||!roky.length){blok.style.display='none';tabulka.innerHTML='';return;}
+  blok.style.display='';
+  const {bucket,celkem}=rokyKatBucket(roky);
+  tabulka.innerHTML=`<thead><tr><th class="kat">Kategorie</th>`
+    + roky.map(r=>`<th class="mesic">${esc(r.rok)}`
+        + (r.uplny?'':' <span class="mezera" title="neúplný rok">\u26a0</span>')+'</th>').join('')
+    + `</tr></thead><tbody>`
+    + rokRadky(tops,bucket,rokyKatBunky)
+    + `<tr class="soucet"><td class="kat">Celkový součet</td>${rokyKatBunky(celkem)}</tr></tbody>`;
+  // Zajímavé jsou poslední roky, ne rok 2015 — ale posouvat jen při otevření
+  // pohledu, ne při každém překreslení (rozbalení kategorie jinak uteče).
+  const wrap=tabulka.parentElement;
+  if(skoc&&wrap)wrap.scrollLeft=wrap.scrollWidth;
+}
+
 function renderRok(skocNaDnes=false){
+  // Napříč lety, takže se nesmí schovat ani když vybraný rok nemá data.
+  renderRokyKat(skocNaDnes);
   const rok=String(rY);
   document.getElementById('rok-label').textContent=rok;
   document.getElementById('rok-nav-label').textContent=rok;

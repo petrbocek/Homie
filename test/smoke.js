@@ -672,7 +672,58 @@ check('popisek nese obě čísla',
 check('běžící rok je označený jako neúplný',ro[0]&&ro[0].neuplny,JSON.stringify(ro));
 check('neúplný rok nese značku v popisku',ro[0]&&/\u26a0/.test(ro[0].rok),JSON.stringify(ro));
 
-console.log('\n== 20. stránkování: víc záznamů než strop PostgRESTu ==');
+console.log('\n== 20. Rok: třetí tabulka přes všechny roky ==');
+await pg.click('.tab:text-is("Rok")'); await pg.waitForTimeout(500);
+check('tabulka všech let je vidět',await pg.isVisible('#roky-kat-blok'));
+const vr=async()=>pg.evaluate(()=>{
+  const cis=t=>{const v=t.replace(/[^\d+-]/g,'');return v?parseInt(v,10):0;};
+  const o={};
+  for(const tr of document.querySelectorAll('#roky-kat-table tbody tr')){
+    const td=[...tr.children].map(x=>x.textContent.trim());
+    o[td[0].replace(/[▸▾↳]/g,'').replace(/výdaj|příjem i výdaj|příjem/,'').trim()]=td.slice(1).map(cis);
+  }
+  const hl=[...document.querySelectorAll('#roky-kat-table th.mesic')].map(t=>t.textContent.trim());
+  return {radky:o,hlavicka:hl};
+});
+const vsechny=await vr();
+check('sloupec na každý rok s daty',vsechny.hlavicka.length===1,JSON.stringify(vsechny.hlavicka));
+check('běžící rok je i tady označený',/\u26a0/.test(vsechny.hlavicka[0]),JSON.stringify(vsechny.hlavicka));
+
+// Nezávislá kontrola: roční sloupec musí dát totéž co sloupec „Rok" ze
+// souhrnné tabulky nad ním. Obě se počítají zvlášť, tak ať se shodnou.
+const zeSouhrnu=await pg.evaluate(()=>{
+  const cis=t=>{const v=t.replace(/[^\d+-]/g,'');return v?parseInt(v,10):0;};
+  const o={};
+  for(const tr of document.querySelectorAll('#rok-souhrn tbody tr')){
+    const td=[...tr.children].map(x=>x.textContent.trim());
+    // 7 skupin × 3 sloupce; Rok je poslední trojice, skutečnost je prostřední
+    o[td[0].replace(/[▸▾↳]/g,'').replace(/výdaj|příjem i výdaj|příjem/,'').trim()]=cis(td[1+6*3+1]);
+  }
+  return o;
+});
+const neshody=Object.entries(vsechny.radky)
+  .filter(([k,v])=>zeSouhrnu[k]!==undefined&&zeSouhrnu[k]!==v[0]);
+check('roční součty sedí na souhrnnou tabulku',neshody.length===0,
+  JSON.stringify({neshody,vsechny:vsechny.radky,zeSouhrnu}));
+check('má se co srovnávat',Object.keys(vsechny.radky).length>=3,JSON.stringify(vsechny.radky));
+
+// Rozbalení kategorie platí pro všechny tři tabulky naráz.
+const pred=Object.keys((await vr()).radky).length;
+await pg.click('#rok-table tbody tr.rozbalitelna'); await pg.waitForTimeout(400);
+const po=Object.keys((await vr()).radky).length;
+check('rozbalení v matici rozbalí i tabulku let',po===pred+1,`${pred} → ${po}`);
+await pg.click('#rok-table tbody tr.rozbalitelna'); await pg.waitForTimeout(400);
+
+// Přepínač roku se téhle tabulky netýká — je to pohled napříč lety.
+await pg.click('#view-rok .month-nav button:first-child'); await pg.waitForTimeout(400);
+check('prázdný rok tabulku let neschová',await pg.isVisible('#roky-kat-blok'));
+const poPrepnuti=await vr();
+check('přepnutí roku čísla nezmění',
+  JSON.stringify(poPrepnuti.radky)===JSON.stringify(vsechny.radky),
+  JSON.stringify({pred:vsechny.radky,po:poPrepnuti.radky}));
+await pg.click('#view-rok .month-nav button:last-child'); await pg.waitForTimeout(400);
+
+console.log('\n== 21. stránkování: víc záznamů než strop PostgRESTu ==');
 // Po importu historie má tabulka 22 tisíc řádků. Jeden GET by vrátil jen
 // prvních MAX_ROWS a appka by tiše počítala s osekanými daty, takže tohle
 // hlídá, že se dotahují všechny stránky.
