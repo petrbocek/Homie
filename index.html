@@ -183,6 +183,15 @@
   .bar-col-bar{width:100%;border-radius:4px 4px 0 0;min-height:4px;}
   .bar-col-label{font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;}
   .bar-col-val{font-size:9px;color:var(--muted);font-family:'DM Mono',monospace;}
+  /* Roční souhrn: dva sloupce na rok. Na mobilu se třináct let do šířky
+     nevejde, tak se posouvá do strany místo aby se slouply do nečitelna. */
+  .bar-chart.roky{height:140px;overflow-x:auto;padding-bottom:4px;}
+  .bar-chart.roky .bar-col{flex:0 0 44px;}
+  .bar-par{display:flex;align-items:flex-end;gap:3px;width:100%;}
+  .bar-par>div{flex:1;border-radius:3px 3px 0 0;min-height:3px;}
+  .bar-col.neuplny{opacity:0.55;}
+  .cara-legenda span.prijmy::before{border-top-color:var(--green);}
+  .cara-legenda span.vydaje::before{border-top-color:var(--red);}
   .diff-ok{color:var(--green);} .diff-over{color:var(--red);} .diff-none{color:var(--muted);}
 
   .toast{position:fixed;bottom:18px;right:18px;background:var(--surface);border:1px solid var(--accent);color:var(--accent);padding:10px 16px;border-radius:8px;font-size:12px;font-weight:600;transform:translateY(80px);opacity:0;transition:all 0.3s cubic-bezier(.4,0,.2,1);z-index:999;}
@@ -315,6 +324,20 @@
     <div class="chart-wrap">
       <div class="chart-title">Výdaje posledních 6 měsíců</div>
       <div class="bar-chart" id="trend-chart"></div>
+    </div>
+
+    <div class="chart-wrap">
+      <div class="chart-title">Souhrn za každý rok</div>
+      <div class="bar-chart roky" id="roky-chart"></div>
+      <div class="cara-legenda">
+        <span class="prijmy">příjmy</span><span class="vydaje">výdaje</span>
+      </div>
+      <div class="rok-pozn" style="margin-top:10px">
+        Jen skutečnost — bez plánu a bez převodů mezi peněženkami. Číslo nad sloupci
+        je saldo roku, tedy příjmy minus výdaje. Rok označený
+        <strong class="mezera">⚠</strong> není celý: buď ještě neskončil, nebo v něm
+        historie teprve začala, takže se s ostatními nedá srovnávat.
+      </div>
     </div>
   </div>
 
@@ -843,6 +866,7 @@ function showTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===id));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+id).classList.add('active');
+  if(id==='prehled')renderRoky(true);
   if(id==='plan')renderPlan();
   if(id==='rok')renderRok(true);
   if(id==='energie')renderEnergie();
@@ -903,7 +927,7 @@ function render(){
   document.getElementById('records-month').textContent=label;
   document.getElementById('plan-month-label').textContent=label;
   document.getElementById('plan-mesic-label').textContent=label;
-  renderPrehled();renderRok();renderZaznamy();renderPenezenky();renderZustatky();renderOsnova();renderEnergie();renderSporeni();renderPlan();
+  renderPrehled();renderRoky();renderRok();renderZaznamy();renderPenezenky();renderZustatky();renderOsnova();renderEnergie();renderSporeni();renderPlan();
 }
 
 function renderPrehled(){
@@ -950,6 +974,53 @@ function renderPrehled(){
   for(let i=5;i>=0;i--){let m=cM-i,y=cY;if(m<0){m+=12;y--;}const kk=`${y}-${String(m+1).padStart(2,'0')}`;months.push({label:MONTHS_SHORT[m],total:zaznamy.filter(z=>z.typ==='vydaj'&&!jePlan(z)&&!jePrevod(z)&&z.datum&&z.datum.startsWith(kk)).reduce((s,z)=>s+Number(z.castka),0)});}
   const max=Math.max(...months.map(m=>m.total),1);
   document.getElementById('trend-chart').innerHTML=months.map((m,i)=>`<div class="bar-col"><div class="bar-col-val">${m.total?Math.round(m.total/1000)+'k':''}</div><div class="bar-col-bar" style="height:${Math.round(m.total/max*90)+4}px;background:${i===5?'var(--accent)':'var(--surface2)'}"></div><div class="bar-col-label">${m.label}</div></div>`).join('');
+}
+
+// --- SOUHRN ZA ROKY ---
+// Jen skutečnost, bez plánu a bez převodů mezi peněženkami — stejná definice
+// jako u ostatních součtů, ať se čísla mezi pohledy neliší.
+function rokySouhrn(){
+  const letos=new Date().getFullYear();
+  const m=new Map();
+  for(const z of zaznamy){
+    if(!z.datum||jePlan(z)||jePrevod(z))continue;
+    const r=z.datum.slice(0,4);
+    if(!/^\d{4}$/.test(r))continue;
+    if(!m.has(r))m.set(r,{rok:r,prijmy:0,vydaje:0,prvni:z.datum});
+    const a=m.get(r);
+    a[z.typ==='prijem'?'prijmy':'vydaje']+=Number(z.castka);
+    if(z.datum<a.prvni)a.prvni=z.datum;
+  }
+  return [...m.values()].sort((a,b)=>a.rok.localeCompare(b.rok)).map(a=>({...a,
+    saldo:a.prijmy-a.vydaje,
+    // Neúplný rok nejde srovnávat s ostatními: buď ještě neskončil, nebo
+    // v něm historie teprve začala (deník se vede od srpna 2015).
+    uplny:+a.rok<letos&&a.prvni.slice(5,7)==='01'}));
+}
+
+// Třináct let se na šířku nevejde a zajímavé jsou poslední roky, ne rok 2015.
+// Odrolujeme na konec — ale jen při otevření pohledu, ne při každém překreslení,
+// aby uložení záznamu neposunulo rozkoukaný graf zpátky.
+let rokySkocil=false;
+function renderRoky(skoc=false){
+  const el=document.getElementById('roky-chart');
+  const roky=rokySouhrn();
+  if(!roky.length){el.innerHTML='<div style="color:var(--muted);font-size:12px">Žádné záznamy</div>';return;}
+  const max=Math.max(...roky.map(r=>Math.max(r.prijmy,r.vydaje)),1);
+  const k=n=>Math.round(n/1000).toLocaleString('cs-CZ')+'k';
+  const vyska=n=>Math.round(n/max*80)+3;
+  el.innerHTML=roky.map(r=>{
+    const popis=`${r.rok}: příjmy ${fmt(r.prijmy)}, výdaje ${fmt(r.vydaje)}, `
+      +`saldo ${fmtZn(r.saldo)}${r.uplny?'':' (neúplný rok)'}`;
+    return `<div class="bar-col${r.uplny?'':' neuplny'}" title="${esc(popis)}">`
+      +`<div class="bar-col-val" style="color:${r.saldo>=0?'var(--green)':'var(--red)'}">`
+      +  `${(r.saldo>=0?'+':'−')+k(Math.abs(r.saldo))}</div>`
+      +`<div class="bar-par">`
+      +  `<div style="height:${vyska(r.prijmy)}px;background:var(--green)"></div>`
+      +  `<div style="height:${vyska(r.vydaje)}px;background:var(--red)"></div></div>`
+      +`<div class="bar-col-label">${esc(r.rok)}${r.uplny?'':' <span class="mezera">\u26a0</span>'}</div></div>`;
+  }).join('');
+  if(skoc||!rokySkocil){el.scrollLeft=el.scrollWidth;rokySkocil=true;}
 }
 
 // --- ROK: matice kategorie × měsíce, v každé buňce plán a skutečnost ---

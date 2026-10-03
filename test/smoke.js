@@ -651,7 +651,28 @@ check('zrušení uklidí formulář',
   (await pg.inputValue('#o-nazev'))===''&&!(await pg.isDisabled('#o-uroven')));
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
-console.log('\n== 19. stránkování: víc záznamů než strop PostgRESTu ==');
+console.log('\n== 19. souhrn za každý rok (#graf v Přehledu) ==');
+await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(400);
+const ro=await pg.evaluate(()=>[...document.querySelectorAll('#roky-chart .bar-col')].map(c=>({
+  rok:c.querySelector('.bar-col-label').textContent.trim(),
+  saldo:c.querySelector('.bar-col-val').textContent.trim(),
+  popis:(c.getAttribute('title')||'').replace(/[\s\u00a0\u202f]+/g,' '),
+  neuplny:c.classList.contains('neuplny'),
+  bary:[...c.querySelectorAll('.bar-par>div')].length})));
+// Mock má data jen v letošním a příštím měsíci téhož roku, takže sloupec je jeden.
+check('sloupec za každý rok s daty',ro.length===1,JSON.stringify(ro));
+check('dva bary na rok — příjmy a výdaje',ro[0]&&ro[0].bary===2,JSON.stringify(ro));
+// Příjmy 90 000, výdaje 1 200 + 800 + 4 000 (jiný měsíc téhož roku) = 6 000.
+// Převod (2 000 ven i dovnitř) se nepočítá, plán taky ne.
+check('saldo je příjmy − výdaje bez plánu a převodů (+84k)',
+  ro[0]&&ro[0].saldo==='+84k',JSON.stringify(ro));
+check('popisek nese obě čísla',
+  ro[0]&&/90 000/.test(ro[0].popis)&&/6 000/.test(ro[0].popis),ro[0]&&ro[0].popis);
+// Letošek ještě neskončil, takže se s hotovými roky srovnávat nedá.
+check('běžící rok je označený jako neúplný',ro[0]&&ro[0].neuplny,JSON.stringify(ro));
+check('neúplný rok nese značku v popisku',ro[0]&&/\u26a0/.test(ro[0].rok),JSON.stringify(ro));
+
+console.log('\n== 20. stránkování: víc záznamů než strop PostgRESTu ==');
 // Po importu historie má tabulka 22 tisíc řádků. Jeden GET by vrátil jen
 // prvních MAX_ROWS a appka by tiše počítala s osekanými daty, takže tohle
 // hlídá, že se dotahují všechny stránky.
