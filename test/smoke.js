@@ -723,7 +723,29 @@ check('přepnutí roku čísla nezmění',
   JSON.stringify({pred:vsechny.radky,po:poPrepnuti.radky}));
 await pg.click('#view-rok .month-nav button:last-child'); await pg.waitForTimeout(400);
 
-console.log('\n== 21. stránkování: víc záznamů než strop PostgRESTu ==');
+console.log('\n== 21. nic nepřetéká do strany (mobil) ==');
+// Hlavička se na telefon nevešla a posouvala do strany celou stránku, ne jen
+// sebe — tabulky i grafy mají vlastní posuvník, takže ven nic lézt nemá.
+const ZALOZKY=['Přehled','Rok','Záznamy','Peněženky','Osnova','Energie','Spoření','Plán'];
+for(const sirka of [320,390]){
+  await pg.setViewportSize({width:sirka,height:800}); await pg.waitForTimeout(250);
+  const pretekaji=[];
+  for(const z of ZALOZKY){
+    await pg.click(`.tab:text-is("${z}")`); await pg.waitForTimeout(250);
+    const p=await pg.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);
+    if(p>0)pretekaji.push(`${z}: +${p}px`);
+  }
+  check(`na ${sirka} px se stránka neposouvá do strany`,pretekaji.length===0,pretekaji.join(', '));
+}
+await pg.setViewportSize({width:390,height:800}); await pg.waitForTimeout(250);
+check('na mobilu je zkrácený název',
+  (await pg.isVisible('.logo-kratky'))&&!(await pg.isVisible('.logo-dlouhy')));
+await pg.setViewportSize({width:1280,height:720}); await pg.waitForTimeout(250);
+check('na širokém displeji je celý název',
+  (await pg.isVisible('.logo-dlouhy'))&&!(await pg.isVisible('.logo-kratky')));
+await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
+
+console.log('\n== 22. stránkování: víc záznamů než strop PostgRESTu ==');
 // Po importu historie má tabulka 22 tisíc řádků. Jeden GET by vrátil jen
 // prvních MAX_ROWS a appka by tiše počítala s osekanými daty, takže tohle
 // hlídá, že se dotahují všechny stránky.
