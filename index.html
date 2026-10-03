@@ -83,6 +83,7 @@
   .rok-sipka{display:inline-block;width:12px;color:var(--muted);font-size:9px;}
   .rok-pozn{font-size:10px;color:var(--muted);margin-top:-14px;margin-bottom:24px;}
   .badge-pravidelna{background:rgba(96,200,240,0.15);color:var(--accent2);}
+  .badge-obe{background:rgba(240,168,96,0.15);color:var(--accent4);}
   /* Značka převodu. Ne .badge — ten se v tabulkách na mobilu schovává. */
   .prevod{color:var(--accent4);cursor:help;font-family:'DM Mono',monospace;font-weight:700;}
   .rok-table td.rozdil{font-family:'DM Mono',monospace;text-align:right;opacity:0.85;}
@@ -525,7 +526,7 @@
   <div class="view" id="view-osnova">
     <div class="split">
       <div class="form-card">
-        <div class="form-title">Přidat do osnovy</div>
+        <div class="form-title" id="form-osnova-title">Přidat do osnovy</div>
         <div class="field"><label>Úroveň</label>
           <select id="o-uroven" onchange="updateOsnovaForm()">
             <option value="top">Kategorie (1. úroveň)</option>
@@ -537,10 +538,17 @@
           <select id="o-typ">
             <option value="vydaj">Výdaj</option>
             <option value="prijem">Příjem</option>
-          </select></div>
+            <option value="obe">Příjem i výdaj</option>
+          </select>
+          <div class="rok-pozn" style="margin-top:6px">
+            Typ rozhoduje, kdy se kategorie nabídne při zápisu záznamu.
+            <strong>Příjem i výdaj</strong> je pro kategorie, kam patří obojí —
+            třeba Spoření (vklad i výběr) nebo Půjčka (splátka i čerpání).
+          </div></div>
         <div class="field" id="o-parent-field" style="display:none"><label>Nadřazená kategorie</label>
           <select id="o-parent"><option value="">— vybrat —</option></select></div>
-        <button class="btn" id="btn-osnova" onclick="addOsnova()">+ Přidat</button>
+        <button class="btn" id="btn-osnova" onclick="saveOsnova()">+ Přidat</button>
+        <button class="btn secondary" id="btn-cancel-osnova" onclick="cancelEditOsnova()" style="display:none;margin-top:6px">Zrušit úpravy</button>
       </div>
       <div>
         <div class="section-title">Osnova kategorií</div>
@@ -726,14 +734,19 @@ function catName(id){
   if(c.parent_id){const p=osnova.find(o=>o.id==c.parent_id);return p?`${p.nazev} › ${c.nazev}`:c.nazev;}
   return c.nazev;
 }
-function catTyp(id){
-  if(!id)return null;
-  const c=osnova.find(o=>o.id==id);if(!c)return null;
-  const root=c.parent_id?osnova.find(o=>o.id==c.parent_id):c;
-  return root?root.typ:null;
+// Odznak typu kategorie. Je na čtyřech místech (Přehled, Rok, Osnova, Plán),
+// tak ať se třetí hodnota nemusí dopisovat čtyřikrát.
+const TYPY={prijem:{cls:'badge-prijem',popis:'příjem'},
+            vydaj: {cls:'badge-vydaj', popis:'výdaj'},
+            obe:   {cls:'badge-obe',   popis:'příjem i výdaj'}};
+function katOdznak(typ){
+  const t=TYPY[typ]||TYPY.vydaj;
+  return `<span class="badge ${t.cls}">${t.popis}</span>`;
 }
+// Kategorie s typem `obe` se nabízí u příjmu i u výdaje — jsou to ty, kam
+// doopravdy patří obojí (Spoření: vklad i výběr, Půjčka: splátka i čerpání).
 function buildCatOptions(typFilter=null){
-  const tops=catTop().filter(t=>!typFilter||t.typ===typFilter);
+  const tops=catTop().filter(t=>!typFilter||t.typ===typFilter||t.typ==='obe');
   if(!tops.length)return'<option value="">— nejprve přidejte osnovu —</option>';
   return tops.map(top=>{
     const subs=catSub(top.id);
@@ -873,7 +886,7 @@ function updateOsnovaForm(){
   document.getElementById('o-typ-field').style.display=uroven==='top'?'block':'none';
   document.getElementById('o-parent-field').style.display=uroven==='sub'?'block':'none';
   if(uroven==='sub'){
-    document.getElementById('o-parent').innerHTML='<option value="">— vybrat —</option>'+catTop().map(t=>`<option value="${t.id}">${esc(t.nazev)} (${t.typ==='vydaj'?'výdaj':'příjem'})</option>`).join('');
+    document.getElementById('o-parent').innerHTML='<option value="">— vybrat —</option>'+catTop().map(t=>`<option value="${t.id}">${esc(t.nazev)} (${(TYPY[t.typ]||TYPY.vydaj).popis})</option>`).join('');
   }
 }
 function selectColor(c){
@@ -930,7 +943,7 @@ function renderPrehled(){
     const actual=mz.filter(z=>catIds.includes(z.kategorie_id)).reduce((s,z)=>s+Number(z.castka),0);
     let diff='—',cls='diff-none';
     if(planned!==null){const d=actual-planned;diff=(d>=0?'+':'')+fmt(Math.abs(d));cls=top.typ==='prijem'?(d>=0?'diff-ok':'diff-over'):(actual<=planned?'diff-ok':'diff-over');}
-    return`<tr><td><span class="badge ${top.typ==='vydaj'?'badge-vydaj':'badge-prijem'}">${top.typ==='vydaj'?'výdaj':'příjem'}</span> ${esc(top.nazev)}</td><td class="right mono">${planned!==null?fmt(planned):'—'}</td><td class="right mono">${fmt(actual)}</td><td class="right mono ${cls}">${diff}</td></tr>`;
+    return`<tr><td>${katOdznak(top.typ)} ${esc(top.nazev)}</td><td class="right mono">${planned!==null?fmt(planned):'—'}</td><td class="right mono">${fmt(actual)}</td><td class="right mono ${cls}">${diff}</td></tr>`;
   }).join('');
 
   const months=[];
@@ -1013,7 +1026,7 @@ function rokRadky(tops,bucket,bunky){
     const otevreno=rozbalene.has(top.id);
     const sipka=subs.length?`<span class="rok-sipka">${otevreno?'▾':'▸'}</span>`:'<span class="rok-sipka"></span>';
     const klik=subs.length?` class="rozbalitelna" onclick="toggleKat(${top.id})"`:'';
-    let html=`<tr${klik}><td class="kat">${sipka}<span class="badge ${top.typ==='vydaj'?'badge-vydaj':'badge-prijem'}">${top.typ==='vydaj'?'výdaj':'příjem'}</span> ${esc(top.nazev)}</td>${bunky(r)}</tr>`;
+    let html=`<tr${klik}><td class="kat">${sipka}${katOdznak(top.typ)} ${esc(top.nazev)}</td>${bunky(r)}</tr>`;
     if(otevreno)html+=subs.map(s=>`<tr class="podkat"><td class="kat">↳ ${esc(s.nazev)}</td>${bunky(bucket.get(s.id))}</tr>`).join('');
     return html;
   }).join('');
@@ -1364,8 +1377,12 @@ function renderOsnova(){
   empty.style.display='none';
   tree.innerHTML=tops.map(top=>{
     const subs=catSub(top.id);
-    const sub=subs.map(s=>`<div class="cat-item sub"><div class="cat-item-name">↳ ${esc(s.nazev)}</div><button class="del-btn" onclick="delOsnova(${s.id})">✕</button></div>`).join('');
-    return`<div class="cat-item top"><span class="badge ${top.typ==='vydaj'?'badge-vydaj':'badge-prijem'}">${top.typ==='vydaj'?'výdaj':'příjem'}</span><div class="cat-item-name">${esc(top.nazev)}</div><button class="del-btn" onclick="delOsnova(${top.id})">✕</button></div>${sub}`;
+    const sub=subs.map(s=>`<div class="cat-item sub"><div class="cat-item-name">↳ ${esc(s.nazev)}</div>`
+      +`<button class="edit-btn" onclick="editOsnova(${s.id})" title="Upravit">✎</button>`
+      +`<button class="del-btn" onclick="delOsnova(${s.id})">✕</button></div>`).join('');
+    return`<div class="cat-item top">${katOdznak(top.typ)}<div class="cat-item-name">${esc(top.nazev)}</div>`
+      +`<button class="edit-btn" onclick="editOsnova(${top.id})" title="Upravit">✎</button>`
+      +`<button class="del-btn" onclick="delOsnova(${top.id})">✕</button></div>${sub}`;
   }).join('');
   updateOsnovaForm();
 }
@@ -1576,7 +1593,37 @@ async function delPenezenka(id){
 }
 
 // --- OSNOVA CRUD ---
-async function addOsnova(){
+let editingOsnovaId=null;
+
+function editOsnova(id){
+  const o=osnova.find(x=>x.id===id);if(!o)return;
+  editingOsnovaId=id;
+  const uroven=document.getElementById('o-uroven');
+  uroven.value=o.parent_id?'sub':'top';
+  // Přesouvat kategorii mezi úrovněmi tudy nejde: podkategorie s nadřazenou
+  // kategorií se chová jinak než hlavní a tiché překlopení by rozhodilo
+  // zařazení záznamů. Na to je smazat a založit znovu.
+  uroven.disabled=true;
+  updateOsnovaForm();
+  document.getElementById('o-nazev').value=o.nazev;
+  if(o.parent_id)document.getElementById('o-parent').value=o.parent_id;
+  else document.getElementById('o-typ').value=o.typ||'vydaj';
+  document.getElementById('form-osnova-title').textContent='Upravit kategorii';
+  setBtn('btn-osnova',false,'Uložit změny');
+  document.getElementById('btn-cancel-osnova').style.display='block';
+  document.getElementById('o-nazev').focus();
+}
+function cancelEditOsnova(){
+  editingOsnovaId=null;
+  document.getElementById('o-uroven').disabled=false;
+  document.getElementById('o-nazev').value='';
+  document.getElementById('form-osnova-title').textContent='Přidat do osnovy';
+  setBtn('btn-osnova',false,'+ Přidat');
+  document.getElementById('btn-cancel-osnova').style.display='none';
+  updateOsnovaForm();
+}
+
+async function saveOsnova(){
   const nazev=document.getElementById('o-nazev').value.trim();
   if(!nazev){toast('Zadejte název',true);return;}
   const uroven=document.getElementById('o-uroven').value;
@@ -1586,16 +1633,28 @@ async function addOsnova(){
   }else{
     const parent_id=parseInt(document.getElementById('o-parent').value);
     if(!parent_id){toast('Vyberte nadřazenou kategorii',true);return;}
+    if(parent_id===editingOsnovaId){toast('Kategorie nemůže být sama sobě nadřazená',true);return;}
     row={nazev,parent_id,typ:null};
   }
   setBtn('btn-osnova',true);syncSt('syncing');
   try{
-    const res=await api('osnova','POST',row);
-    osnova.push(res[0]);
-    document.getElementById('o-nazev').value='';
-    toast('Přidáno ✓');syncSt('ok');renderOsnova();updateCategorySelect();
-  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
-  setBtn('btn-osnova',false,'+ Přidat');
+    if(editingOsnovaId){
+      await api('osnova','PATCH',row,`id=eq.${editingOsnovaId}`);
+      const i=osnova.findIndex(o=>o.id===editingOsnovaId);
+      if(i>=0)osnova[i]={...osnova[i],...row};
+      toast('Kategorie upravena ✓');syncSt('ok');
+      cancelEditOsnova();
+      // Typ kategorie mění, co se kde počítá a nabízí — překreslit všechno.
+      render();updateCategorySelect();
+    }else{
+      const res=await api('osnova','POST',row);
+      osnova.push(res[0]);
+      document.getElementById('o-nazev').value='';
+      toast('Přidáno ✓');syncSt('ok');renderOsnova();updateCategorySelect();
+      setBtn('btn-osnova',false,'+ Přidat');
+    }
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');
+    setBtn('btn-osnova',false,editingOsnovaId?'Uložit změny':'+ Přidat');}
 }
 async function delOsnova(id){
   if(osnova.some(o=>o.parent_id==id)){toast('Nejprve odeberte podkategorie',true);return;}
@@ -1604,6 +1663,7 @@ async function delOsnova(id){
   try{
     await api('osnova','DELETE',null,`id=eq.${id}`);
     osnova=osnova.filter(o=>o.id!==id);
+    if(editingOsnovaId===id)cancelEditOsnova();
     toast('Odstraněno');syncSt('ok');renderOsnova();updateCategorySelect();renderPlan();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
 }

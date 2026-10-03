@@ -26,6 +26,10 @@ const DB={
     {id:9,nazev:'Jídlo & <b>pití</b>',parent_id:null,typ:'vydaj',kod:'9',poradi:1},
     {id:91,nazev:'Albert "levně"',parent_id:9,typ:null,kod:'9.1',poradi:0},
     {id:10,nazev:'Ostatni',parent_id:null,typ:'vydaj',kod:'10',poradi:2},
+    // Kategorie, kam patří obojí — vklad i výběr. Musí se nabídnout
+    // u příjmu i u výdaje; v datech schválně nemá záznam, ať nerozhodí
+    // součty v Přehledu a v matici Rok.
+    {id:7,nazev:'Sporeni',parent_id:null,typ:'obe',kod:'7',poradi:3},
   ],
   penezenky:[{id:1,nazev:'Ucet <img src=x onerror=alert(2)>',pocatecni_zustatek:'10000.00',
               barva:'red;background:url(javascript:alert(3))'},
@@ -591,7 +595,63 @@ check('záporná částka neprojde',
   !calls.some(c=>c.method==='POST'),calls.map(c=>c.method+' '+c.url).join(' | '));
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
-console.log('\n== 18. stránkování: víc záznamů než strop PostgRESTu ==');
+console.log('\n== 18. typ kategorie: příjem / výdaj / obojí ==');
+await pg.click('.tab:text-is("Osnova")'); await pg.waitForTimeout(300);
+const volbyTyp=await pg.evaluate(()=>[...document.querySelectorAll('#o-typ option')]
+  .map(o=>[o.value,o.textContent.trim()]));
+check('typ nabízí tři možnosti včetně obojího',
+  JSON.stringify(volbyTyp)===JSON.stringify([['vydaj','Výdaj'],['prijem','Příjem'],['obe','Příjem i výdaj']]),
+  JSON.stringify(volbyTyp));
+const strom=txt(await pg.textContent('#cat-tree'));
+check('obojí má v osnově vlastní odznak',strom.includes('příjem i výdaj'),strom);
+
+// Jádro věci: kategorie s typem „obojí" se musí nabídnout u obou směrů.
+await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
+const nabidka=async typ=>{
+  await pg.selectOption('#z-typ',typ); await pg.waitForTimeout(200);
+  return pg.evaluate(()=>[...document.querySelectorAll('#z-kategorie option, #z-kategorie optgroup')]
+    .map(o=>o.label||o.textContent.trim()));
+};
+const uVydaje=await nabidka('vydaj'), uPrijmu=await nabidka('prijem');
+check('obojí se nabízí u výdaje',uVydaje.includes('Sporeni'),JSON.stringify(uVydaje));
+check('obojí se nabízí i u příjmu',uPrijmu.includes('Sporeni'),JSON.stringify(uPrijmu));
+// A čistě výdajová kategorie se u příjmu nabízet pořád nesmí.
+check('výdajová kategorie zůstává jen u výdaje',
+  uVydaje.includes('Ostatni')&&!uPrijmu.includes('Ostatni'),
+  JSON.stringify({uVydaje,uPrijmu}));
+check('příjmová kategorie zůstává jen u příjmu',
+  uPrijmu.some(x=>x.includes('Mzda'))&&!uVydaje.some(x=>x.includes('Mzda')),
+  JSON.stringify({uVydaje,uPrijmu}));
+
+// Bez editace by typ šlo nastavit jen při zakládání a všechny kategorie
+// už existují — nová volba by byla k ničemu.
+await pg.click('.tab:text-is("Osnova")'); await pg.waitForTimeout(300);
+calls.length=0;
+await pg.click('#cat-tree .cat-item.top:has-text("Ostatni") .edit-btn'); await pg.waitForTimeout(300);
+check('úprava předvyplní název',(await pg.inputValue('#o-nazev'))==='Ostatni');
+check('úprava předvyplní typ',(await pg.inputValue('#o-typ'))==='vydaj');
+check('úroveň se při úpravě nedá přepnout',await pg.isDisabled('#o-uroven'));
+await pg.selectOption('#o-typ','obe');
+await pg.click('#btn-osnova'); await pg.waitForTimeout(500);
+const patchO=calls.find(c=>c.method==='PATCH'&&c.url.includes('/rest/v1/osnova'));
+check('uložení pošle PATCH s novým typem',
+  patchO&&JSON.parse(patchO.body).typ==='obe',patchO?patchO.body:'žádný PATCH');
+check('po uložení se formulář vrátí do režimu přidání',
+  (await pg.inputValue('#o-nazev'))===''&&!(await pg.isDisabled('#o-uroven')));
+await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
+check('změna typu se hned projeví v nabídce',
+  (await nabidka('prijem')).includes('Ostatni'));
+
+await pg.click('.tab:text-is("Osnova")'); await pg.waitForTimeout(300);
+await pg.click('#cat-tree .cat-item.top:has-text("Mzda") .edit-btn'); await pg.waitForTimeout(300);
+calls.length=0;
+await pg.click('#btn-cancel-osnova'); await pg.waitForTimeout(300);
+check('zrušení úprav nic neuloží',!calls.some(c=>c.method==='PATCH'));
+check('zrušení uklidí formulář',
+  (await pg.inputValue('#o-nazev'))===''&&!(await pg.isDisabled('#o-uroven')));
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
+
+console.log('\n== 19. stránkování: víc záznamů než strop PostgRESTu ==');
 // Po importu historie má tabulka 22 tisíc řádků. Jeden GET by vrátil jen
 // prvních MAX_ROWS a appka by tiše počítala s osekanými daty, takže tohle
 // hlídá, že se dotahují všechny stránky.

@@ -202,7 +202,10 @@ def preved(cesta_vstup, cesta_mapovani):
                 kat_id, kat_kod = kod2id[kk], kk
                 stat['kategorie z ploché'] += 1
 
-        # směr: znaménko částky; u nuly rozhoduje typ hlavní kategorie
+        # Směr: znaménko částky; u nuly rozhoduje typ hlavní kategorie.
+        # Kategorie s typem 'obe' (patří do ní vklad i výběr) nemá čím
+        # rozhodnout, takže nulová částka tam spadne na výdaj — nulový
+        # záznam stejně žádný součet neposune.
         if c > 0:
             typ = 'prijem'
         elif c < 0:

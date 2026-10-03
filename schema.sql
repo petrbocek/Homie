@@ -34,7 +34,11 @@ CREATE TABLE IF NOT EXISTS osnova (
   id           BIGSERIAL PRIMARY KEY,
   nazev        TEXT NOT NULL,
   parent_id    BIGINT REFERENCES osnova(id) ON DELETE CASCADE,
-  typ          TEXT CHECK (typ IN ('prijem', 'vydaj')),  -- NULL pro podkategorie
+  -- 'obe' je pro kategorie, kam patří obojí — Spoření (vklad i výběr),
+  -- Půjčka (splátka i čerpání). Rozhoduje jen o tom, kdy se kategorie nabídne
+  -- při zápisu; směr záznamu nese `zaznamy.typ`. NULL je pro podkategorie,
+  -- ty typ dědí z nadřazené.
+  typ          TEXT,
   kod          TEXT,                                     -- kód ze sheetu: 1.1, 10.8
   poradi       INTEGER DEFAULT 0,
   created_at   TIMESTAMPTZ DEFAULT NOW()
@@ -102,6 +106,11 @@ ALTER TABLE zaznamy ADD COLUMN IF NOT EXISTS zdroj_radek INTEGER;
 -- na pohybu. Nastavují se hromadně podle dvojice „kde + hlavní kategorie“;
 -- appka je u nového záznamu navrhne, když stejnou dvojici v historii najde.
 ALTER TABLE zaznamy ADD COLUMN IF NOT EXISTS pravidelna BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE osnova  DROP CONSTRAINT IF EXISTS osnova_typ_check;
+ALTER TABLE osnova  DROP CONSTRAINT IF EXISTS osnova_typ_chk;
+ALTER TABLE osnova  ADD  CONSTRAINT osnova_typ_chk
+  CHECK (typ IN ('prijem', 'vydaj', 'obe'));
 
 ALTER TABLE zaznamy DROP CONSTRAINT IF EXISTS zaznamy_typ_polozky_chk;
 ALTER TABLE zaznamy ADD  CONSTRAINT zaznamy_typ_polozky_chk
