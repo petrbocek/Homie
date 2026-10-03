@@ -98,6 +98,9 @@ const DB={
 const MAX_ROWS=1000;
 
 const calls=[], fails=[];
+let zpomal=false;          // zpomalit odpovědi na zaznamy (test souběžnosti)
+let skryjPocet=false;      // neposlat expose-headers (test záložní cesty)
+const beh=[];              // [začátek, konec] každé zpomalené odpovědi
 function check(name,ok,detail){
   if(!ok)fails.push(name);
   console.log((ok?'  ok   ':'  FAIL ')+name+((detail&&!ok)?('  << '+detail):''));
@@ -136,8 +139,24 @@ await pg.route(SB+'/**',async route=>{
     const q=new URL(url).searchParams;
     const od=parseInt(q.get('offset')||'0',10);
     const chce=parseInt(q.get('limit')||String(MAX_ROWS),10);
+    const vysek=rows.slice(od,od+Math.min(chce,MAX_ROWS));
+    const hlavicky={};
+    // Na `Prefer: count=exact` vrací PostgREST počet v Content-Range. Appka
+    // z něj počítá offsety dopředu, aby šly stránky stahovat paralelně.
+    if((req.headers()['prefer']||'').includes('count=exact')){
+      hlavicky['content-range']=`${od}-${Math.max(od,od+vysek.length-1)}/${rows.length}`;
+      // Content-Range není mezi bezpečnými CORS hlavičkami: bez tohohle ji
+      // prohlížeč před stránkou schová a appka spadne na sériové stahování.
+      if(!skryjPocet)hlavicky['access-control-expose-headers']='content-range';
+    }
+    // Zpomalení se zapíná jen pro test souběžnosti; jinak by se vlekla celá sada.
+    if(zpomal&&t==='zaznamy'){
+      const zacatek=Date.now();
+      await new Promise(r=>setTimeout(r,60));
+      beh.push([zacatek,Date.now()]);
+    }
     return route.fulfill({status:200,contentType:'application/json',
-      body:JSON.stringify(rows.slice(od,od+Math.min(chce,MAX_ROWS)))});
+      headers:hlavicky,body:JSON.stringify(vysek)});
   }
   if(method==='POST'){const r=JSON.parse(req.postData());const a=Array.isArray(r)?r:[r];
     return route.fulfill({status:201,contentType:'application/json',body:JSON.stringify(a.map((x,i)=>({id:900+i,...x})))});}
@@ -758,15 +777,57 @@ calls.length=0;
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(1200);
 const nacteno=await pg.evaluate(()=>zaznamy.length);
 check(`načteno všech ${POCET} záznamů, ne jen ${MAX_ROWS}`,nacteno===POCET,'načteno '+nacteno);
-const strankyZaznamu=calls.filter(c=>c.method==='GET'&&c.url.includes('/rest/v1/zaznamy'));
-check('dotahovalo se po stránkách',strankyZaznamu.length>=Math.ceil(POCET/MAX_ROWS),
-  strankyZaznamu.length+' dotazů');
+const zaznamyGET=calls.filter(c=>c.method==='GET'&&c.url.includes('/rest/v1/zaznamy'));
+const pocetniDotaz=zaznamyGET.filter(c=>(c.prefer||'').includes('count=exact'));
+const strankyZaznamu=zaznamyGET.filter(c=>c.url.includes('offset='));
+check('nejdřív se zjistí počet řádků',pocetniDotaz.length===1,
+  JSON.stringify(zaznamyGET.map(c=>c.prefer)));
+check('dotahovalo se po stránkách',strankyZaznamu.length===Math.ceil(POCET/MAX_ROWS),
+  strankyZaznamu.length+' stránek');
 check('každá stránka má limit i offset',
   strankyZaznamu.every(c=>c.url.includes('limit=')&&c.url.includes('offset=')),
   strankyZaznamu.map(c=>c.url).join(' | '));
 check('řazení je deterministické (rozstřel podle id)',
   strankyZaznamu.every(c=>/order=datum\.desc,id\.desc/.test(decodeURIComponent(c.url))),
   strankyZaznamu.map(c=>c.url).join(' | '));
+// Souběžnost se musí měřit ve stránce, ne v mocku: Playwright obsluhuje
+// route jednu po druhé, takže odpovědi chodí sériově, ať appka dělá cokoli.
+// Co nás zajímá, je jestli appka pošle další dotaz, než jí dorazí předchozí
+// odpověď — a to je vidět na překryvu intervalů jejích vlastních fetchů.
+await pg.addInitScript(()=>{
+  window.__fetchLog=[];
+  const orig=window.fetch;
+  window.fetch=async(...a)=>{
+    const i=window.__fetchLog.push({url:String(a[0]),od:performance.now(),do:null})-1;
+    try{return await orig(...a);}finally{window.__fetchLog[i].do=performance.now();}
+  };
+});
+zpomal=true;
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(2000);
+zpomal=false;
+const log=(await pg.evaluate(()=>window.__fetchLog))
+  .filter(f=>f.url.includes('/rest/v1/zaznamy')&&f.url.includes('offset=')&&f.do!==null);
+const soubezne=Math.max(...log.map(f=>log.filter(g=>g.od<=f.od&&f.od<g.do).length),0);
+check('stránky se stahují souběžně, ne jedna po druhé',soubezne>=2,
+  `stránek ${log.length}, nejvíc souběžně ${soubezne}`);
+check('načteno i při souběžném stahování všech '+POCET,
+  (await pg.evaluate(()=>zaznamy.length))===POCET);
+
+// Záložní cesta. Content-Range není mezi bezpečnými CORS hlavičkami, takže ji
+// stačí neexponovat a appka počet nedostane. Nesmí z toho vypadnout míň dat —
+// jen se to stáhne postaru, jedna stránka po druhé.
+skryjPocet=true; calls.length=0;
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(1500);
+skryjPocet=false;
+check('bez hlavičky s počtem se stáhne všechno stejně',
+  (await pg.evaluate(()=>zaznamy.length))===POCET);
+const zaloha=(await pg.evaluate(()=>window.__fetchLog))
+  .filter(f=>f.url.includes('/rest/v1/zaznamy')&&f.url.includes('offset=')&&f.do!==null);
+check('záložní cesta jede sériově',
+  Math.max(...zaloha.map(f=>zaloha.filter(g=>g.od<=f.od&&f.od<g.do).length),0)===1,
+  JSON.stringify(zaloha.map(f=>[Math.round(f.od),Math.round(f.do)])));
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(1200);
+
 // 2500 výdajů po 1 Kč z počátečního zůstatku 10 000
 check('zůstatek počítá se všemi záznamy (7 500)',
   txt(await pg.textContent('#sum-zustatek')).includes('7 500'),

@@ -730,7 +730,7 @@ async function unlock(){
   await init();
 }
 
-async function api(table,method='GET',body=null,filter='',prefer=null,_retry=true){
+async function api(table,method='GET',body=null,filter='',prefer=null,chciRozsah=false,_retry=true){
   const token=await ensureToken();
   const url=`${SB_URL}/rest/v1/${table}${filter?'?'+filter:''}`;
   const headers={'apikey':SB_KEY,'Authorization':`Bearer ${token}`,'Content-Type':'application/json'};
@@ -742,10 +742,12 @@ async function api(table,method='GET',body=null,filter='',prefer=null,_retry=tru
   if(res.status===401&&_retry){
     try{await refreshSession();}
     catch(e){lock('Přihlášení vypršelo, přihlas se prosím znovu.');throw new Error('Přihlášení vypršelo');}
-    return api(table,method,body,filter,prefer,false);
+    return api(table,method,body,filter,prefer,chciRozsah,false);
   }
   if(!res.ok){const e=await res.json().catch(()=>{});throw new Error((e&&e.message)||`HTTP ${res.status}`);}
-  const t=await res.text();return t?JSON.parse(t):null;
+  const t=await res.text();
+  const data=t?JSON.parse(t):null;
+  return chciRozsah?{data,rozsah:res.headers.get('content-range')}:data;
 }
 
 // PostgREST vrací na jeden dotaz nejvýš `db-max-rows` řádků (u Supabase bývá
@@ -759,8 +761,57 @@ async function api(table,method='GET',body=null,filter='',prefer=null,_retry=tru
 //     a jiné řádky by vypadly.
 //   - stránka je 1000, tedy ne víc než ten strop. Kdybychom chtěli 5000 a
 //     server vrátil 1000, brali bychom to jako konec dat a o zbytek přišli.
+const STRANA=1000;      // strop PostgRESTu, víc na jeden dotaz stejně nedá
+const SOUBEZNE=6;       // kolik stránek táhnout najednou
+
+// Původně se stránky stahovaly jedna po druhé: druhý dotaz odešel až po
+// doručení prvního. U 22 tisíc záznamů je to 23 odezev v řadě, tedy přes dvě
+// vteřiny čistého čekání navíc. Když si napřed zjistíme počet řádků, víme
+// všechny offsety dopředu a můžeme je pustit naráz.
+async function pocetRadku(table,filter){
+  // PostgREST vrátí počet v hlavičce Content-Range jako „0-0/22046".
+  const {rozsah}=await api(table,'GET',null,`${filter}&limit=1`,'count=exact',true);
+  const m=/\/(\d+)$/.exec(rozsah||'');
+  return m?parseInt(m[1],10):null;
+}
+
 async function apiAll(table,filter,popis){
-  const STRANA=1000;
+  let celkem=null;
+  // Když hlavička nedorazí (starší PostgREST, proxy ji ustřihne), nic se
+  // neděje — spadne se na sériové stahování, které funguje vždycky.
+  try{celkem=await pocetRadku(table,filter);}catch(e){celkem=null;}
+  if(celkem===null)return apiAllSeriove(table,filter,popis);
+  if(!celkem)return [];
+
+  const offsety=[];
+  for(let od=0;od<celkem;od+=STRANA)offsety.push(od);
+  const casti=new Array(offsety.length);
+  let hotovo=0;
+  for(let i=0;i<offsety.length;i+=SOUBEZNE){
+    await Promise.all(offsety.slice(i,i+SOUBEZNE).map(async(od,j)=>{
+      casti[i+j]=await api(table,'GET',null,`${filter}&limit=${STRANA}&offset=${od}`)||[];
+      hotovo+=casti[i+j].length;
+      if(popis)loadingText(`Načítám ${popis}… ${hotovo}`);
+    }));
+  }
+  const vse=casti.flat();
+
+  // Offsety se počítaly z počtu zjištěného o chvíli dřív. Kdyby mezitím někdo
+  // zapsal řádek, stránky se posunou a jeden záznam přijde dvakrát — a součty
+  // by tiše seděly o jeho částku vedle. Radši to zahodíme podle id.
+  if(vse.length&&vse[0]&&vse[0].id!==undefined){
+    const videl=new Set();
+    const bezDuplicit=vse.filter(r=>videl.has(r.id)?false:(videl.add(r.id),true));
+    // Pokud se naopak nějaký řádek posunul mimo poslední stránku, chybí nám.
+    // To se paralelně dohnat nedá, tak se to dotáhne sériově — vzácné.
+    if(bezDuplicit.length<celkem)return apiAllSeriove(table,filter,popis);
+    return bezDuplicit;
+  }
+  return vse;
+}
+
+// Záložní cesta: pomalá, zato nezávislá na hlavičce s počtem.
+async function apiAllSeriove(table,filter,popis){
   const vse=[];
   for(let od=0;;od+=STRANA){
     const cast=await api(table,'GET',null,`${filter}&limit=${STRANA}&offset=${od}`);
