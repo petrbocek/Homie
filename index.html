@@ -438,6 +438,9 @@
           Zapisuje se <strong>stav na měřidle</strong>, ne spotřeba — tu si appka dopočítá
           jako rozdíl proti předchozímu odečtu. Když je stav nižší než posledně, appka se
           ozve: buď je to překlep, nebo se měnilo měřidlo a patří k tomu zaškrtnutí.
+          Při výměně zapiš <strong>dva odečty k témuž dni</strong>: konečný stav starého
+          měřidla (bez zaškrtnutí) a vynulovaný nový (se zaškrtnutím). Jen tak se nic
+          neztratí. Druhé měřidlo nech na aktuálním stavu, ne na nule — nemění se.
         </div>
 
         <div class="form-title" style="margin-top:26px" id="form-cenik-title">Nové období ceníku</div>
@@ -482,8 +485,10 @@
       (nebo celá historie), se nemá od čeho odečíst — starý stav v okamžiku výměny nikdo
       nezapsal — takže se do měsíce nezapočítá vůbec a měsíc je označený
       <strong class="vymena">⚠</strong>: jeho spotřeba je neúplná, ne nulová. Naivní odčítání by tam
-      vyrobilo nesmysl (skok z 767 na 10 m³). Náklad se počítá sazbou platnou k poslednímu
-      odečtu v měsíci.
+      vyrobilo nesmysl (skok z 767 na 10 m³). <strong>Když ale konečný stav starého měřidla
+      zapsaný je</strong> — ke stejnému datu jako vynulovaný nový — nic se neztratilo, měsíc je
+      celý a <strong class="vymena">⚠</strong> se neukáže. Náklad se počítá sazbou platnou
+      k poslednímu odečtu v měsíci.
     </div>
 
     <div class="section-title" style="margin-bottom:10px">Ceník</div>
@@ -1543,15 +1548,34 @@ function sazbaK(datum){
   return cenik.find(c=>c.platnost_od<=datum&&(!c.platnost_do||datum<=c.platnost_do))||null;
 }
 
+function jeVymena(o){return !!(o.vymena_vodomer||o.vymena_elektromer);}
+
+// Pořadí odečtů. V jednom dni může stát konečný stav starého měřidla a hned
+// za ním vynulovaný nový — výměna proto v daném dni patří dozadu, jinak by se
+// spotřeba starého měřidla počítala proti nule nového.
+function poradiOdectu(a,b){
+  return a.datum.localeCompare(b.datum)
+    || (jeVymena(a)?1:0)-(jeVymena(b)?1:0)
+    || (a.id-b.id);
+}
+
 // Odečty s dopočtenou spotřebou. V řádku s výměnou měřidla je spotřeba null:
-// stav starého měřidla v okamžiku výměny nikdo nezapsal, takže ji spočítat nelze.
+// stav starého měřidla v okamžiku výměny nikdo nezapsal, takže ji spočítat
+// nelze. Výjimka je, když zapsaný je — konečný stav starého měřidla je k témuž
+// datu. Pak se nic neztratilo, nové měřidlo začíná na nule a spotřeba za ten
+// řádek je nula, ne neznámo.
 function odectySeSpotrebou(){
   const out=[];
   let p=null;
   for(const o of odecty){
-    const sp_voda=(p&&!o.vymena_vodomer)?Number(o.voda)-Number(p.voda):null;
-    const sp_t1=(p&&!o.vymena_elektromer)?Number(o.t1)-Number(p.t1):null;
-    const sp_t2=(p&&!o.vymena_elektromer)?Number(o.t2)-Number(p.t2):null;
+    const resetVoda=o.vymena_vodomer&&p&&p.datum===o.datum;
+    const resetEl=o.vymena_elektromer&&p&&p.datum===o.datum;
+    // Nezapsaný stav je neznámo, ne nula — Number(null) je 0 a vyrobilo by
+    // to spotřebu rovnou celému stavu měřidla.
+    const dif=(a,b)=>(a==null||b==null)?null:Number(a)-Number(b);
+    const sp_voda=p==null?null:(o.vymena_vodomer?(resetVoda?0:null):dif(o.voda,p.voda));
+    const sp_t1=p==null?null:(o.vymena_elektromer?(resetEl?0:null):dif(o.t1,p.t1));
+    const sp_t2=p==null?null:(o.vymena_elektromer?(resetEl?0:null):dif(o.t2,p.t2));
     // Co ta spotřeba stála, sazbou platnou k datu odečtu. Měsíční fix (jistič
     // a stálé platby) se sem schválně nepočítá — je měsíční, ne za odečet, a
     // v měsíci se dvěma odečty by se připočetl dvakrát. Je v tabulce po měsících.
@@ -1850,8 +1874,10 @@ function odecetForm(){
 // Bez téhle kontroly vznikaly v sheetu nesmysly: vodoměr skočil ze 767 na 10
 // a spotřeba za měsíc vyšla −757 m³.
 function odecetPred(datum,krome){
-  return odecty.filter(o=>o.datum<datum&&o.id!==krome)
-               .sort((a,b)=>a.datum.localeCompare(b.datum)).pop()||null;
+  // Stejné pořadí jako výpočet spotřeby. Po výměně je v dni poslední ten
+  // vynulovaný řádek; kdyby se vzal konečný stav starého měřidla, hlásila by
+  // appka u dalšího odečtu pokles z 1 200 na 40.
+  return odecty.filter(o=>o.datum<datum&&o.id!==krome).sort(poradiOdectu).pop()||null;
 }
 function zkontrolujKlesani(r,krome){
   const p=odecetPred(r.datum,krome);
@@ -1870,8 +1896,11 @@ async function saveOdecet(){
   const r=odecetForm();
   if(!r.datum){toast('Vyplňte datum',true);return;}
   if(r.voda==null&&r.t1==null&&r.t2==null){toast('Vyplňte aspoň jeden stav',true);return;}
-  const kolize=odecty.find(o=>o.datum===r.datum&&o.id!==editingOdecetId);
-  if(kolize){toast('K tomuhle datu už odečet je',true);return;}
+  // Dva odečty k jednomu dni jsou normálně překlep. U výměny měřidla ne: v tom
+  // okamžiku jsou dva stavy — konečný na starém a nulový na novém.
+  const kolize=odecty.find(o=>o.datum===r.datum&&o.id!==editingOdecetId
+    &&!jeVymena(o)&&!jeVymena(r));
+  if(kolize){toast('K tomuhle datu už odečet je — dvojí zápis má smysl jen u výměny měřidla',true);return;}
   const vada=zkontrolujKlesani(r,editingOdecetId);
   if(vada){toast(vada,true);return;}
   setBtn('btn-odecet',true);syncSt('syncing');
@@ -1887,7 +1916,7 @@ async function saveOdecet(){
       toast('Odečet zapsán ✓');
     }
     // Spotřeba se počítá z pořadí, takže po zápisu doprostřed musí jít seřadit.
-    odecty.sort((a,b)=>a.datum.localeCompare(b.datum)||(a.id-b.id));
+    odecty.sort(poradiOdectu);
     syncSt('ok');cancelEditOdecet();renderEnergie();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');
     setBtn('btn-odecet',false,editingOdecetId?'Uložit změny':'+ Zapsat odečet');}
@@ -2397,7 +2426,7 @@ async function init(){
       api('energie_cenik','GET',null,'select=*&order=platnost_od.asc'),
       apiAll('sporeni','select=*&order=datum.asc')
     ]);
-    odecty=od||[];cenik=ce||[];sporeni=sp||[];
+    odecty=(od||[]).slice().sort(poradiOdectu);cenik=ce||[];sporeni=sp||[];
     document.getElementById('loading').style.display='none';
     document.getElementById('z-datum').value=dnes();
     document.getElementById('pr-datum').value=dnes();

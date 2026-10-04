@@ -697,6 +697,76 @@ await pg.click('#btn-cenik'); await pg.waitForTimeout(500);
 check('navazující období projde',calls.some(c=>c.method==='POST'&&c.url.includes('energie_cenik')));
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
+console.log('\n== 15d. výměna měřidla se zapsaným konečným stavem ==');
+// Reálný případ z 3/2026: 4. 3. se měnil elektroměr, zapsal se jen vynulovaný
+// nový stav a 1 132 kWh zmizelo — měsíc vyšel na 118 kWh. Když se k témuž dni
+// zapíše i konečný stav starého měřidla, nemá se co ztratit.
+await pg.click('.tab:text-is("Energie")'); await pg.waitForTimeout(400);
+const odRadky2=async()=>pg.evaluate(()=>[...document.querySelectorAll('#energie-odecty tbody tr')]
+  .map(tr=>[...tr.children].map(td=>td.textContent.replace(/[\s  ]+/g,' ').trim())));
+const mesRadek=async m=>pg.evaluate(mm=>{
+  const tr=[...document.querySelectorAll('#energie-mesice tbody tr')]
+    .find(x=>x.children[0].textContent.trim().startsWith(mm));
+  return tr?{bunky:[...tr.children].map(td=>td.textContent.replace(/[\s  ]+/g,' ').trim()),
+             vymena:!!tr.querySelector('.vymena')}:null;
+},m);
+
+// 1) konečný stav starého elektroměru
+await pg.fill('#od-datum','2026-05-31');
+await pg.fill('#od-voda','20'); await pg.fill('#od-t1','1200'); await pg.fill('#od-t2','5800');
+await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+// 2) vynulovaný nový elektroměr k TÉMUŽ dni. Vodoměr se nemění, zůstává na 20.
+calls.length=0;
+await pg.fill('#od-datum','2026-05-31');
+await pg.fill('#od-voda','20'); await pg.fill('#od-t1','0'); await pg.fill('#od-t2','0');
+await pg.check('#od-vym-elektro');
+await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+check('druhý odečet k témuž dni projde, když je to výměna',
+  calls.some(c=>c.method==='POST'&&c.url.includes('energie_odecty')),
+  await pg.textContent('.toast').catch(()=>''));
+await pg.uncheck('#od-vym-elektro');
+
+const paru=await odRadky2();
+check('vynulovaný řádek je v dni až za konečným stavem',
+  paru[0][0].startsWith('2026-05-31')&&paru[1][0].startsWith('2026-05-31')
+  &&paru[0][2]==='0'&&paru[1][2]==='1 200',JSON.stringify([paru[0],paru[1]]));
+check('u výměny se zapsaným koncem je spotřeba nula, ne neznámo',
+  paru[0][5]==='0'&&paru[0][6]==='0'&&paru[0][4]==='0',JSON.stringify(paru[0]));
+check('konečný stav starého měřidla se započítá (50 / 200)',
+  paru[1][5]==='50'&&paru[1][6]==='200',JSON.stringify(paru[1]));
+
+// 3) další běžný odečet na novém měřidle
+calls.length=0;
+await pg.fill('#od-datum','2026-06-30');
+await pg.fill('#od-voda','26'); await pg.fill('#od-t1','40'); await pg.fill('#od-t2','60');
+await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+check('odečet na novém měřidle nehlásí pokles proti starému',
+  calls.some(c=>c.method==='POST'),await pg.textContent('.toast').catch(()=>''));
+const poNovem=await odRadky2();
+check('spotřeba na novém měřidle se počítá od nuly (40 / 60)',
+  poNovem[0][0].startsWith('2026-06-30')&&poNovem[0][5]==='40'&&poNovem[0][6]==='60',
+  JSON.stringify(poNovem[0]));
+
+const kveten=await mesRadek('2026-05');
+check('měsíc s výměnou sečte oba řádky (250 kWh)',
+  kveten&&kveten.bunky[2]==='50'&&kveten.bunky[3]==='200',JSON.stringify(kveten));
+check('měsíc s výměnou už není označený jako neúplný',kveten&&!kveten.vymena,
+  JSON.stringify(kveten));
+const vsechnyOd=await odRadky2();
+check('nikde negativní spotřeba',
+  !vsechnyOd.some(r=>r.slice(4,10).some(v=>v.startsWith('-')||v.startsWith('−'))),
+  JSON.stringify(vsechnyOd.filter(r=>r.slice(4,10).some(v=>v.startsWith('-')))));
+
+// Dvojí zápis k jednomu dni bez výměny je pořád překlep.
+calls.length=0;
+await pg.fill('#od-datum','2026-04-30'); await pg.fill('#od-voda','12');
+await pg.fill('#od-t1','1150'); await pg.fill('#od-t2','5600');
+await pg.click('#btn-odecet'); await pg.waitForTimeout(400);
+check('dvojí zápis bez výměny pořád neprojde',!calls.some(c=>c.method==='POST'),
+  calls.map(c=>c.method+' '+c.url).join(' | '));
+await pg.click('#btn-cancel-odecet').catch(()=>{});
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
+
 console.log('\n== 16. spoření: čisté jmění, změna, projekce (#10) ==');
 await pg.click('.tab:text-is("Spoření")'); await pg.waitForTimeout(300);
 check('záložka Spoření je vidět',await pg.isVisible('#view-sporeni'));
