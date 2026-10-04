@@ -536,13 +536,35 @@ check('karta ukazuje poslední odečet',ekarty.includes('2026-04-30'),ekarty);
 const ecen=await pg.evaluate(()=>[...document.querySelectorAll('#energie-cenik tbody tr')]
   .map(tr=>[...tr.children].map(x=>x.textContent.replace(/[\s\u00a0\u202f]+/g,' ').trim())));
 check('ceník má obě období',ecen.length===2,JSON.stringify(ecen));
-check('platné období je první (nejnovější nahoře)',ecen[0][0]==='2015-12-01'&&ecen[0][1]==='—',
-  JSON.stringify(ecen[0]));
+check('platné období je první (nejnovější nahoře)',
+  ecen[0][0].startsWith('2015-12-01')&&ecen[0][1]==='—',JSON.stringify(ecen[0]));
 check('HTML v ceníku se vypíše jako text',
   ecen[1][1]==='2015-11-30 <script>alert(9)</script>',JSON.stringify(ecen[1]));
 
-const egraf=await pg.evaluate(()=>document.querySelectorAll('#energie-graf .bar-col').length);
-check('graf má sloupec za každý měsíc',egraf===4,String(egraf));
+// Graf je dvanáct měsíců a v každém tři roky vedle sebe. Data jsou jen z 2026,
+// takže 2024 a 2025 musí zůstat prázdné — ne nulové, prostě bez odečtu.
+const egraf=await pg.evaluate(()=>{
+  const cols=[...document.querySelectorAll('#energie-graf .bar-col')];
+  return {sloupcu:cols.length,
+    bar:cols.map(c=>c.querySelectorAll('.bar-par>div').length),
+    popisky:cols.map(c=>c.querySelector('.bar-col-label').textContent.trim()),
+    tipy:cols.flatMap(c=>[...c.querySelectorAll('.bar-par>div')].map(d=>d.title)),
+    legenda:[...document.querySelectorAll('#energie-graf-legenda span')]
+      .map(x=>x.textContent.replace(/[\s\u00a0\u202f]+/g,' ').trim())};
+});
+check('graf má sloupec za každý měsíc v roce',egraf.sloupcu===12,String(egraf.sloupcu));
+check('v každém měsíci jsou tři roky',egraf.bar.every(n=>n===3),JSON.stringify(egraf.bar));
+check('popisky jsou měsíce, ne měsíc/rok',
+  egraf.popisky[0]==='Led'&&egraf.popisky[11]==='Pro',JSON.stringify(egraf.popisky));
+check('tooltip řekne měsíc, rok a kWh',
+  egraf.tipy.includes('02/2026: 250 kWh'),
+  egraf.tipy.filter(t=>t.includes('2026')).join(' | '));
+check('měsíc bez odečtu je prázdný, ne nulový',
+  egraf.tipy.includes('02/2024: bez odečtu'),
+  egraf.tipy.filter(t=>t.includes('2024')).slice(0,3).join(' | '));
+check('legenda má tři roky se součtem',
+  egraf.legenda.length===3&&egraf.legenda[2].startsWith('2026 ·')
+  &&egraf.legenda[0].startsWith('2024 ·'),JSON.stringify(egraf.legenda));
 
 console.log('\n== 15b. energie: zápis a úprava odečtu ==');
 await pg.click('.tab:text-is("Energie")'); await pg.waitForTimeout(300);
@@ -631,6 +653,16 @@ check('první odečet nemá spotřebu, tedy ani částku',
 // Ceník jde upravit
 check('ceník nabízí úpravu i smazání',
   (await pg.locator('#energie-cenik tbody tr .edit-btn').count())===2);
+// Tabulky jsou širší než obrazovka a scrollují do strany. Kdyby akce zůstaly
+// v posledním sloupci, byly by mimo displej a řádky by nešlo upravit.
+const vPrvnim=await pg.evaluate(()=>({
+  odecty:!!document.querySelector('#energie-odecty tbody tr td:first-child .edit-btn'),
+  cenik:!!document.querySelector('#energie-cenik tbody tr td:first-child .edit-btn'),
+  prilepeny:getComputedStyle(
+    document.querySelector('#energie-odecty tbody tr td:first-child')).position,
+}));
+check('✎/✕ jsou v prvním, přilepeném sloupci — ne mimo displej',
+  vPrvnim.odecty&&vPrvnim.cenik&&vPrvnim.prilepeny==='sticky',JSON.stringify(vPrvnim));
 calls.length=0;
 await pg.click('#energie-cenik tbody tr:first-child .edit-btn'); await pg.waitForTimeout(300);
 check('úprava ceníku předvyplní sazby',

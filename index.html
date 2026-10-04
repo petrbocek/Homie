@@ -198,6 +198,16 @@
   .bar-chart.roky{height:140px;overflow-x:auto;padding-bottom:4px;}
   .bar-chart.roky .bar-col{flex:0 0 44px;}
   .bar-par{display:flex;align-items:flex-end;gap:3px;width:100%;}
+  /* Elektřina po měsících: tři roky vedle sebe v jednom měsíci. Čísla nad
+     sloupce se při třech barách vedle sebe nevejdou, hodnota je v tooltipu. */
+  .bar-chart.mesice3{height:150px;}
+  .bar-chart.mesice3 .bar-col{flex:1;min-width:0;}
+  .bar-chart.mesice3 .bar-par{gap:2px;}
+  .bar-chart.mesice3 .bar-par>div{min-height:2px;}
+  .legenda-roky{display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--muted);
+    font-family:'DM Mono',monospace;margin-top:12px;}
+  .legenda-roky span{display:flex;align-items:center;gap:5px;}
+  .legenda-roky i{width:10px;height:10px;border-radius:2px;display:inline-block;}
   .bar-par>div{flex:1;border-radius:3px 3px 0 0;min-height:3px;}
   .bar-col.neuplny{opacity:0.55;}
   .cara-legenda span.prijmy::before{border-top-color:var(--green);}
@@ -453,8 +463,15 @@
 
     <div class="section-title" style="margin-bottom:10px">Spotřeba po měsících</div>
     <div class="chart-wrap">
-      <div class="chart-title">Elektřina celkem (kWh), posledních 24 měsíců</div>
-      <div class="bar-chart" id="energie-graf"></div>
+      <div class="chart-title">Elektřina celkem (kWh) po měsících — poslední tři roky</div>
+      <div class="bar-chart mesice3" id="energie-graf"></div>
+      <div class="legenda-roky" id="energie-graf-legenda"></div>
+      <div class="rok-pozn" style="margin-top:8px">
+        Měsíce vedle sebe, v každém tři roky — vlevo nejstarší, vpravo nejnovější.
+        Roky se berou od nejnovějšího odečtu, ne od dneška. Měsíc bez odečtu je
+        prázdný, ne nulový; ztmavený sloupec je neúplný měsíc (začalo v něm nové
+        měřidlo). Konkrétní čísla jsou v tooltipu nad sloupcem.
+      </div>
     </div>
 
     <div class="rok-wrap">
@@ -1572,13 +1589,37 @@ function energieMesice(){
   }).sort((a,b)=>a.mesic.localeCompare(b.mesic));
 }
 
+// Spotřeba elektřiny po měsících, poslední tři roky vedle sebe. Roky se berou
+// podle nejnovějšího odečtu, ne podle dneška: když se měsíc nezapsal, ať graf
+// pořád srovnává to, co v datech je.
+const BARVY_ROKU=['var(--muted)','var(--accent2)','var(--accent)'];
+function energieRoky3(){
+  const mesice=energieMesice();
+  if(!mesice.length)return {roky:[],data:[]};
+  const posledni=+mesice[mesice.length-1].mesic.slice(0,4);
+  const roky=[posledni-2,posledni-1,posledni];
+  const mapa=new Map(mesice.map(m=>[m.mesic,m]));
+  const data=[];
+  for(let i=1;i<=12;i++){
+    const mm=String(i).padStart(2,'0');
+    data.push({mesic:i,hodnoty:roky.map(r=>{
+      const m=mapa.get(r+'-'+mm);
+      // Měsíc bez odečtu není nula, je prázdno — ať se nečte jako „nic jsme nespotřebovali".
+      return m?{kwh:m.t1+m.t2,chybi:m.chybi}:null;
+    })});
+  }
+  return {roky,data};
+}
+
 function renderEnergie(){
   const empty=document.getElementById('energie-empty');
   const karty=document.getElementById('energie-karty');
   if(!odecty.length){karty.innerHTML='';document.getElementById('energie-mesice').innerHTML='';
     document.getElementById('energie-cenik').innerHTML='';
     document.getElementById('energie-odecty').innerHTML='';
-    document.getElementById('energie-graf').innerHTML='';empty.style.display='block';return;}
+    document.getElementById('energie-graf').innerHTML='';
+    document.getElementById('energie-graf-legenda').innerHTML='';
+    empty.style.display='block';return;}
   empty.style.display='none';
 
   const mesice=energieMesice();
@@ -1603,13 +1644,20 @@ function renderEnergie(){
         ${fmt(Math.abs(sum(rok.filter(m=>m.rozdil!=null),'rozdil')))}</div>
       <div class="card-sub">${sum(rok.filter(m=>m.rozdil!=null),'rozdil')>=0?'přeplatek':'nedoplatek'}</div></div>`;
 
-  const graf=mesice.slice(-24);
-  const max=Math.max(...graf.map(m=>m.t1+m.t2),1);
-  document.getElementById('energie-graf').innerHTML=graf.map(m=>{
-    const v=m.t1+m.t2;
-    return `<div class="bar-col"><div class="bar-col-val">${v?cis(v):''}</div>`
-      +`<div class="bar-col-bar" style="height:${Math.round(v/max*90)+4}px;background:${m.chybi?'var(--surface2)':'var(--accent)'}"></div>`
-      +`<div class="bar-col-label">${m.mesic.slice(5)}/${m.mesic.slice(2,4)}</div></div>`;
+  const g3=energieRoky3();
+  const max3=Math.max(...g3.data.flatMap(d=>d.hodnoty.map(h=>h?h.kwh:0)),1);
+  const mm2=n=>String(n).padStart(2,'0');
+  document.getElementById('energie-graf').innerHTML=g3.data.map(d=>
+    `<div class="bar-col"><div class="bar-par">`
+    + d.hodnoty.map((h,i)=>h==null
+        ? `<div style="height:2px;background:var(--surface2)" title="${mm2(d.mesic)}/${g3.roky[i]}: bez odečtu"></div>`
+        : `<div style="height:${Math.round(h.kwh/max3*118)+3}px;background:${BARVY_ROKU[i]}${h.chybi?';opacity:0.45':''}"`
+          +` title="${mm2(d.mesic)}/${g3.roky[i]}: ${cis(h.kwh)} kWh${h.chybi?' — neúplné, v měsíci začalo nové měřidlo':''}"></div>`
+      ).join('')
+    + `</div><div class="bar-col-label">${MONTHS_SHORT[d.mesic-1]}</div></div>`).join('');
+  document.getElementById('energie-graf-legenda').innerHTML=g3.roky.map((r,i)=>{
+    const soucet=g3.data.reduce((a,d)=>a+(d.hodnoty[i]?d.hodnoty[i].kwh:0),0);
+    return `<span><i style="background:${BARVY_ROKU[i]}"></i>${r} · ${cis(soucet)} kWh</span>`;
   }).join('');
 
   const bunka=(v,cls)=>`<td class="hodnota ${cls||''}">${v==null?'—':v}</td>`;
@@ -1634,9 +1682,13 @@ function renderEnergie(){
       <th class="right">NT kWh</th><th class="right plan">sp. voda</th>
       <th class="right plan">sp. VT</th><th class="right plan">sp. NT</th>
       <th class="right">Kč voda</th><th class="right">Kč elektřina</th><th class="right">Kč celkem</th>
-      <th class="kat">poznámka</th><th></th></tr></thead><tbody>`
+      <th class="kat">poznámka</th></tr></thead><tbody>`
     + odectySeSpotrebou().slice().reverse().map(o=>
-      `<tr><td class="kat">${esc(o.datum)}${vym(o.vymena_vodomer,o.vymena_elektromer)}</td>`
+      `<tr><td class="kat" style="min-width:185px">${esc(o.datum)}`
+      + `${vym(o.vymena_vodomer,o.vymena_elektromer)}`
+      + `<span style="white-space:nowrap;margin-left:6px">`
+      +   `<button class="edit-btn" onclick="editOdecet(${o.id})" title="Upravit">✎</button>`
+      +   `<button class="del-btn" onclick="delOdecet(${o.id})" title="Smazat">✕</button></span></td>`
       + `<td class="hodnota">${cis(o.voda)}</td><td class="hodnota">${cis(o.t1)}</td>`
       + `<td class="hodnota">${cis(o.t2)}</td>`
       + `<td class="hodnota plan">${o.sp_voda==null?'—':cis(o.sp_voda)}</td>`
@@ -1645,26 +1697,24 @@ function renderEnergie(){
       + `<td class="hodnota">${o.kc_voda==null?'—':cis(o.kc_voda)}</td>`
       + `<td class="hodnota">${o.kc_el==null?'—':cis(o.kc_el)}</td>`
       + `<td class="hodnota">${o.kc==null?'—':cis(o.kc)}</td>`
-      + `<td class="kat" style="font-weight:400">${esc(o.poznamka||'')}</td>`
-      + `<td class="hodnota" style="white-space:nowrap">`
-      +   `<button class="edit-btn" onclick="editOdecet(${o.id})" title="Upravit">✎</button>`
-      +   `<button class="del-btn" onclick="delOdecet(${o.id})" title="Smazat">✕</button></td></tr>`
+      + `<td class="kat" style="font-weight:400">${esc(o.poznamka||'')}</td></tr>`
     ).join('')
     + '</tbody>';
 
   document.getElementById('energie-cenik').innerHTML=
     `<thead><tr><th class="kat">Platnost od</th><th class="kat">do</th><th class="right">VT Kč/kWh</th>
       <th class="right">NT Kč/kWh</th><th class="right">měsíční fix</th><th class="right">voda Kč/m³</th>
-      <th class="right plan">záloha el.</th><th class="right plan">záloha voda</th><th></th></tr></thead><tbody>`
+      <th class="right plan">záloha el.</th><th class="right plan">záloha voda</th></tr></thead><tbody>`
     + cenik.slice().reverse().map(c=>
-      `<tr><td class="kat">${esc(c.platnost_od)}</td><td class="kat">${esc(c.platnost_do||'—')}</td>`
+      `<tr><td class="kat" style="min-width:160px">${esc(c.platnost_od)}`
+      + `<span style="white-space:nowrap;margin-left:6px">`
+      +   `<button class="edit-btn" onclick="editCenik(${c.id})" title="Upravit">✎</button>`
+      +   `<button class="del-btn" onclick="delCenik(${c.id})" title="Smazat">✕</button></span></td>`
+      + `<td class="kat">${esc(c.platnost_do||'—')}</td>`
       + `<td class="hodnota">${esc(c.vt)}</td><td class="hodnota">${esc(c.nt)}</td>`
       + `<td class="hodnota">${cis(c.mesicni_fix)}</td><td class="hodnota">${c.voda==null?'—':cis(c.voda)}</td>`
       + `<td class="hodnota plan">${c.zaloha_elektrina==null?'—':cis(c.zaloha_elektrina)}</td>`
-      + `<td class="hodnota plan">${c.zaloha_voda==null?'—':cis(c.zaloha_voda)}</td>`
-      + `<td class="hodnota" style="white-space:nowrap">`
-      +   `<button class="edit-btn" onclick="editCenik(${c.id})" title="Upravit">✎</button>`
-      +   `<button class="del-btn" onclick="delCenik(${c.id})" title="Smazat">✕</button></td></tr>`).join('')
+      + `<td class="hodnota plan">${c.zaloha_voda==null?'—':cis(c.zaloha_voda)}</td></tr>`).join('')
     + '</tbody>';
 }
 
@@ -1843,6 +1893,16 @@ async function saveOdecet(){
     setBtn('btn-odecet',false,editingOdecetId?'Uložit změny':'+ Zapsat odečet');}
 }
 
+// Posuň formulář do zorného pole. Na mobilu se .split slučuje do jednoho
+// sloupce a formulář zůstane vysoko nad tabulkou — bez tohohle to vypadá,
+// že kliknutí na ✎ nic neudělalo.
+function ukazFormular(titulId,poleId){
+  const t=document.getElementById(titulId);
+  if(t&&t.scrollIntoView)t.scrollIntoView({behavior:'smooth',block:'center'});
+  const f=document.getElementById(poleId);
+  if(f)try{f.focus({preventScroll:true});}catch(e){f.focus();}
+}
+
 function editOdecet(id){
   const o=odecty.find(x=>x.id===id);if(!o)return;
   editingOdecetId=id;
@@ -1857,7 +1917,7 @@ function editOdecet(id){
   c('form-odecet-title').textContent='Upravit odečet';
   setBtn('btn-odecet',false,'Uložit změny');
   c('btn-cancel-odecet').style.display='block';
-  c('od-voda').focus();
+  ukazFormular('form-odecet-title','od-voda');
 }
 function cancelEditOdecet(){
   editingOdecetId=null;
@@ -1939,7 +1999,7 @@ function editCenik(id){
   e('form-cenik-title').textContent='Upravit období';
   setBtn('btn-cenik',false,'Uložit změny');
   e('btn-cancel-cenik').style.display='block';
-  e('ce-vt').focus();
+  ukazFormular('form-cenik-title','ce-vt');
 }
 function cancelEditCenik(){
   editingCenikId=null;
