@@ -830,17 +830,23 @@ const zuRok=async()=>pg.evaluate(()=>{
     poc:cis(r.children[1]),pohyby:cis(r.children[2]),zust:cis(r.children[3])}))};
 });
 const zuLetos=await zuRok();
-check('hlavička nese rok',/^k 1\. 1\. \d{4}$/.test(zuLetos.hlavicka[1]),JSON.stringify(zuLetos.hlavicka));
 check('zůstatek = počáteční + pohyby',zuLetos.radky.every(r=>r.zust===r.poc+r.pohyby),
   JSON.stringify(zuLetos.radky));
-// Mock má všechny záznamy v letošním roce, takže počátek roku = počáteční kotva.
-check('počátek letoška je kotva peněženky (10 000)',
-  zuLetos.radky[0].poc===10000,JSON.stringify(zuLetos.radky[0]));
+// Tabulka je za celou historii, ne za rok — musí sedět na Pivot a nesmí se
+// měnit s přepínačem měsíce. Rozpad po letech je v dlaždicích v Přehledu.
+check('zůstatek Účtu sedí na dlaždici v Přehledu',await pg.evaluate(()=>{
+  const cis=t=>{const v=t.replace(/[^\d-]/g,'');return v?parseInt(v,10):0;};
+  const dl=[...document.querySelectorAll('#prehled-wallets .wallet-preview')]
+    .find(e=>e.querySelector('.wallet-preview-name').textContent.includes('Ucet'));
+  const tr=[...document.querySelectorAll('#zustatky-table tbody tr:not(.soucet)')]
+    .find(r=>r.children[0].textContent.includes('Ucet'));
+  return dl&&tr&&cis(dl.querySelector('.wallet-preview-balance').textContent)===cis(tr.children[3].textContent);
+}));
 await pg.click('header .month-nav button:first-child'); await pg.waitForTimeout(400);
-// Posun o měsíc zpět může, ale nemusí přepnout rok — zajímá nás jen soulad.
 const jinyMesic=await zuRok();
-check('po přepnutí měsíce tabulka pořád sedí',
-  jinyMesic.radky.every(r=>r.zust===r.poc+r.pohyby),JSON.stringify(jinyMesic.radky));
+check('přepnutí měsíce zůstatky nemění',
+  JSON.stringify(jinyMesic.radky)===JSON.stringify(zuLetos.radky),
+  JSON.stringify({pred:zuLetos.radky,po:jinyMesic.radky}));
 await pg.click('header .month-nav button:last-child'); await pg.waitForTimeout(400);
 
 console.log('\n== 23. stránkování: víc záznamů než strop PostgRESTu ==');

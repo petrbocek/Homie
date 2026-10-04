@@ -919,14 +919,14 @@ function renderZustatky(){
   if(!penezenky.length){t.innerHTML='';pozn.innerHTML='';wrap.style.display='none';return;}
   wrap.style.display='';
 
-  const rok=String(cY);
   const fmtZ=n=>Math.round(n).toLocaleString('cs-CZ');
-  // Skrytá peněženka se vypisuje jen v roce, kdy na ní ještě něco bylo —
-  // jinak by se z celkového součtu ztratily peníze, které tam tehdy ležely.
+  // Zůstatek je za celou historii, ne za rok: tohle číslo se porovnává s
+  // listem Pivot a musí mu sedět. Rozpad po letech je v dlaždicích v Přehledu.
+  // Skrytá peněženka se vypisuje jen dokud na ní něco je, jinak by se ze
+  // součtu ztratily peníze, které na ní leží.
   const radky=penezenky.map(w=>{
-    const poc=walletPocatekRoku(w.id,rok), pohyby=walletPohybyRoku(w.id,rok);
-    return {w,poc,pohyby,zust:poc+pohyby,
-            zaplaceno:walletZaplacenoDopredu(w.id,rok),plan:walletPlan(w.id,rok)};
+    const poc=Number(w.pocatecni_zustatek), zust=walletBalance(w.id);
+    return {w,poc,pohyby:zust-poc,zust,zaplaceno:walletZaplacenoDopredu(w.id),plan:walletPlan(w.id)};
   }).filter(x=>!x.w.skryta||x.poc||x.pohyby||x.zust);
   const sum=k=>radky.reduce((a,x)=>a+x[k],0);
   const bunky=x=>`<td class="hodnota">${fmtZ(x.poc)}</td>`
@@ -939,12 +939,11 @@ function renderZustatky(){
   t.innerHTML=
     `<thead><tr>
       <th class="kat">Peněženka</th>
-      <th class="right">k 1. 1. ${esc(rok)}</th><th class="right">pohyby ${esc(rok)}</th>
-      <th class="right">k 31. 12. ${esc(rok)}</th>
+      <th class="right">počáteční</th><th class="right">pohyby</th><th class="right">zůstatek</th>
       <th class="right plan">zaplaceno dopředu</th><th class="right plan">plán dopředu</th><th class="right">výhled</th>
     </tr></thead><tbody>`
     + radky.map(x=>`<tr${x.w.skryta?' class="skryta"':''}><td class="kat"><span style="background:${col(x.w.barva)};display:inline-block;width:8px;height:8px;border-radius:99px;margin-right:6px"></span>${esc(x.w.nazev)}`
-        + (x.w.skryta?' <span class="mezera" title="skrytá peněženka — zobrazuje se jen v letech, kdy na ní něco bylo">\u25cc</span>':'')
+        + (x.w.skryta?' <span class="mezera" title="skrytá peněženka — zobrazuje se, dokud na ní něco je">\u25cc</span>':'')
         + `</td>${bunky(x)}</tr>`).join('')
     + `<tr class="soucet"><td class="kat">Celkem</td>`
       + `<td class="hodnota">${fmtZ(sum('poc'))}</td><td class="hodnota">${fmtZ(sum('pohyby'))}</td>`
@@ -952,15 +951,10 @@ function renderZustatky(){
       + `<td class="hodnota plan">${fmtM(sum('plan'))}</td><td class="hodnota">${fmtZ(sum('zust')+sum('plan'))}</td>`
     + `</tr></tbody>`;
 
-  const pocetZ=zaznamy.filter(z=>!jePlan(z)&&z.datum>dnes()&&z.datum.startsWith(rok+'-')).length;
+  const pocetZ=zaznamy.filter(z=>!jePlan(z)&&z.datum>dnes()).length;
   pozn.innerHTML=
-    `Tabulka je za <strong>rok ${esc(rok)}</strong> — přepíná se měsícem v hlavičce. `
-    +`Sloupec <strong>k 1. 1.</strong> je zůstatek na začátku toho roku, `
-    +`<strong>k 31. 12.</strong> je ten počáteční plus pohyby roku. `
-    +`<strong>plán dopředu</strong> se do zůstatku nepočítá — teprve přijde.<br>`
-    +`Počáteční zůstatky minulých let stojí na jediné kotvě k začátku celé historie, `
-    +`která je dopočítaná zpětně tak, aby seděl dnešek. K dnešku tedy čísla sedí, `
-    +`u starších let ber počáteční stav s rezervou (issue #12).<br>`
+    `<strong>zůstatek</strong> = počáteční + všechny skutečnosti; tohle číslo odpovídá listu <span class="mono">Pivot</span>. `
+    +`<strong>plán dopředu</strong> se do něj nepočítá — teprve přijde.<br>`
     +`<strong>zaplaceno dopředu</strong> jsou už zaplacené položky rozpuštěné do měsíců, `
     +`kterých se týkají. Peníze z účtu odešly, takže v zůstatku započítané <em>jsou</em>; `
     +`sloupec říká, kolik z něj je takhle utracené dopředu. Pivot totéž ukazuje jako `
