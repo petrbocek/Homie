@@ -403,6 +403,34 @@
   <!-- ZÁZNAMY -->
   <!-- ENERGIE — odečty měřidel, spotřeba a vyúčtování proti zálohám -->
   <div class="view" id="view-energie">
+    <div class="split">
+      <div class="form-card">
+        <div class="form-title" id="form-odecet-title">Nový odečet</div>
+        <div class="field"><label>Datum</label><input id="od-datum" type="date"></div>
+        <div class="field"><label>Vodoměr (m³)</label>
+          <input id="od-voda" type="number" step="0.01" placeholder="stav na měřidle"></div>
+        <div class="field"><label>Elektroměr VT (kWh)</label>
+          <input id="od-t1" type="number" step="0.01" placeholder="stav na měřidle"></div>
+        <div class="field"><label>Elektroměr NT (kWh)</label>
+          <input id="od-t2" type="number" step="0.01" placeholder="stav na měřidle"></div>
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:11px">
+            <input type="checkbox" id="od-vym-voda" style="width:auto;margin:0"> Vyměněný vodoměr</label>
+        </div>
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:11px">
+            <input type="checkbox" id="od-vym-elektro" style="width:auto;margin:0"> Vyměněný elektroměr</label>
+        </div>
+        <div class="field"><label>Poznámka</label><input id="od-poznamka" type="text" placeholder="nepovinné"></div>
+        <button class="btn" id="btn-odecet" onclick="saveOdecet()">+ Zapsat odečet</button>
+        <button class="btn secondary" id="btn-cancel-odecet" onclick="cancelEditOdecet()" style="display:none;margin-top:6px">Zrušit úpravy</button>
+        <div class="rok-pozn" style="margin-top:10px">
+          Zapisuje se <strong>stav na měřidle</strong>, ne spotřeba — tu si appka dopočítá
+          jako rozdíl proti předchozímu odečtu. Když je stav nižší než posledně, appka se
+          ozve: buď je to překlep, nebo se měnilo měřidlo a patří k tomu zaškrtnutí.
+        </div>
+      </div>
+      <div>
     <div class="summary-grid" id="energie-karty"></div>
 
     <div class="section-title" style="margin-bottom:10px">Spotřeba po měsících</div>
@@ -432,8 +460,19 @@
       z jediné buňky a platí pro celou historii stejně.
     </div>
 
+    <div class="section-title" style="margin-bottom:10px">Zapsané odečty</div>
+    <div class="rok-wrap">
+      <table class="rok-table" id="energie-odecty"></table>
+    </div>
+    <div class="rok-pozn">
+      Od nejnovějšího. Spotřeba je rozdíl proti předchozímu odečtu; u řádku, kterým
+      začíná nové měřidlo, se nepočítá.
+    </div>
+
     <div id="energie-empty" class="empty" style="display:none">
       <span class="emoji">⚡</span>Žádné odečty
+    </div>
+      </div>
     </div>
   </div>
 
@@ -1510,6 +1549,7 @@ function renderEnergie(){
   const karty=document.getElementById('energie-karty');
   if(!odecty.length){karty.innerHTML='';document.getElementById('energie-mesice').innerHTML='';
     document.getElementById('energie-cenik').innerHTML='';
+    document.getElementById('energie-odecty').innerHTML='';
     document.getElementById('energie-graf').innerHTML='';empty.style.display='block';return;}
   empty.style.display='none';
 
@@ -1557,6 +1597,26 @@ function renderEnergie(){
       + bunka(m.naklad==null?null:cis(m.naklad))
       + bunka(m.zaloha==null?null:cis(m.zaloha),'plan')
       + `<td class="hodnota ${m.rozdil==null?'':(m.rozdil>=0?'diff-ok':'diff-over')}">${m.rozdil==null?'—':cis(m.rozdil)}</td></tr>`
+    ).join('')
+    + '</tbody>';
+
+  const vym=(a,b)=>a||b?' <span class="vymena" title="tímhle odečtem začíná nové měřidlo">\u26a0</span>':'';
+  document.getElementById('energie-odecty').innerHTML=
+    `<thead><tr><th class="kat">Datum</th><th class="right">voda m³</th><th class="right">VT kWh</th>
+      <th class="right">NT kWh</th><th class="right plan">sp. voda</th>
+      <th class="right plan">sp. VT</th><th class="right plan">sp. NT</th>
+      <th class="kat">poznámka</th><th></th></tr></thead><tbody>`
+    + odectySeSpotrebou().slice().reverse().map(o=>
+      `<tr><td class="kat">${esc(o.datum)}${vym(o.vymena_vodomer,o.vymena_elektromer)}</td>`
+      + `<td class="hodnota">${cis(o.voda)}</td><td class="hodnota">${cis(o.t1)}</td>`
+      + `<td class="hodnota">${cis(o.t2)}</td>`
+      + `<td class="hodnota plan">${o.sp_voda==null?'—':cis(o.sp_voda)}</td>`
+      + `<td class="hodnota plan">${o.sp_t1==null?'—':cis(o.sp_t1)}</td>`
+      + `<td class="hodnota plan">${o.sp_t2==null?'—':cis(o.sp_t2)}</td>`
+      + `<td class="kat" style="font-weight:400">${esc(o.poznamka||'')}</td>`
+      + `<td class="hodnota" style="white-space:nowrap">`
+      +   `<button class="edit-btn" onclick="editOdecet(${o.id})" title="Upravit">✎</button>`
+      +   `<button class="del-btn" onclick="delOdecet(${o.id})" title="Smazat">✕</button></td></tr>`
     ).join('')
     + '</tbody>';
 
@@ -1685,6 +1745,105 @@ function renderSporeni(){
       + `<td class="hodnota plan">${c(r.akarta)}</td><td class="hodnota plan">${c(r.ucet)}</td>`
       + `<td class="hodnota">${c(r.cashflow)}</td></tr>`).join('')
     + '</tbody>';
+}
+
+// --- ODEČTY ENERGIÍ: zápis a úpravy ---
+let editingOdecetId=null;
+
+function odecetForm(){
+  const c=id=>document.getElementById(id);
+  return {datum:c('od-datum').value,
+    voda:c('od-voda').value===''?null:parseFloat(c('od-voda').value),
+    t1:c('od-t1').value===''?null:parseFloat(c('od-t1').value),
+    t2:c('od-t2').value===''?null:parseFloat(c('od-t2').value),
+    vymena_vodomer:c('od-vym-voda').checked,
+    vymena_elektromer:c('od-vym-elektro').checked,
+    poznamka:c('od-poznamka').value.trim()||null};
+}
+
+// Poslední odečet před daným datem — proti němu se kontroluje, že stav neklesl.
+// Bez téhle kontroly vznikaly v sheetu nesmysly: vodoměr skočil ze 767 na 10
+// a spotřeba za měsíc vyšla −757 m³.
+function odecetPred(datum,krome){
+  return odecty.filter(o=>o.datum<datum&&o.id!==krome)
+               .sort((a,b)=>a.datum.localeCompare(b.datum)).pop()||null;
+}
+function zkontrolujKlesani(r,krome){
+  const p=odecetPred(r.datum,krome);
+  if(!p)return null;
+  const vady=[];
+  if(r.voda!=null&&p.voda!=null&&r.voda<Number(p.voda)&&!r.vymena_vodomer)
+    vady.push(`vodoměr klesl z ${p.voda} na ${r.voda}`);
+  if(!r.vymena_elektromer){
+    if(r.t1!=null&&p.t1!=null&&r.t1<Number(p.t1))vady.push(`VT klesl z ${p.t1} na ${r.t1}`);
+    if(r.t2!=null&&p.t2!=null&&r.t2<Number(p.t2))vady.push(`NT klesl z ${p.t2} na ${r.t2}`);
+  }
+  return vady.length?vady.join(', ')+' — překlep, nebo se měnilo měřidlo? Zaškrtni výměnu.':null;
+}
+
+async function saveOdecet(){
+  const r=odecetForm();
+  if(!r.datum){toast('Vyplňte datum',true);return;}
+  if(r.voda==null&&r.t1==null&&r.t2==null){toast('Vyplňte aspoň jeden stav',true);return;}
+  const kolize=odecty.find(o=>o.datum===r.datum&&o.id!==editingOdecetId);
+  if(kolize){toast('K tomuhle datu už odečet je',true);return;}
+  const vada=zkontrolujKlesani(r,editingOdecetId);
+  if(vada){toast(vada,true);return;}
+  setBtn('btn-odecet',true);syncSt('syncing');
+  try{
+    if(editingOdecetId){
+      await api('energie_odecty','PATCH',r,`id=eq.${editingOdecetId}`);
+      const i=odecty.findIndex(o=>o.id===editingOdecetId);
+      if(i>=0)odecty[i]={...odecty[i],...r};
+      toast('Odečet upraven ✓');
+    }else{
+      const res=await api('energie_odecty','POST',r);
+      odecty.push(res[0]);
+      toast('Odečet zapsán ✓');
+    }
+    // Spotřeba se počítá z pořadí, takže po zápisu doprostřed musí jít seřadit.
+    odecty.sort((a,b)=>a.datum.localeCompare(b.datum)||(a.id-b.id));
+    syncSt('ok');cancelEditOdecet();renderEnergie();
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');
+    setBtn('btn-odecet',false,editingOdecetId?'Uložit změny':'+ Zapsat odečet');}
+}
+
+function editOdecet(id){
+  const o=odecty.find(x=>x.id===id);if(!o)return;
+  editingOdecetId=id;
+  const c=i=>document.getElementById(i);
+  c('od-datum').value=o.datum;
+  c('od-voda').value=o.voda==null?'':o.voda;
+  c('od-t1').value=o.t1==null?'':o.t1;
+  c('od-t2').value=o.t2==null?'':o.t2;
+  c('od-vym-voda').checked=!!o.vymena_vodomer;
+  c('od-vym-elektro').checked=!!o.vymena_elektromer;
+  c('od-poznamka').value=o.poznamka||'';
+  c('form-odecet-title').textContent='Upravit odečet';
+  setBtn('btn-odecet',false,'Uložit změny');
+  c('btn-cancel-odecet').style.display='block';
+  c('od-voda').focus();
+}
+function cancelEditOdecet(){
+  editingOdecetId=null;
+  ['od-voda','od-t1','od-t2','od-poznamka'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('od-vym-voda').checked=false;
+  document.getElementById('od-vym-elektro').checked=false;
+  document.getElementById('od-datum').value=dnes();
+  document.getElementById('form-odecet-title').textContent='Nový odečet';
+  setBtn('btn-odecet',false,'+ Zapsat odečet');
+  document.getElementById('btn-cancel-odecet').style.display='none';
+}
+async function delOdecet(id){
+  const o=odecty.find(x=>x.id===id);if(!o)return;
+  if(!confirm(`Smazat odečet z ${o.datum}?`))return;
+  syncSt('syncing');
+  try{
+    await api('energie_odecty','DELETE',null,`id=eq.${id}`);
+    odecty=odecty.filter(x=>x.id!==id);
+    if(editingOdecetId===id)cancelEditOdecet();
+    toast('Odečet smazán');syncSt('ok');renderEnergie();
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
 }
 
 function renderZaznamy(){
@@ -2067,6 +2226,7 @@ async function init(){
     document.getElementById('loading').style.display='none';
     document.getElementById('z-datum').value=dnes();
     document.getElementById('pr-datum').value=dnes();
+    document.getElementById('od-datum').value=dnes();
     selectedColor=COLORS[0];
     updateCategorySelect();updateWalletSelect();updateOsnovaForm();
     render();

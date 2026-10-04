@@ -106,6 +106,7 @@ const MAX_ROWS=1000;
 const calls=[], fails=[];
 let zpomal=false;          // zpomalit odpovědi na zaznamy (test souběžnosti)
 let skryjPocet=false;      // neposlat expose-headers (test záložní cesty)
+let dalsiId=900;           // id pro nově vytvořené řádky, unikátní napříč POSTy
 const beh=[];              // [začátek, konec] každé zpomalené odpovědi
 function check(name,ok,detail){
   if(!ok)fails.push(name);
@@ -165,7 +166,10 @@ await pg.route(SB+'/**',async route=>{
       headers:hlavicky,body:JSON.stringify(vysek)});
   }
   if(method==='POST'){const r=JSON.parse(req.postData());const a=Array.isArray(r)?r:[r];
-    return route.fulfill({status:201,contentType:'application/json',body:JSON.stringify(a.map((x,i)=>({id:900+i,...x})))});}
+    // Unikátní id napříč všemi POSTy. Dokud se vracelo 900+index, dostaly dva
+    // samostatně zapsané záznamy totéž id a úprava pak sáhla na ten dřívější.
+    return route.fulfill({status:201,contentType:'application/json',
+      body:JSON.stringify(a.map(x=>({id:dalsiId++,...x})))});}
   if(method==='PATCH')return route.fulfill({status:200,contentType:'application/json',
     body:JSON.stringify([{id:1,...JSON.parse(req.postData())}])});
   return route.fulfill({status:204,body:''});
@@ -539,6 +543,76 @@ check('HTML v ceníku se vypíše jako text',
 
 const egraf=await pg.evaluate(()=>document.querySelectorAll('#energie-graf .bar-col').length);
 check('graf má sloupec za každý měsíc',egraf===4,String(egraf));
+
+console.log('\n== 15b. energie: zápis a úprava odečtu ==');
+await pg.click('.tab:text-is("Energie")'); await pg.waitForTimeout(300);
+check('tabulka zapsaných odečtů je vidět',
+  (await pg.locator('#energie-odecty tbody tr').count())===4);
+check('řádek nabízí úpravu i smazání',
+  (await pg.locator('#energie-odecty tbody tr:first-child .edit-btn').count())===1
+  &&(await pg.locator('#energie-odecty tbody tr:first-child .del-btn').count())===1);
+
+// Zápis nového odečtu
+calls.length=0;
+await pg.fill('#od-datum','2026-05-31');
+await pg.fill('#od-voda','20'); await pg.fill('#od-t1','1200'); await pg.fill('#od-t2','5800');
+await pg.fill('#od-poznamka','kontrolní');
+await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+const postOd=calls.find(c=>c.method==='POST'&&c.url.includes('energie_odecty'));
+check('odečet se pošle POSTem',!!postOd,calls.map(c=>c.method+' '+c.url).join(' | '));
+check('posílá se stav měřidla, ne spotřeba',
+  postOd&&JSON.parse(postOd.body).voda===20&&JSON.parse(postOd.body).t1===1200,
+  postOd&&postOd.body);
+check('přibyl řádek',(await pg.locator('#energie-odecty tbody tr').count())===5);
+const odRadky=async()=>pg.evaluate(()=>[...document.querySelectorAll('#energie-odecty tbody tr')]
+  .map(tr=>[...tr.children].map(td=>td.textContent.replace(/[\s\u00a0\u202f]+/g,' ').trim())));
+// 20 − 12 = 8 m³ proti dubnovému odečtu
+const poZapisu=await odRadky();
+check('spotřeba se dopočítá z pořadí (8 m³)',
+  poZapisu[0][0].startsWith('2026-05-31')&&poZapisu[0][4]==='8',JSON.stringify(poZapisu[0]));
+
+// Klesající stav bez zaškrtnuté výměny je přesně ta chyba, co v sheetu
+// vyrobila −757 m³. Nesmí projít.
+calls.length=0;
+await pg.fill('#od-datum','2026-06-30');
+await pg.fill('#od-voda','5'); await pg.fill('#od-t1','1300'); await pg.fill('#od-t2','5900');
+await pg.click('#btn-odecet'); await pg.waitForTimeout(400);
+check('klesající stav bez výměny neprojde',
+  !calls.some(c=>c.method==='POST'),calls.map(c=>c.method+' '+c.url).join(' | '));
+check('appka řekne proč',/klesl/.test(await pg.textContent('.toast')),
+  await pg.textContent('.toast'));
+// Se zaškrtnutou výměnou je to legitimní.
+await pg.check('#od-vym-voda');
+await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+check('se zaškrtnutou výměnou projde',calls.some(c=>c.method==='POST'));
+await pg.uncheck('#od-vym-voda');
+
+// Úprava existujícího
+calls.length=0;
+const predUpravou=await odRadky();
+check('nejnovější nahoře je odečet s výměnou',predUpravou[0][0].startsWith('2026-06-30'),
+  JSON.stringify(predUpravou[0]));
+await pg.click('#energie-odecty tbody tr:first-child .edit-btn'); await pg.waitForTimeout(300);
+check('úprava předvyplní stav',(await pg.inputValue('#od-voda'))==='5',
+  await pg.inputValue('#od-voda'));
+check('úprava předvyplní zaškrtnutí výměny',await pg.isChecked('#od-vym-voda'));
+// Řádek s výměnou nemá spotřebu vody — jinak by vyšla −15.
+check('u výměny se spotřeba vody nepočítá',predUpravou[0][4]==='—',JSON.stringify(predUpravou[0]));
+await pg.fill('#od-poznamka','opraveno');
+await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+const patchOd=calls.find(c=>c.method==='PATCH'&&c.url.includes('energie_odecty'));
+check('úprava pošle PATCH',patchOd&&JSON.parse(patchOd.body).poznamka==='opraveno',
+  patchOd?patchOd.body:'žádný PATCH');
+check('formulář se vrátí do režimu zápisu',
+  (await pg.inputValue('#od-poznamka'))===''&&!(await pg.isChecked('#od-vym-voda')));
+
+// Dvakrát totéž datum nedává smysl
+calls.length=0;
+await pg.fill('#od-datum','2026-04-30'); await pg.fill('#od-voda','99');
+await pg.click('#btn-odecet'); await pg.waitForTimeout(400);
+check('dva odečty k témuž datu neprojdou',!calls.some(c=>c.method==='POST'));
+await pg.click('#btn-cancel-odecet').catch(()=>{});
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
 console.log('\n== 16. spoření: čisté jmění, změna, projekce (#10) ==');
 await pg.click('.tab:text-is("Spoření")'); await pg.waitForTimeout(300);
