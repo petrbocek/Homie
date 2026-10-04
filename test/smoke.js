@@ -214,6 +214,22 @@ check('zůstatek ignoruje plán (98 000)',txt(await pg.textContent('#sum-zustate
 const tab=txt(await pg.textContent('#plan-vs-real-table'));
 check('plán vs skutečnost: 5 000 / 1 200',tab.includes('5 000')&&tab.includes('1 200'),tab);
 check('kategorie bez plánu má pomlčku',tab.includes('—'));
+// Mrtvá kategorie v tabulce jen překáží. „Sporeni" je v osnově, ale nemá
+// za celý rok jediný záznam ani plán — vypadnout musí; ostatní zůstat.
+check('kategorie bez záznamu za celý rok se nevypisuje',
+  !tab.includes('Sporeni')&&tab.includes('Jídlo'),tab);
+// Ale jen za rok, ne za měsíc: s loňským záznamem se v letošku pořád schová,
+// a jakmile dostane záznam v letošku, objeví se i v měsíci, kde nic nemá.
+const zivaPoPridani=await pg.evaluate(()=>{
+  const m=new Date().toISOString().slice(0,7);
+  zaznamy.push({id:99902,datum:m+'-02',castka:'500.00',typ:'vydaj',typ_polozky:'skutecnost',
+    kategorie_id:7,kde:'Conseq',poznamka:null,penezenka_id:1});
+  renderPrehled();
+  const t=document.getElementById('plan-vs-real-table').textContent;
+  zaznamy=zaznamy.filter(z=>z.id!==99902); renderPrehled();
+  return t.includes('Sporeni');
+});
+check('se záznamem v tomto roce se kategorie vrátí',zivaPoPridani);
 
 console.log('\n== 6. Záznamy: odznak a filtr ==');
 await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);

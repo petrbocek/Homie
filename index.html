@@ -1126,9 +1126,19 @@ function renderPrehled(){
       return`<div class="wallet-preview" style="border-color:${c}55"><div class="wallet-preview-name">${esc(w.nazev)}</div><div class="wallet-preview-balance" style="color:${c}">${fmt(bal)}</div><div class="wallet-preview-init">k 1. 1. ${cY}: ${fmt(poc)}</div></div>`;}).join('')
     :'<div style="color:var(--muted);font-size:12px">Žádné peněženky</div>';
 
-  const tops=catTop();
+  // Kategorie, která za celý zobrazený rok nemá jediný záznam ani plán, je
+  // mrtvá (Nájem naposledy 12/2015) a v tabulce jen překáží. Schválně za rok,
+  // ne za měsíc: jinak by kategorie v klidnějším měsíci zmizela a člověk by
+  // ji hledal. V minulých letech, kdy ještě žila, se zase objeví.
+  const zivaKat=new Set();
+  const doTop=new Map(osnova.map(o=>[o.id,o.parent_id||o.id]));
+  for(const z of zaznamy){
+    if(!z.datum||!z.datum.startsWith(cY+'-')||jePrevod(z)||z.kategorie_id==null)continue;
+    zivaKat.add(doTop.get(z.kategorie_id)||z.kategorie_id);
+  }
+  const tops=catTop().filter(t=>zivaKat.has(t.id));
   const tbody=document.getElementById('plan-vs-real-table');
-  if(!tops.length){tbody.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px">Nejprve nastavte osnovu</td></tr>';return;}
+  if(!catTop().length){tbody.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px">Nejprve nastavte osnovu</td></tr>';return;}
   tbody.innerHTML=tops.map(top=>{
     const catIds=[top.id,...catSub(top.id).map(s=>s.id)];
     const planRows=mp.filter(z=>catIds.includes(z.kategorie_id));
