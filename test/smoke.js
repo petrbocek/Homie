@@ -791,6 +791,19 @@ await pg.click('#penezenky-list .wallet-list-item:nth-child(2) .skryt-btn'); awa
 const patchSk=calls.find(c=>c.method==='PATCH'&&c.url.includes('/rest/v1/penezenky'));
 check('přepínač pošle PATCH se skryta',patchSk&&JSON.parse(patchSk.body).skryta===true,
   patchSk?patchSk.body:'žádný PATCH');
+// Dlaždice v Přehledu: podtitulek je stav k 1. 1. zvoleného roku, ne kotva
+// peněženky z roku 2015. Mock má všechny záznamy v letošku, takže se oboje
+// shoduje — kontroluje se popisek a to, že se číslo mění s přepnutím roku.
+await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
+const dlazdice=async()=>pg.evaluate(()=>[...document.querySelectorAll('#prehled-wallets .wallet-preview')]
+  .map(e=>({nazev:e.querySelector('.wallet-preview-name').textContent.trim(),
+            poc:e.querySelector('.wallet-preview-init').textContent.replace(/[\s\u00a0\u202f]+/g,' ').trim()})));
+const dl=await dlazdice();
+check('dlaždice ukazuje počáteční stav k 1. 1. zvoleného roku',
+  dl.length&&/^k 1\. 1\. \d{4}: /.test(dl[0].poc),JSON.stringify(dl));
+check('je to kotva peněženky, dokud jsou záznamy jen v letošku',
+  dl[0].poc.endsWith('10 000 Kč'),JSON.stringify(dl));
+await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
 check('skrytá zmizí z přehledu',await pg.evaluate(()=>
   ![...document.querySelectorAll('#prehled-wallets .wallet-preview-name')].some(e=>e.textContent.includes('Kreditka'))));
 await pg.click('#penezenky-list .wallet-list-item:nth-child(2) .skryt-btn'); await pg.waitForTimeout(400);

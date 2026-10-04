@@ -1076,7 +1076,13 @@ function renderPrehled(){
   document.getElementById('sum-zbyva-sub').textContent=planVydaje?(zbyva>=0?'ještě nevyčerpáno':'překročeno o'):'plán nenastaveno';
 
   document.getElementById('prehled-wallets').innerHTML=penezenkyVidet().length
-    ?penezenkyVidet().map(w=>{const bal=walletBalance(w.id),c=col(w.barva);return`<div class="wallet-preview" style="border-color:${c}55"><div class="wallet-preview-name">${esc(w.nazev)}</div><div class="wallet-preview-balance" style="color:${c}">${fmt(bal)}</div><div class="wallet-preview-init">počáteční: ${fmt(w.pocatecni_zustatek)}</div></div>`;}).join('')
+    ?penezenkyVidet().map(w=>{
+      const bal=walletBalance(w.id),c=col(w.barva);
+      // Počáteční zůstatek peněženky je kotva k roku 2015 a po jedenácti letech
+      // nikomu nic neřekne. Dlaždice proto ukazuje stav k začátku zvoleného
+      // roku — proti dnešnímu zůstatku nad ním je vidět, co rok udělal.
+      const poc=walletPocatekRoku(w.id,String(cY));
+      return`<div class="wallet-preview" style="border-color:${c}55"><div class="wallet-preview-name">${esc(w.nazev)}</div><div class="wallet-preview-balance" style="color:${c}">${fmt(bal)}</div><div class="wallet-preview-init">k 1. 1. ${cY}: ${fmt(poc)}</div></div>`;}).join('')
     :'<div style="color:var(--muted);font-size:12px">Žádné peněženky</div>';
 
   const tops=catTop();
