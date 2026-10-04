@@ -209,6 +209,35 @@
   .toast.err{border-color:var(--red);color:var(--red);}
   .empty{text-align:center;padding:36px;color:var(--muted);font-size:13px;}
   .empty .emoji{font-size:32px;display:block;margin-bottom:10px;}
+  /* Rozpad částky z Přehledu na jednotlivé záznamy. */
+  .rozpad-pozadi{position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(3px);
+    display:none;align-items:flex-end;justify-content:center;z-index:300;}
+  .rozpad-pozadi.open{display:flex;}
+  .rozpad-box{background:var(--surface);border:1px solid var(--border);border-radius:14px 14px 0 0;
+    width:100%;max-width:720px;max-height:82vh;display:flex;flex-direction:column;}
+  @media(min-width:641px){
+    .rozpad-pozadi{align-items:center;}
+    .rozpad-box{border-radius:14px;}
+  }
+  .rozpad-hlava{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;
+    align-items:flex-start;gap:12px;}
+  .rozpad-nadpis{flex:1;min-width:0;}
+  .rozpad-nadpis .t{font-size:14px;font-weight:700;}
+  .rozpad-nadpis .p{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:3px;}
+  .rozpad-soucet{font-family:'DM Mono',monospace;font-size:17px;font-weight:800;white-space:nowrap;}
+  .rozpad-telo{overflow-y:auto;padding:6px 0;}
+  .rozpad-radek{display:flex;align-items:baseline;gap:10px;padding:9px 18px;border-bottom:1px solid var(--border);}
+  .rozpad-radek:last-child{border-bottom:none;}
+  .rozpad-datum{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);white-space:nowrap;}
+  .rozpad-popis{flex:1;min-width:0;}
+  .rozpad-kde{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .rozpad-meta{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:2px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .rozpad-castka{font-family:'DM Mono',monospace;font-size:13px;font-weight:700;white-space:nowrap;}
+  .klik{cursor:pointer;text-decoration:underline;text-decoration-style:dotted;
+    text-underline-offset:3px;text-decoration-color:var(--muted);}
+  .klik:hover{color:var(--accent2);}
+
   .loading-overlay{position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:12px;}
   .loading-spinner{width:34px;height:34px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite;}
   @keyframes spin{to{transform:rotate(360deg);}}
@@ -255,6 +284,20 @@
       <div class="field"><label>Heslo</label><input id="auth-pass" type="password" autocomplete="current-password" required></div>
       <button class="btn" id="btn-login" type="submit">Přihlásit se</button>
     </form>
+  </div>
+</div>
+
+<div class="rozpad-pozadi" id="rozpad" onclick="if(event.target===this)zavriRozpad()">
+  <div class="rozpad-box" role="dialog" aria-modal="true" aria-labelledby="rozpad-titulek">
+    <div class="rozpad-hlava">
+      <div class="rozpad-nadpis">
+        <div class="t" id="rozpad-titulek"></div>
+        <div class="p" id="rozpad-podtitulek"></div>
+      </div>
+      <div class="rozpad-soucet" id="rozpad-soucet"></div>
+      <button class="edit-btn" onclick="zavriRozpad()" title="Zavřít" aria-label="Zavřít">✕</button>
+    </div>
+    <div class="rozpad-telo" id="rozpad-telo"></div>
   </div>
 </div>
 
@@ -1093,7 +1136,16 @@ function renderPrehled(){
     const actual=mz.filter(z=>catIds.includes(z.kategorie_id)).reduce((s,z)=>s+Number(z.castka),0);
     let diff='—',cls='diff-none';
     if(planned!==null){const d=actual-planned;diff=(d>=0?'+':'')+fmt(Math.abs(d));cls=top.typ==='prijem'?(d>=0?'diff-ok':'diff-over'):(actual<=planned?'diff-ok':'diff-over');}
-    return`<tr><td>${katOdznak(top.typ)} ${esc(top.nazev)}</td><td class="right mono">${planned!==null?fmt(planned):'—'}</td><td class="right mono">${fmt(actual)}</td><td class="right mono ${cls}">${diff}</td></tr>`;
+    // Klikat jde jen tam, kde je co ukázat — podtržení jinak slibuje rozpad,
+    // který by byl prázdný.
+    const aktRows=mz.filter(z=>catIds.includes(z.kategorie_id));
+    const bunka=(txt,rows,plan)=>rows.length
+      ? `<td class="right mono klik" onclick="rozpad(${top.id},${plan})" title="Rozepsat na jednotlivé záznamy">${txt}</td>`
+      : `<td class="right mono">${txt}</td>`;
+    return`<tr><td>${katOdznak(top.typ)} ${esc(top.nazev)}</td>`
+      + bunka(planned!==null?fmt(planned):'—',planRows,1)
+      + bunka(fmt(actual),aktRows,0)
+      + `<td class="right mono ${cls}">${diff}</td></tr>`;
   }).join('');
 
   const months=[];
@@ -1101,6 +1153,49 @@ function renderPrehled(){
   const max=Math.max(...months.map(m=>m.total),1);
   document.getElementById('trend-chart').innerHTML=months.map((m,i)=>`<div class="bar-col"><div class="bar-col-val">${m.total?Math.round(m.total/1000)+'k':''}</div><div class="bar-col-bar" style="height:${Math.round(m.total/max*90)+4}px;background:${i===5?'var(--accent)':'var(--surface2)'}"></div><div class="bar-col-label">${m.label}</div></div>`).join('');
 }
+
+// --- ROZPAD ČÁSTKY NA ZÁZNAMY ---
+// Stejný filtr jako tabulka v Přehledu (mSkut/mPlan už vynechávají převody
+// i cizí měsíce), jinak by součet v hlavičce neseděl na číslo, na které se
+// kliklo — a to je přesně to, kvůli čemu si to člověk rozklikne.
+function rozpadZaznamy(topId,plan){
+  const catIds=[topId,...catSub(topId).map(s=>s.id)];
+  return (plan?mPlan():mSkut())
+    .filter(z=>catIds.includes(z.kategorie_id))
+    .sort((a,b)=>b.datum.localeCompare(a.datum)||b.id-a.id);
+}
+
+function rozpad(topId,plan){
+  const top=osnova.find(o=>o.id===topId);if(!top)return;
+  const rows=rozpadZaznamy(topId,plan);
+  const soucet=rows.reduce((s,z)=>s+(z.typ==='prijem'?1:-1)*Number(z.castka),0);
+  document.getElementById('rozpad-titulek').textContent=top.nazev;
+  document.getElementById('rozpad-podtitulek').textContent=
+    `${plan?'plán':'skutečnost'} · ${MONTHS_CS[cM]} ${cY} · ${polozek(rows.length)}`;
+  const sc=document.getElementById('rozpad-soucet');
+  sc.textContent=fmt(Math.abs(soucet));
+  sc.style.color=soucet>=0?'var(--green)':'var(--red)';
+
+  document.getElementById('rozpad-telo').innerHTML=rows.length?rows.map(z=>{
+    // Podkategorie jen když nějaká je — u záznamu na hlavní kategorii by se
+    // jinak opakoval název z nadpisu.
+    const pod=z.kategorie_id!==topId?catName(z.kategorie_id).split(' › ').pop():null;
+    const meta=[pod,z.penezenka_id?walletName(z.penezenka_id):null,z.poznamka]
+      .filter(Boolean).map(esc).join(' · ');
+    return `<div class="rozpad-radek">`
+      + `<div class="rozpad-datum">${+z.datum.slice(8,10)}. ${+z.datum.slice(5,7)}.</div>`
+      + `<div class="rozpad-popis"><div class="rozpad-kde">${esc(z.kde||'—')}`
+      +   (z.pravidelna?' <span class="badge badge-pravidelna" title="mandatorní pravidelná platba">⟳</span>':'')
+      +   `</div>`
+      +   (meta?`<div class="rozpad-meta">${meta}</div>`:'')
+      + `</div>`
+      + `<div class="rozpad-castka" style="color:${z.typ==='prijem'?'var(--green)':'var(--red)'}">`
+      +   `${z.typ==='prijem'?'+':'−'}${fmt(z.castka)}</div></div>`;
+  }).join(''):'<div class="rozpad-radek" style="color:var(--muted)">Žádné záznamy</div>';
+
+  document.getElementById('rozpad').classList.add('open');
+}
+function zavriRozpad(){document.getElementById('rozpad').classList.remove('open');}
 
 // --- SOUHRN ZA ROKY ---
 // Jen skutečnost, bez plánu a bez převodů mezi peněženkami — stejná definice
@@ -1965,6 +2060,8 @@ async function init(){
 // --- BOOT ---
 async function boot(){
   document.getElementById('auth-form').addEventListener('submit',doLogin);
+  // Zavřít rozpad Escapem — na desktopu to čeká každý.
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')zavriRozpad();});
   session=readStored();
   if(session&&session.refresh_token){
     try{

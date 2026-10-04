@@ -866,7 +866,49 @@ check('přepnutí měsíce zůstatky nemění',
   JSON.stringify({pred:zuLetos.radky,po:jinyMesic.radky}));
 await pg.click('header .month-nav button:last-child'); await pg.waitForTimeout(400);
 
-console.log('\n== 23. stránkování: víc záznamů než strop PostgRESTu ==');
+console.log('\n== 23. rozpad částky z Přehledu na záznamy ==');
+await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(400);
+check('rozpad je zavřený',!(await pg.isVisible('#rozpad')));
+// Kategorie Jídlo: skutečnost 1 200 (Albert), plán 5 000.
+const radekJidlo='#plan-vs-real-table tr:has-text("Jídlo")';
+check('klikatelná je jen buňka, kde je co ukázat',
+  (await pg.locator(radekJidlo+' .klik').count())===2);
+await pg.click(radekJidlo+' td:nth-child(3)'); await pg.waitForTimeout(300);
+check('rozpad se otevřel',await pg.isVisible('#rozpad'));
+check('nadpis je kategorie',(await pg.textContent('#rozpad-titulek')).includes('Jídlo'));
+check('podtitulek říká skutečnost a počet',
+  /skutečnost · .+ · 1 položka/.test(txt(await pg.textContent('#rozpad-podtitulek'))),
+  await pg.textContent('#rozpad-podtitulek'));
+check('součet sedí na číslo v tabulce',
+  txt(await pg.textContent('#rozpad-soucet')).includes('1 200'),
+  await pg.textContent('#rozpad-soucet'));
+const rozTelo=txt(await pg.textContent('#rozpad-telo'));
+check('řádek nese kde i poznámku',rozTelo.includes('Albert & <i>spol</i>')&&rozTelo.includes('pozn "x" <hr>'),rozTelo);
+check('HTML ze záznamu se nevyrenderuje',(await pg.locator('#rozpad-telo i').count())===0);
+check('v řádku je podkategorie a peněženka',rozTelo.includes('Albert "levně"')&&rozTelo.includes('Ucet'),rozTelo);
+check('jeden řádek, ne víc',(await pg.locator('#rozpad-radek, #rozpad-telo .rozpad-radek').count())===1);
+
+await pg.keyboard.press('Escape'); await pg.waitForTimeout(250);
+check('Escape rozpad zavře',!(await pg.isVisible('#rozpad')));
+
+// Plán téže kategorie — jiný seznam, jiný součet.
+await pg.click(radekJidlo+' td:nth-child(2)'); await pg.waitForTimeout(300);
+check('rozpad plánu ukáže plánovanou částku',
+  txt(await pg.textContent('#rozpad-soucet')).includes('5 000')
+  &&/plán ·/.test(await pg.textContent('#rozpad-podtitulek')),
+  txt(await pg.textContent('#rozpad-soucet'))+' | '+await pg.textContent('#rozpad-podtitulek'));
+await pg.click('#rozpad',{position:{x:5,y:5}}); await pg.waitForTimeout(250);
+check('klik mimo okno ho zavře',!(await pg.isVisible('#rozpad')));
+
+// Mzda: příjem 90 000 skutečnost — jiné znaménko i barva.
+await pg.click('#plan-vs-real-table tr:has-text("Mzda") td:nth-child(3)'); await pg.waitForTimeout(300);
+check('u příjmu je součet zelený',
+  (await pg.evaluate(()=>document.getElementById('rozpad-soucet').style.color)).includes('green'),
+  await pg.evaluate(()=>document.getElementById('rozpad-soucet').style.color));
+await pg.click('.rozpad-hlava .edit-btn'); await pg.waitForTimeout(250);
+check('křížek rozpad zavře',!(await pg.isVisible('#rozpad')));
+
+console.log('\n== 24. stránkování: víc záznamů než strop PostgRESTu ==');
 // Po importu historie má tabulka 22 tisíc řádků. Jeden GET by vrátil jen
 // prvních MAX_ROWS a appka by tiše počítala s osekanými daty, takže tohle
 // hlídá, že se dotahují všechny stránky.
