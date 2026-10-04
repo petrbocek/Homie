@@ -441,6 +441,9 @@
           Při výměně zapiš <strong>dva odečty k témuž dni</strong>: konečný stav starého
           měřidla (bez zaškrtnutí) a vynulovaný nový (se zaškrtnutím). Jen tak se nic
           neztratí. Druhé měřidlo nech na aktuálním stavu, ne na nule — nemění se.
+          Co jsi neodečetl, <strong>nech prázdné</strong>: opsaná hodnota z minula vyrobí
+          nulovou spotřebu, prázdno appka bere jako nenaměřeno a dopočítá to až
+          z příštího skutečného odečtu.
         </div>
 
         <div class="form-title" style="margin-top:26px" id="form-cenik-title">Nové období ceníku</div>
@@ -488,7 +491,10 @@
       vyrobilo nesmysl (skok z 767 na 10 m³). <strong>Když ale konečný stav starého měřidla
       zapsaný je</strong> — ke stejnému datu jako vynulovaný nový — nic se neztratilo, měsíc je
       celý a <strong class="vymena">⚠</strong> se neukáže. Náklad se počítá sazbou platnou
-      k poslednímu odečtu v měsíci.
+      k poslednímu odečtu v měsíci. <strong>Vynechaný odečet</strong> se taky nedá
+      vyrobit: měsíc zůstane bez spotřeby a <strong class="vymena">⚠</strong>, a další
+      skutečný odečet se počítá proti poslednímu zapsanému stavu — jeho hodnota je
+      slitá z víc měsíců, takže je označený stejně.
     </div>
 
     <div class="section-title" style="margin-bottom:10px">Ceník</div>
@@ -1559,23 +1565,57 @@ function poradiOdectu(a,b){
     || (a.id-b.id);
 }
 
-// Odečty s dopočtenou spotřebou. V řádku s výměnou měřidla je spotřeba null:
-// stav starého měřidla v okamžiku výměny nikdo nezapsal, takže ji spočítat
-// nelze. Výjimka je, když zapsaný je — konečný stav starého měřidla je k témuž
-// datu. Pak se nic neztratilo, nové měřidlo začíná na nule a spotřeba za ten
-// řádek je nula, ne neznámo.
+// Rozdíl měsíců mezi dvěma YYYY-MM.
+function mesicuMezi(a,b){
+  const [ay,am]=a.split('-').map(Number), [by,bm]=b.split('-').map(Number);
+  return (by*12+bm)-(ay*12+am);
+}
+
+// Odečty s dopočtenou spotřebou. Tři pasti:
+//  - Výměna měřidla: stav starého v okamžiku výměny nikdo nezapsal, takže
+//    spotřebu za ten řádek spočítat nelze. Výjimka je, když zapsaný je —
+//    konečný stav starého měřidla je k témuž datu. Pak se nic neztratilo,
+//    nové měřidlo začíná na nule a spotřeba je nula, ne neznámo.
+//  - Nezapsaný stav: v srpnu a září 2026 se odečetla jen voda a stav
+//    elektroměru se opsal z července, takže spotřeba vyšla 0 kWh. Nezapsaný
+//    stav patří do dat jako prázdno a spotřeba za ten řádek je neznámo.
+//  - Pokračování po nezapsaném stavu: další odečet se nepočítá proti
+//    předchozímu řádku, ale proti poslednímu ZAPSANÉMU stavu toho měřidla.
+//    Spotřeba se tím ale slije do jednoho měsíce, takže k ní patří datum,
+//    odkud se měří (od_voda / od_el), a měsíc se označí jako nesrovnatelný.
 function odectySeSpotrebou(){
   const out=[];
-  let p=null;
+  // Poslední odečet se zapsaným stavem, zvlášť za vodoměr a elektroměr —
+  // jedno měřidlo může chybět, zatímco druhé je odečtené.
+  let pv=null, pe=null;
   for(const o of odecty){
-    const resetVoda=o.vymena_vodomer&&p&&p.datum===o.datum;
-    const resetEl=o.vymena_elektromer&&p&&p.datum===o.datum;
-    // Nezapsaný stav je neznámo, ne nula — Number(null) je 0 a vyrobilo by
-    // to spotřebu rovnou celému stavu měřidla.
-    const dif=(a,b)=>(a==null||b==null)?null:Number(a)-Number(b);
-    const sp_voda=p==null?null:(o.vymena_vodomer?(resetVoda?0:null):dif(o.voda,p.voda));
-    const sp_t1=p==null?null:(o.vymena_elektromer?(resetEl?0:null):dif(o.t1,p.t1));
-    const sp_t2=p==null?null:(o.vymena_elektromer?(resetEl?0:null):dif(o.t2,p.t2));
+    let sp_voda=null, od_voda=null;
+    if(o.voda!=null){
+      if(o.vymena_vodomer){
+        sp_voda=(pv&&pv.datum===o.datum)?0:null;
+        od_voda=pv?pv.datum:null;
+      }else if(pv){
+        sp_voda=Number(o.voda)-Number(pv.voda); od_voda=pv.datum;
+      }
+      pv=o;
+    }
+    // Elektroměr bere obě tarify jako jedno měřidlo: jeden stav bez druhého
+    // je rozečtený zápis, ne odečet.
+    let sp_t1=null, sp_t2=null, od_el=null;
+    if(o.t1!=null&&o.t2!=null){
+      if(o.vymena_elektromer){
+        const reset=pe&&pe.datum===o.datum;
+        sp_t1=reset?0:null; sp_t2=reset?0:null;
+        od_el=pe?pe.datum:null;
+      }else if(pe){
+        sp_t1=Number(o.t1)-Number(pe.t1); sp_t2=Number(o.t2)-Number(pe.t2);
+        od_el=pe.datum;
+      }
+      pe=o;
+    }
+    // Spotřeba, která se měří od data o víc než měsíc zpátky, není měsíční —
+    // slila se do ní i doba, kdy se neodečítalo.
+    const slito=d=>!!d&&mesicuMezi(d.slice(0,7),o.datum.slice(0,7))>1;
     // Co ta spotřeba stála, sazbou platnou k datu odečtu. Měsíční fix (jistič
     // a stálé platby) se sem schválně nepočítá — je měsíční, ne za odečet, a
     // v měsíci se dvěma odečty by se připočetl dvakrát. Je v tabulce po měsících.
@@ -1583,9 +1623,9 @@ function odectySeSpotrebou(){
     const kc_voda=(c&&c.voda!=null&&sp_voda!=null)?sp_voda*Number(c.voda):null;
     const kc_el=(c&&(sp_t1!=null||sp_t2!=null))
       ?(sp_t1||0)*Number(c.vt)+(sp_t2||0)*Number(c.nt):null;
-    out.push({...o,sp_voda,sp_t1,sp_t2,kc_voda,kc_el,
-      kc:(kc_voda==null&&kc_el==null)?null:(kc_voda||0)+(kc_el||0)});
-    p=o;
+    out.push({...o,sp_voda,sp_t1,sp_t2,od_voda,od_el,
+      slito_voda:slito(od_voda),slito_el:slito(od_el),
+      kc_voda,kc_el,kc:(kc_voda==null&&kc_el==null)?null:(kc_voda||0)+(kc_el||0)});
   }
   return out;
 }
@@ -1596,20 +1636,29 @@ function energieMesice(){
   const mapa=new Map();
   for(const o of odectySeSpotrebou()){
     const k=o.datum.slice(0,7);
-    if(!mapa.has(k))mapa.set(k,{mesic:k,voda:0,t1:0,t2:0,chybi:false,posledni:o.datum});
+    if(!mapa.has(k))mapa.set(k,
+      {mesic:k,voda:0,t1:0,t2:0,vodaZnama:false,elZnama:false,chybi:false,posledni:o.datum});
     const m=mapa.get(k);
-    if(o.sp_voda===null||o.sp_t1===null)m.chybi=true;
-    m.voda+=o.sp_voda||0; m.t1+=o.sp_t1||0; m.t2+=o.sp_t2||0;
+    if(o.sp_voda===null||o.sp_t1===null||o.slito_voda||o.slito_el)m.chybi=true;
+    // Měsíc, ve kterém se měřidlo vůbec neodečetlo, nemá spotřebu nula — nemá
+    // ji vůbec. Nula by se čtla jako „nic jsme nespotřebovali" a u elektřiny
+    // by k ní appka ještě přidala měsíční fix jako celý náklad měsíce.
+    if(o.sp_voda!==null){m.vodaZnama=true;m.voda+=o.sp_voda;}
+    if(o.sp_t1!==null||o.sp_t2!==null){m.elZnama=true;m.t1+=o.sp_t1||0;m.t2+=o.sp_t2||0;}
     if(o.datum>m.posledni)m.posledni=o.datum;
   }
   return [...mapa.values()].map(m=>{
     const c=sazbaK(m.posledni);
-    const el=c?m.t1*Number(c.vt)+m.t2*Number(c.nt)+Number(c.mesicni_fix):null;
-    const vo=c&&c.voda!=null?m.voda*Number(c.voda):null;
+    const voda=m.vodaZnama?m.voda:null, t1=m.elZnama?m.t1:null, t2=m.elZnama?m.t2:null;
+    const el=(c&&m.elZnama)?m.t1*Number(c.vt)+m.t2*Number(c.nt)+Number(c.mesicni_fix):null;
+    const vo=(c&&c.voda!=null&&m.vodaZnama)?m.voda*Number(c.voda):null;
     const zal=c?Number(c.zaloha_elektrina||0)+Number(c.zaloha_voda||0):null;
     const naklad=(el==null&&vo==null)?null:(el||0)+(vo||0);
-    return {...m,sazba:c,naklad_el:el,naklad_voda:vo,naklad,zaloha:zal,
-            rozdil:(naklad==null||zal==null)?null:zal-naklad};
+    // Dokud není celý náklad, nemá smysl ho srovnávat se zálohou — rozdíl by
+    // vyšel jako přeplatek jen proto, že chybí odečet.
+    const cely=el!=null&&vo!=null;
+    return {...m,voda,t1,t2,sazba:c,naklad_el:el,naklad_voda:vo,naklad,zaloha:zal,
+            rozdil:(!cely||zal==null)?null:zal-naklad};
   }).sort((a,b)=>a.mesic.localeCompare(b.mesic));
 }
 
@@ -1629,7 +1678,7 @@ function energieRoky3(){
     data.push({mesic:i,hodnoty:roky.map(r=>{
       const m=mapa.get(r+'-'+mm);
       // Měsíc bez odečtu není nula, je prázdno — ať se nečte jako „nic jsme nespotřebovali".
-      return m?{kwh:m.t1+m.t2,chybi:m.chybi}:null;
+      return (m&&(m.t1!=null||m.t2!=null))?{kwh:(m.t1||0)+(m.t2||0),chybi:m.chybi}:null;
     })});
   }
   return {roky,data};
@@ -1651,11 +1700,14 @@ function renderEnergie(){
   const rok=mesice.slice(-12);
   const sum=(a,k)=>a.reduce((s,x)=>s+x[k],0);
   const cis=n=>Math.round(n).toLocaleString('cs-CZ');
+  // Nenaměřeno není nula. Math.round(null) je 0 a ve tabulce by to vypadalo
+  // jako odečtená nulová spotřeba.
+  const cisN=n=>n==null?null:cis(n);
 
   karty.innerHTML=`
     <div class="card accent"><div class="card-label">Poslední odečet</div>
       <div class="card-value" style="font-size:18px">${esc(posledni.datum)}</div>
-      <div class="card-sub">voda ${cis(posledni.voda)} m³ · VT ${cis(posledni.t1)} · NT ${cis(posledni.t2)}</div></div>
+      <div class="card-sub">voda ${cisN(posledni.voda)||'—'} m³ · VT ${cisN(posledni.t1)||'—'} · NT ${cisN(posledni.t2)||'—'}</div></div>
     <div class="card info"><div class="card-label">Elektřina za 12 měsíců</div>
       <div class="card-value">${cis(sum(rok,'t1')+sum(rok,'t2'))} kWh</div>
       <div class="card-sub">VT ${cis(sum(rok,'t1'))} · NT ${cis(sum(rok,'t2'))}</div></div>
@@ -1690,8 +1742,8 @@ function renderEnergie(){
       <th class="right">NT kWh</th><th class="right plan">náklad el.</th><th class="right plan">náklad voda</th>
       <th class="right">celkem</th><th class="right plan">záloha</th><th class="right">rozdíl</th></tr></thead><tbody>`
     + mesice.slice().reverse().slice(0,36).map(m=>
-      `<tr><td class="kat">${m.mesic}${m.chybi?' <span class="vymena" title="v měsíci začalo nové měřidlo — spotřeba je neúplná">\u26a0</span>':''}</td>`
-      + bunka(cis(m.voda)) + bunka(cis(m.t1)) + bunka(cis(m.t2))
+      `<tr><td class="kat">${m.mesic}${m.chybi?' <span class="vymena" title="spotřeba za měsíc není úplná ani srovnatelná — chybí odečet, slila se do ní doba, kdy se neodečítalo, nebo v měsíci začalo nové měřidlo">\u26a0</span>':''}</td>`
+      + bunka(cisN(m.voda)) + bunka(cisN(m.t1)) + bunka(cisN(m.t2))
       + bunka(m.naklad_el==null?null:cis(m.naklad_el),'plan')
       + bunka(m.naklad_voda==null?null:cis(m.naklad_voda),'plan')
       + bunka(m.naklad==null?null:cis(m.naklad))
@@ -1701,6 +1753,10 @@ function renderEnergie(){
     + '</tbody>';
 
   const vym=(a,b)=>a||b?' <span class="vymena" title="tímhle odečtem začíná nové měřidlo">\u26a0</span>':'';
+  // Odkud se spotřeba měří. Po vynechaném odečtu to není předchozí řádek a
+  // hodnota pak není za měsíc — to je potřeba vidět, ne hádat.
+  const odKdy=d=>d?` title="spotřeba od ${esc(d)}"`:'';
+  const slito=p=>p?' <span class="vymena" title="slito z víc měsíců — mezitím se neodečítalo">\u26a0</span>':'';
   document.getElementById('energie-odecty').innerHTML=
     `<thead><tr><th class="kat">Datum</th><th class="right">voda m³</th><th class="right">VT kWh</th>
       <th class="right">NT kWh</th><th class="right plan">sp. voda</th>
@@ -1715,9 +1771,9 @@ function renderEnergie(){
       +   `<button class="del-btn" onclick="delOdecet(${o.id})" title="Smazat">✕</button></span></td>`
       + `<td class="hodnota">${cis(o.voda)}</td><td class="hodnota">${cis(o.t1)}</td>`
       + `<td class="hodnota">${cis(o.t2)}</td>`
-      + `<td class="hodnota plan">${o.sp_voda==null?'—':cis(o.sp_voda)}</td>`
-      + `<td class="hodnota plan">${o.sp_t1==null?'—':cis(o.sp_t1)}</td>`
-      + `<td class="hodnota plan">${o.sp_t2==null?'—':cis(o.sp_t2)}</td>`
+      + `<td class="hodnota plan"${odKdy(o.od_voda)}>${o.sp_voda==null?'—':cis(o.sp_voda)}${slito(o.slito_voda)}</td>`
+      + `<td class="hodnota plan"${odKdy(o.od_el)}>${o.sp_t1==null?'—':cis(o.sp_t1)}${slito(o.slito_el)}</td>`
+      + `<td class="hodnota plan"${odKdy(o.od_el)}>${o.sp_t2==null?'—':cis(o.sp_t2)}</td>`
       + `<td class="hodnota">${o.kc_voda==null?'—':cis(o.kc_voda)}</td>`
       + `<td class="hodnota">${o.kc_el==null?'—':cis(o.kc_el)}</td>`
       + `<td class="hodnota">${o.kc==null?'—':cis(o.kc)}</td>`

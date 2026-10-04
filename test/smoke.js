@@ -516,13 +516,16 @@ check('značka neúplného měsíce je vidět i na mobilu',
   await pg.isVisible('#energie-mesice .vymena'));
 await pg.setViewportSize({width:1280,height:720}); await pg.waitForTimeout(200);
 
-check('výměna nevyrobí negativní spotřebu vody (0, ne −105)',
-  en['2026-03'] && en['2026-03'][1]==='0',JSON.stringify(en['2026-03']));
+// Vodoměr se v březnu měnil a konečný stav starého nikdo nezapsal, takže
+// spotřeba vody za ten měsíc není nula, ale neznámo. Naivní odčítání by tam
+// vyrobilo −105 m³, nula by se zase čtla jako „nic jsme nespotřebovali".
+check('výměna nevyrobí negativní ani nulovou spotřebu vody, ale neznámo',
+  en['2026-03'] && en['2026-03'][1]==='—',JSON.stringify(en['2026-03']));
 check('elektřina se přes výměnu vodoměru počítá dál (50 / 200)',
   en['2026-03'] && en['2026-03'][2]==='50' && en['2026-03'][3]==='200',JSON.stringify(en['2026-03']));
 check('první odečet v historii nemá od čeho odečítat',
-  en['2026-01'] && /\u26a0/.test(en['2026-01'][0]) && en['2026-01'][1]==='0',
-  JSON.stringify(en['2026-01']));
+  en['2026-01'] && /\u26a0/.test(en['2026-01'][0]) && en['2026-01'][1]==='—'
+  && en['2026-01'][2]==='—',JSON.stringify(en['2026-01']));
 check('nikde negativní spotřeba',
   Object.values(en).every(r=>!r.slice(1,4).some(v=>v.startsWith('-')||v.startsWith('−'))),
   JSON.stringify(en));
@@ -765,6 +768,80 @@ await pg.click('#btn-odecet'); await pg.waitForTimeout(400);
 check('dvojí zápis bez výměny pořád neprojde',!calls.some(c=>c.method==='POST'),
   calls.map(c=>c.method+' '+c.url).join(' | '));
 await pg.click('#btn-cancel-odecet').catch(()=>{});
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
+
+console.log('\n== 15e. vynechaný odečet se nepočítá jako nulová spotřeba ==');
+// Reálný případ: v srpnu a září 2026 se odečetla jen voda a stav elektroměru
+// se opsal z července, takže spotřeba vyšla 0 kWh. Prázdno musí zůstat
+// prázdnem a další skutečný odečet se počítat proti poslednímu zapsanému.
+await pg.click('.tab:text-is("Energie")'); await pg.waitForTimeout(400);
+const odRadky3=async()=>pg.evaluate(()=>[...document.querySelectorAll('#energie-odecty tbody tr')]
+  .map(tr=>({bunky:[...tr.children].map(td=>td.textContent.replace(/[\s  ]+/g,' ').trim()),
+             tipy:[...tr.children].map(td=>td.getAttribute('title')||''),
+             slito:[...tr.children].map(td=>!!td.querySelector('.vymena'))})));
+const mesRadek3=async m=>pg.evaluate(mm=>{
+  const tr=[...document.querySelectorAll('#energie-mesice tbody tr')]
+    .find(x=>x.children[0].textContent.trim().startsWith(mm));
+  return tr?{bunky:[...tr.children].map(td=>td.textContent.replace(/[\s  ]+/g,' ').trim()),
+             vymena:!!tr.querySelector('.vymena')}:null;
+},m);
+
+await pg.fill('#od-datum','2026-05-31');
+await pg.fill('#od-voda','20'); await pg.fill('#od-t1','1200'); await pg.fill('#od-t2','5800');
+await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+// Červen: odečetla se jen voda, elektroměr zůstal prázdný.
+calls.length=0;
+await pg.fill('#od-datum','2026-06-30');
+await pg.fill('#od-voda','26'); await pg.fill('#od-t1',''); await pg.fill('#od-t2','');
+await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+const postJen=calls.find(c=>c.method==='POST'&&c.url.includes('energie_odecty'));
+check('odečet jen s vodou projde',!!postJen,await pg.textContent('.toast').catch(()=>''));
+check('nenaměřený stav se pošle jako prázdno, ne jako nula',
+  postJen&&JSON.parse(postJen.body).t1===null&&JSON.parse(postJen.body).t2===null,
+  postJen&&postJen.body);
+let r3=await odRadky3();
+check('vynechaná elektřina nedá nulovou spotřebu',
+  r3[0].bunky[0].startsWith('2026-06-30')&&r3[0].bunky[5]==='—'&&r3[0].bunky[6]==='—',
+  JSON.stringify(r3[0].bunky));
+check('voda se počítá dál i bez elektřiny (6 m³)',r3[0].bunky[4]==='6',
+  JSON.stringify(r3[0].bunky));
+
+// Červenec: skutečný odečet. Počítá se proti květnu (1 200 / 5 800), ne proti
+// prázdnému červnu — 1 300 − 1 200 = 100, 6 000 − 5 800 = 200.
+await pg.fill('#od-datum','2026-07-31');
+await pg.fill('#od-voda','32'); await pg.fill('#od-t1','1300'); await pg.fill('#od-t2','6000');
+await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+r3=await odRadky3();
+check('další odečet se počítá proti poslednímu ZAPSANÉMU stavu (100 / 200)',
+  r3[0].bunky[0].startsWith('2026-07-31')&&r3[0].bunky[5].startsWith('100')
+  &&r3[0].bunky[6]==='200',JSON.stringify(r3[0].bunky));
+check('u slité hodnoty je ⚠ a tooltip řekne odkud se měří',
+  r3[0].slito[5]&&r3[0].tipy[5]==='spotřeba od 2026-05-31',
+  JSON.stringify({slito:r3[0].slito[5],tip:r3[0].tipy[5]}));
+
+const cerven=await mesRadek3('2026-06');
+check('měsíc bez odečtu elektřiny nemá spotřebu',
+  cerven&&cerven.bunky[2]==='—'&&cerven.bunky[3]==='—',JSON.stringify(cerven));
+check('měsíc bez odečtu je označený ⚠',cerven&&cerven.vymena,JSON.stringify(cerven));
+// Bez odečtu není náklad elektřiny jen měsíční fix — není vůbec. A dokud
+// není celý náklad, nemá se co srovnávat se zálohou.
+check('bez odečtu není náklad elektřiny ani rozdíl proti záloze',
+  cerven&&cerven.bunky[4]==='—'&&cerven.bunky[8]==='—',JSON.stringify(cerven));
+check('voda se vyúčtuje dál (6 × 90 = 540)',cerven&&cerven.bunky[5]==='540',
+  JSON.stringify(cerven));
+// V grafu musí takový měsíc zůstat prázdný, ne spadnout na nulu.
+const grafCerven=await pg.evaluate(()=>{
+  const c=[...document.querySelectorAll('#energie-graf .bar-col')][5];
+  return [...c.querySelectorAll('.bar-par>div')].map(d=>d.title);
+});
+check('v grafu je měsíc bez odečtu prázdný, ne nulový',
+  grafCerven.includes('06/2026: bez odečtu'),JSON.stringify(grafCerven));
+const cervenec=await mesRadek3('2026-07');
+check('slitý měsíc je taky označený ⚠ — není srovnatelný',
+  cervenec&&cervenec.vymena&&cervenec.bunky[2]==='100',JSON.stringify(cervenec));
+check('nikde negativní spotřeba',
+  !r3.some(r=>r.bunky.slice(4,10).some(v=>v.startsWith('-')||v.startsWith('−'))),
+  JSON.stringify(r3.map(r=>r.bunky)));
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
 console.log('\n== 16. spoření: čisté jmění, změna, projekce (#10) ==');
