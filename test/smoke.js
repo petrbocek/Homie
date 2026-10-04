@@ -33,7 +33,9 @@ const DB={
   ],
   penezenky:[{id:1,nazev:'Ucet <img src=x onerror=alert(2)>',pocatecni_zustatek:'10000.00',
               barva:'red;background:url(javascript:alert(3))'},
-             {id:2,nazev:'Kreditka',pocatecni_zustatek:'0.00',barva:'#f0a860'}],
+             {id:2,nazev:'Kreditka',pocatecni_zustatek:'0.00',barva:'#f0a860'},
+             // Skrytá a prázdná — nesmí být v nabídkách ani v tabulce zůstatků.
+             {id:3,nazev:'Stravenka',pocatecni_zustatek:'0.00',barva:'#a860f0',skryta:true}],
   zaznamy:[
     {id:100,datum:d(3),castka:'90000.00',typ:'prijem',typ_polozky:'skutecnost',kategorie_id:11,kde:'Demos',poznamka:null,penezenka_id:1},
     {id:101,datum:d(5),castka:'1200.00',typ:'vydaj',typ_polozky:'skutecnost',kategorie_id:91,kde:'Albert & <i>spol</i>',poznamka:'pozn "x" <hr>',penezenka_id:1},
@@ -232,7 +234,7 @@ await pg.selectOption('#z-filtr','vse'); await pg.waitForTimeout(200);
 
 console.log('\n== 7. editace peněženky ==');
 await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
-check('tlačítko upravit u každé peněženky',(await pg.locator('#penezenky-list .edit-btn').count())===2);
+check('tlačítko upravit u každé peněženky',(await pg.locator('#penezenky-list .edit-btn').count())===3);
 await pg.click('#penezenky-list .edit-btn'); await pg.waitForTimeout(300);
 check('zůstatek předplněn',(await pg.inputValue('#w-zustatek'))==='10000.00');
 check('titulek = Upravit peněženku',(await pg.textContent('#form-penezenka-title'))==='Upravit peněženku');
@@ -764,7 +766,71 @@ check('na širokém displeji je celý název',
   (await pg.isVisible('.logo-dlouhy'))&&!(await pg.isVisible('.logo-kratky')));
 await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
 
-console.log('\n== 22. stránkování: víc záznamů než strop PostgRESTu ==');
+console.log('\n== 22. skryté peněženky a zůstatky po letech ==');
+await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(400);
+const vSeznamu=await pg.evaluate(()=>[...document.querySelectorAll('#penezenky-list .wallet-name')]
+  .map(e=>e.textContent.trim()));
+check('administrace ukazuje i skryté',vSeznamu.length===3,JSON.stringify(vSeznamu));
+check('skrytá je v seznamu odlišená',
+  (await pg.locator('#penezenky-list .wallet-list-item.skryta').count())===1);
+const vTabulce=await pg.evaluate(()=>[...document.querySelectorAll('#zustatky-table tbody tr:not(.soucet) .kat')]
+  .map(e=>e.textContent.trim()));
+check('prázdná skrytá peněženka v zůstatcích není',vTabulce.length===2,JSON.stringify(vTabulce));
+
+await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
+const nabidkaP=await pg.evaluate(()=>[...document.querySelectorAll('#z-penezenka option')].map(o=>o.textContent.trim()));
+check('skrytá se nenabízí při zápisu',!nabidkaP.some(x=>x.includes('Stravenka')),JSON.stringify(nabidkaP));
+await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
+const nabidkaPrevod=await pg.evaluate(()=>[...document.querySelectorAll('#pr-z option')].map(o=>o.textContent.trim()));
+check('skrytá se nenabízí ani u převodu',!nabidkaPrevod.some(x=>x.includes('Stravenka')),
+  JSON.stringify(nabidkaPrevod));
+
+// Přepínač v administraci
+calls.length=0;
+await pg.click('#penezenky-list .wallet-list-item:nth-child(2) .skryt-btn'); await pg.waitForTimeout(400);
+const patchSk=calls.find(c=>c.method==='PATCH'&&c.url.includes('/rest/v1/penezenky'));
+check('přepínač pošle PATCH se skryta',patchSk&&JSON.parse(patchSk.body).skryta===true,
+  patchSk?patchSk.body:'žádný PATCH');
+check('skrytá zmizí z přehledu',await pg.evaluate(()=>
+  ![...document.querySelectorAll('#prehled-wallets .wallet-preview-name')].some(e=>e.textContent.includes('Kreditka'))));
+await pg.click('#penezenky-list .wallet-list-item:nth-child(2) .skryt-btn'); await pg.waitForTimeout(400);
+
+// Záznam na skryté peněžence nesmí při úpravě přijít o peněženku.
+await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
+// Konkrétní záznam, ne „první řádek" — ten se řadí podle data a mohl by to
+// být jiný, než na kterém jsme peněženku přehodili.
+await pg.evaluate(()=>{const z=zaznamy.find(z=>z.id===101);z.penezenka_id=3;editZaznam(101);});
+await pg.waitForTimeout(400);
+check('skrytá peněženka upravovaného záznamu se do nabídky doplní',
+  (await pg.inputValue('#z-penezenka'))==='3',
+  JSON.stringify(await pg.evaluate(()=>[...document.querySelectorAll('#z-penezenka option')].map(o=>o.value+':'+o.textContent))));
+await pg.click('#btn-cancel-zaznam').catch(()=>{});
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
+
+// Zůstatky po letech
+await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(400);
+const zuRok=async()=>pg.evaluate(()=>{
+  const cis=t=>{const v=t.textContent.replace(/[^\d+-]/g,'');return v?parseInt(v,10):0;};
+  const tr=[...document.querySelectorAll('#zustatky-table tbody tr:not(.soucet)')];
+  const hl=[...document.querySelectorAll('#zustatky-table thead th')].map(e=>e.textContent.trim());
+  return {hlavicka:hl,radky:tr.map(r=>({nazev:r.children[0].textContent.trim(),
+    poc:cis(r.children[1]),pohyby:cis(r.children[2]),zust:cis(r.children[3])}))};
+});
+const zuLetos=await zuRok();
+check('hlavička nese rok',/^k 1\. 1\. \d{4}$/.test(zuLetos.hlavicka[1]),JSON.stringify(zuLetos.hlavicka));
+check('zůstatek = počáteční + pohyby',zuLetos.radky.every(r=>r.zust===r.poc+r.pohyby),
+  JSON.stringify(zuLetos.radky));
+// Mock má všechny záznamy v letošním roce, takže počátek roku = počáteční kotva.
+check('počátek letoška je kotva peněženky (10 000)',
+  zuLetos.radky[0].poc===10000,JSON.stringify(zuLetos.radky[0]));
+await pg.click('header .month-nav button:first-child'); await pg.waitForTimeout(400);
+// Posun o měsíc zpět může, ale nemusí přepnout rok — zajímá nás jen soulad.
+const jinyMesic=await zuRok();
+check('po přepnutí měsíce tabulka pořád sedí',
+  jinyMesic.radky.every(r=>r.zust===r.poc+r.pohyby),JSON.stringify(jinyMesic.radky));
+await pg.click('header .month-nav button:last-child'); await pg.waitForTimeout(400);
+
+console.log('\n== 23. stránkování: víc záznamů než strop PostgRESTu ==');
 // Po importu historie má tabulka 22 tisíc řádků. Jeden GET by vrátil jen
 // prvních MAX_ROWS a appka by tiše počítala s osekanými daty, takže tohle
 // hlídá, že se dotahují všechny stránky.

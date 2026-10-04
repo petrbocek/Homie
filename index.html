@@ -103,6 +103,7 @@
      mobilu v .rok-table schovává a tady je to jediný signál, že čísla v řádku
      nejsou celá spotřeba. */
   .vymena,.mezera{color:var(--accent4);cursor:help;font-family:'DM Mono',monospace;}
+  .skryta{opacity:0.5;}
 
   /* Vývoj čistého jmění. Je celou historii záporné, takže sloupcový graf od
      nuly by nic neukázal — tohle je spojnice škálovaná na rozsah dat. */
@@ -139,8 +140,9 @@
   .btn.danger-btn:hover{background:rgba(248,113,113,0.1);transform:none;}
   .del-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:5px;transition:all 0.15s;}
   .del-btn:hover{color:var(--red);background:rgba(248,113,113,0.1);}
-  .edit-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:5px;transition:all 0.15s;}
-  .edit-btn:hover{color:var(--accent2);background:rgba(96,200,240,0.1);}
+  .edit-btn,.skryt-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:5px;transition:all 0.15s;}
+  .edit-btn:hover,.skryt-btn:hover{color:var(--accent2);background:rgba(96,200,240,0.1);}
+  .skryt-btn{font-size:12px;}
   .row2{display:flex;gap:8px;} .row2 .field{flex:1;}
   .amount-positive{color:var(--green);font-weight:600;font-family:'DM Mono',monospace;}
   .amount-negative{color:var(--red);font-weight:600;font-family:'DM Mono',monospace;}
@@ -164,7 +166,10 @@
   .wallet-list{display:flex;flex-direction:column;gap:10px;}
   .wallet-list-item{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 16px;display:flex;align-items:center;gap:12px;}
   .wallet-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0;}
-  .wallet-info{flex:1;}
+  /* min-width:0 jinak nedovolí flexu položku zmenšit pod šířku textu
+     a řádek na úzkém telefonu vystrčí celou stránku do strany. */
+  .wallet-info{flex:1;min-width:0;}
+  .wallet-name,.wallet-meta{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .wallet-name{font-size:14px;font-weight:700;}
   .wallet-meta{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:2px;}
   .wallet-balance-val{font-size:18px;font-weight:800;font-family:'DM Mono',monospace;}
@@ -855,6 +860,26 @@ function buildCatOptions(typFilter=null){
 }
 
 // --- Wallet helpers ---
+// Skrytá peněženka se přestala používat (stravenky, zrušená kreditka). Mizí
+// z nabídek a z přehledu, ale záznamy ani zůstatek jí nikdo nebere — jen se
+// neplete do cesty při zápisu nového záznamu.
+function penezenkyVidet(){return penezenky.filter(w=>!w.skryta);}
+
+// Zůstatek k poslednímu dni roku `rok` a pohyby za ten rok. Počáteční zůstatek
+// peněženky je kotva k začátku celé historie, takže počátek roku = kotva plus
+// všechno, co se stalo dřív.
+function walletPocatekRoku(wId,rok){
+  const w=penezenky.find(p=>p.id==wId);if(!w)return 0;
+  const hranice=`${rok}-01-01`;
+  return Number(w.pocatecni_zustatek)+zaznamy
+    .filter(z=>z.penezenka_id==wId&&!jePlan(z)&&z.datum<hranice)
+    .reduce((s,z)=>s+(z.typ==='prijem'?1:-1)*Number(z.castka),0);
+}
+function walletPohybyRoku(wId,rok){
+  return zaznamy.filter(z=>z.penezenka_id==wId&&!jePlan(z)&&z.datum.startsWith(rok+'-'))
+                .reduce((s,z)=>s+(z.typ==='prijem'?1:-1)*Number(z.castka),0);
+}
+
 function walletBalance(wId){
   const w=penezenky.find(p=>p.id==wId);if(!w)return 0;
   // plánované položky se do zůstatku nepočítají – ještě se nestaly
@@ -873,15 +898,17 @@ function dnes(){const d=new Date();
 // datum nefiltruje. Ukazujeme je zvlášť, aby bylo vidět, kolik ze zůstatku je
 // takhle dopředu utracených. Pivot si z nich dělá pole `Budouci`, s obráceným
 // znaménkem.
-function walletZaplacenoDopredu(wId){
+function walletZaplacenoDopredu(wId,rok){
   const t=dnes();
-  return zaznamy.filter(z=>z.penezenka_id==wId&&!jePlan(z)&&z.datum>t)
+  return zaznamy.filter(z=>z.penezenka_id==wId&&!jePlan(z)&&z.datum>t
+                          &&(!rok||z.datum.startsWith(rok+'-')))
                 .reduce((s,z)=>s+(z.typ==='prijem'?1:-1)*Number(z.castka),0);
 }
 // Plánované položky do budoucna – to, co teprve přijde. Sheet je neukazuje.
-function walletPlan(wId){
+function walletPlan(wId,rok){
   const t=dnes();
-  return zaznamy.filter(z=>z.penezenka_id==wId&&jePlan(z)&&z.datum>t)
+  return zaznamy.filter(z=>z.penezenka_id==wId&&jePlan(z)&&z.datum>t
+                          &&(!rok||z.datum.startsWith(rok+'-')))
                 .reduce((s,z)=>s+(z.typ==='prijem'?1:-1)*Number(z.castka),0);
 }
 
@@ -892,11 +919,15 @@ function renderZustatky(){
   if(!penezenky.length){t.innerHTML='';pozn.innerHTML='';wrap.style.display='none';return;}
   wrap.style.display='';
 
+  const rok=String(cY);
   const fmtZ=n=>Math.round(n).toLocaleString('cs-CZ');
+  // Skrytá peněženka se vypisuje jen v roce, kdy na ní ještě něco bylo —
+  // jinak by se z celkového součtu ztratily peníze, které tam tehdy ležely.
   const radky=penezenky.map(w=>{
-    const poc=Number(w.pocatecni_zustatek), zust=walletBalance(w.id);
-    return {w,poc,pohyby:zust-poc,zust,zaplaceno:walletZaplacenoDopredu(w.id),plan:walletPlan(w.id)};
-  });
+    const poc=walletPocatekRoku(w.id,rok), pohyby=walletPohybyRoku(w.id,rok);
+    return {w,poc,pohyby,zust:poc+pohyby,
+            zaplaceno:walletZaplacenoDopredu(w.id,rok),plan:walletPlan(w.id,rok)};
+  }).filter(x=>!x.w.skryta||x.poc||x.pohyby||x.zust);
   const sum=k=>radky.reduce((a,x)=>a+x[k],0);
   const bunky=x=>`<td class="hodnota">${fmtZ(x.poc)}</td>`
     +`<td class="hodnota">${fmtZ(x.pohyby)}</td>`
@@ -908,20 +939,28 @@ function renderZustatky(){
   t.innerHTML=
     `<thead><tr>
       <th class="kat">Peněženka</th>
-      <th class="right">počáteční</th><th class="right">pohyby</th><th class="right">zůstatek</th>
+      <th class="right">k 1. 1. ${esc(rok)}</th><th class="right">pohyby ${esc(rok)}</th>
+      <th class="right">k 31. 12. ${esc(rok)}</th>
       <th class="right plan">zaplaceno dopředu</th><th class="right plan">plán dopředu</th><th class="right">výhled</th>
     </tr></thead><tbody>`
-    + radky.map(x=>`<tr><td class="kat"><span style="background:${col(x.w.barva)};display:inline-block;width:8px;height:8px;border-radius:99px;margin-right:6px"></span>${esc(x.w.nazev)}</td>${bunky(x)}</tr>`).join('')
+    + radky.map(x=>`<tr${x.w.skryta?' class="skryta"':''}><td class="kat"><span style="background:${col(x.w.barva)};display:inline-block;width:8px;height:8px;border-radius:99px;margin-right:6px"></span>${esc(x.w.nazev)}`
+        + (x.w.skryta?' <span class="mezera" title="skrytá peněženka — zobrazuje se jen v letech, kdy na ní něco bylo">\u25cc</span>':'')
+        + `</td>${bunky(x)}</tr>`).join('')
     + `<tr class="soucet"><td class="kat">Celkem</td>`
       + `<td class="hodnota">${fmtZ(sum('poc'))}</td><td class="hodnota">${fmtZ(sum('pohyby'))}</td>`
       + `<td class="hodnota">${fmtZ(sum('zust'))}</td><td class="hodnota plan">${fmtM(sum('zaplaceno'))}</td>`
       + `<td class="hodnota plan">${fmtM(sum('plan'))}</td><td class="hodnota">${fmtZ(sum('zust')+sum('plan'))}</td>`
     + `</tr></tbody>`;
 
-  const pocetZ=zaznamy.filter(z=>!jePlan(z)&&z.datum>dnes()).length;
+  const pocetZ=zaznamy.filter(z=>!jePlan(z)&&z.datum>dnes()&&z.datum.startsWith(rok+'-')).length;
   pozn.innerHTML=
-    `<strong>zůstatek</strong> = počáteční + všechny skutečnosti; tohle číslo odpovídá listu <span class="mono">Pivot</span>. `
-    +`<strong>plán dopředu</strong> se do něj nepočítá — teprve přijde.<br>`
+    `Tabulka je za <strong>rok ${esc(rok)}</strong> — přepíná se měsícem v hlavičce. `
+    +`Sloupec <strong>k 1. 1.</strong> je zůstatek na začátku toho roku, `
+    +`<strong>k 31. 12.</strong> je ten počáteční plus pohyby roku. `
+    +`<strong>plán dopředu</strong> se do zůstatku nepočítá — teprve přijde.<br>`
+    +`Počáteční zůstatky minulých let stojí na jediné kotvě k začátku celé historie, `
+    +`která je dopočítaná zpětně tak, aby seděl dnešek. K dnešku tedy čísla sedí, `
+    +`u starších let ber počáteční stav s rezervou (issue #12).<br>`
     +`<strong>zaplaceno dopředu</strong> jsou už zaplacené položky rozpuštěné do měsíců, `
     +`kterých se týkají. Peníze z účtu odešly, takže v zůstatku započítané <em>jsou</em>; `
     +`sloupec říká, kolik z něj je takhle utracené dopředu. Pivot totéž ukazuje jako `
@@ -975,11 +1014,18 @@ function navrhniPravidelnou(){
     document.getElementById('z-pravidelna').checked=true;
 }
 
-function updateWalletSelect(){
-  const volby=penezenky.map(w=>`<option value="${w.id}">${esc(w.nazev)}</option>`).join('');
+// `navicId` je peněženka upravovaného záznamu. Když je skrytá a nenabídli
+// bychom ji, select by spadl na prázdno a uložení by záznamu peněženku tiše
+// smazalo — proto se k nabídce přidá, označená jako skrytá.
+function updateWalletSelect(navicId){
+  const vidiet=penezenkyVidet();
+  const navic=penezenky.find(w=>w.skryta&&w.id==navicId);
+  const volba=w=>`<option value="${w.id}">${esc(w.nazev)}${w.skryta?' (skrytá)':''}</option>`;
+  const volby=vidiet.map(volba).join('')+(navic?volba(navic):'');
   document.getElementById('z-penezenka').innerHTML='<option value="">— vybrat —</option>'+volby;
-  document.getElementById('pr-z').innerHTML='<option value="">— vybrat —</option>'+volby;
-  document.getElementById('pr-do').innerHTML='<option value="">— vybrat —</option>'+volby;
+  const prevodni=vidiet.map(volba).join('');
+  document.getElementById('pr-z').innerHTML='<option value="">— vybrat —</option>'+prevodni;
+  document.getElementById('pr-do').innerHTML='<option value="">— vybrat —</option>'+prevodni;
 }
 function updateOsnovaForm(){
   const uroven=document.getElementById('o-uroven').value;
@@ -1029,8 +1075,8 @@ function renderPrehled(){
   el.style.color=planVydaje?(zbyva>=0?'var(--green)':'var(--red)'):'var(--muted)';
   document.getElementById('sum-zbyva-sub').textContent=planVydaje?(zbyva>=0?'ještě nevyčerpáno':'překročeno o'):'plán nenastaveno';
 
-  document.getElementById('prehled-wallets').innerHTML=penezenky.length
-    ?penezenky.map(w=>{const bal=walletBalance(w.id),c=col(w.barva);return`<div class="wallet-preview" style="border-color:${c}55"><div class="wallet-preview-name">${esc(w.nazev)}</div><div class="wallet-preview-balance" style="color:${c}">${fmt(bal)}</div><div class="wallet-preview-init">počáteční: ${fmt(w.pocatecni_zustatek)}</div></div>`;}).join('')
+  document.getElementById('prehled-wallets').innerHTML=penezenkyVidet().length
+    ?penezenkyVidet().map(w=>{const bal=walletBalance(w.id),c=col(w.barva);return`<div class="wallet-preview" style="border-color:${c}55"><div class="wallet-preview-name">${esc(w.nazev)}</div><div class="wallet-preview-balance" style="color:${c}">${fmt(bal)}</div><div class="wallet-preview-init">počáteční: ${fmt(w.pocatecni_zustatek)}</div></div>`;}).join('')
     :'<div style="color:var(--muted);font-size:12px">Žádné peněženky</div>';
 
   const tops=catTop();
@@ -1560,10 +1606,11 @@ function renderPenezenky(){
   empty.style.display='none';
   list.innerHTML=penezenky.map(w=>{
     const bal=walletBalance(w.id);
-    return`<div class="wallet-list-item">
+    return`<div class="wallet-list-item${w.skryta?' skryta':''}">
       <div class="wallet-dot" style="background:${col(w.barva)}"></div>
-      <div class="wallet-info"><div class="wallet-name">${esc(w.nazev)}</div><div class="wallet-meta">počáteční: ${fmt(w.pocatecni_zustatek)}</div></div>
+      <div class="wallet-info"><div class="wallet-name">${esc(w.nazev)}</div><div class="wallet-meta">počáteční: ${fmt(w.pocatecni_zustatek)}${w.skryta?' · skrytá':''}</div></div>
       <div class="wallet-balance-val" style="color:${bal>=0?'var(--green)':'var(--red)'}">${fmt(bal)}</div>
+      <button class="skryt-btn" onclick="toggleSkryta(${w.id})" title="${w.skryta?'Zobrazit v nabídkách':'Skrýt z nabídek'}">${w.skryta?'◌':'👁'}</button>
       <button class="edit-btn" onclick="editPenezenka(${w.id})" title="Upravit">✎</button>
       <button class="del-btn" onclick="delPenezenka(${w.id})" title="Smazat">✕</button>
     </div>`;
@@ -1717,7 +1764,7 @@ function editZaznam(id){
   document.getElementById('z-kde').value=z.kde||'';
   document.getElementById('z-poznamka').value=z.poznamka||'';
   document.getElementById('z-pravidelna').checked=!!z.pravidelna;
-  updateWalletSelect();
+  updateWalletSelect(z.penezenka_id);
   if(z.penezenka_id)document.getElementById('z-penezenka').value=z.penezenka_id;
   document.getElementById('form-zaznam-title').textContent='Upravit záznam';
   document.getElementById('btn-zaznam').textContent='Uložit změny';
@@ -1785,6 +1832,20 @@ function cancelEditPenezenka(){
   document.getElementById('btn-cancel-penezenka').style.display='none';
   setBtn('btn-penezenka',false,'+ Přidat peněženku');
 }
+// Skrytí místo mazání: peněženku se záznamy smazat nejde (a nemá se), ale
+// z nabídek a přehledu zmizet může.
+async function toggleSkryta(id){
+  const w=penezenky.find(p=>p.id===id);if(!w)return;
+  const skryta=!w.skryta;
+  syncSt('syncing');
+  try{
+    await api('penezenky','PATCH',{skryta},`id=eq.${id}`);
+    w.skryta=skryta;
+    toast(skryta?'Peněženka skryta':'Peněženka zobrazena');syncSt('ok');
+    render();updateWalletSelect();
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
+}
+
 async function delPenezenka(id){
   if(zaznamy.some(z=>z.penezenka_id==id)){toast('Nelze smazat – peněženka má záznamy',true);return;}
   if(editingPenezenkaId===id)cancelEditPenezenka();

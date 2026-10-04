@@ -59,6 +59,11 @@ CREATE TABLE IF NOT EXISTS penezenky (
   nazev               TEXT NOT NULL,
   pocatecni_zustatek  NUMERIC(12,2) DEFAULT 0,
   barva               TEXT DEFAULT '#c8f060',
+  -- Peněženka, která se přestala používat (zrušená kreditka, stravenky).
+  -- Mizí z nabídek a z přehledu, ale záznamy ani zůstatek jí nikdo nebere —
+  -- v tabulce zůstatků se v letech, kdy na ní něco bylo, pořád vypisuje,
+  -- jinak by se z celkového součtu ztratily peníze.
+  skryta              BOOLEAN NOT NULL DEFAULT FALSE,
   created_at          TIMESTAMPTZ DEFAULT NOW()
 );
 
@@ -106,6 +111,8 @@ ALTER TABLE zaznamy ADD COLUMN IF NOT EXISTS zdroj_radek INTEGER;
 -- na pohybu. Nastavují se hromadně podle dvojice „kde + hlavní kategorie“;
 -- appka je u nového záznamu navrhne, když stejnou dvojici v historii najde.
 ALTER TABLE zaznamy ADD COLUMN IF NOT EXISTS pravidelna BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE penezenky ADD COLUMN IF NOT EXISTS skryta BOOLEAN NOT NULL DEFAULT FALSE;
 
 ALTER TABLE osnova  DROP CONSTRAINT IF EXISTS osnova_typ_check;
 ALTER TABLE osnova  DROP CONSTRAINT IF EXISTS osnova_typ_chk;
