@@ -119,12 +119,6 @@
     border-radius:4px;font-size:9px;font-family:'DM Mono',monospace;font-weight:600;
     letter-spacing:0.5px;}
 
-  .split{display:grid;grid-template-columns:300px 1fr;gap:18px;}
-  /* Mřížkové položky mají min-width:auto, takže je širší obsah (formulář,
-     tabulka) roztáhne přes šířku sloupce a na telefonu pak do strany ujíždí
-     celá stránka. Tohle je nechá zmenšit na přidělenou šířku. */
-  .split>*{min-width:0;}
-  .form-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;height:fit-content;position:sticky;top:86px;}
   .form-title{font-size:14px;font-weight:700;margin-bottom:14px;}
   .field{margin-bottom:11px;}
   label{display:block;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin-bottom:4px;font-family:'DM Mono',monospace;}
@@ -136,6 +130,8 @@
   .btn:hover:not(:disabled){background:#d4f570;transform:translateY(-1px);}
   .btn:disabled{opacity:0.5;cursor:not-allowed;}
   .btn.secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
+  /* Tlačítko v hlavičce sekce — otevírá zadávací dialog, nemá být na šířku. */
+  .btn.uzky{width:auto;padding:8px 18px;margin-top:0;white-space:nowrap;}
   .btn.danger-btn{background:transparent;color:var(--red);border:1px solid rgba(248,113,113,0.3);margin-top:6px;}
   .btn.danger-btn:hover{background:rgba(248,113,113,0.1);transform:none;}
   .del-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:5px;transition:all 0.15s;}
@@ -183,7 +179,7 @@
   .plan-row-amount{font-family:'DM Mono',monospace;font-size:12px;width:110px;text-align:right;flex-shrink:0;}
   .plan-group-sum{font-family:'DM Mono',monospace;text-transform:none;letter-spacing:0;}
   .list-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
-  .list-head .section-title{margin-bottom:0;}
+  .list-head .section-title{margin-bottom:0;flex:1;min-width:0;}
   .filtr{width:auto;padding:6px 10px;font-size:11px;}
 
   .chart-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:18px;margin-bottom:18px;}
@@ -244,6 +240,25 @@
   .rozpad-meta{font-size:10px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:2px;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .rozpad-castka{font-family:'DM Mono',monospace;font-size:13px;font-weight:700;white-space:nowrap;}
+  /* Zadávací formuláře. Dřív stály jako sticky karta vedle obsahu; na
+     telefonu se .split slučoval do jednoho sloupce a formulář zabíral první
+     obrazovku, než člověk vůbec uviděl data. */
+  .dlg-pozadi{position:fixed;inset:0;background:rgba(0,0,0,0.6);backdrop-filter:blur(3px);
+    display:none;align-items:flex-end;justify-content:center;z-index:310;}
+  .dlg-pozadi.open{display:flex;}
+  .dlg-box{background:var(--surface);border:1px solid var(--border);border-radius:14px 14px 0 0;
+    width:100%;max-width:440px;max-height:92vh;display:flex;flex-direction:column;}
+  @media(min-width:641px){
+    .dlg-pozadi{align-items:center;}
+    .dlg-box{border-radius:14px;}
+  }
+  .dlg-hlava{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;
+    align-items:center;gap:10px;}
+  .dlg-hlava .form-title{margin:0;flex:1;min-width:0;}
+  .dlg-x{background:none;border:none;color:var(--muted);cursor:pointer;font-size:17px;
+    padding:2px 8px;border-radius:6px;line-height:1;}
+  .dlg-x:hover{color:var(--text);background:var(--surface2);}
+  .dlg-telo{overflow-y:auto;padding:16px 18px;}
   .klik{cursor:pointer;text-decoration:underline;text-decoration-style:dotted;
     text-underline-offset:3px;text-decoration-color:var(--muted);}
   .klik:hover{color:var(--accent2);}
@@ -275,7 +290,6 @@
     .header-right{gap:10px;}
     .logo-dlouhy{display:none;} .logo-kratky{display:inline;}
     .sync-indicator span{display:none;}
-    .split{grid-template-columns:1fr;} .form-card{position:static;}
     .summary-grid{grid-template-columns:1fr 1fr;}
     .plan-row{flex-wrap:wrap;} .plan-row-actual{width:auto;}
   }
@@ -413,58 +427,6 @@
   <!-- ZÁZNAMY -->
   <!-- ENERGIE — odečty měřidel, spotřeba a vyúčtování proti zálohám -->
   <div class="view" id="view-energie">
-    <div class="split">
-      <div class="form-card">
-        <div class="form-title" id="form-odecet-title">Nový odečet</div>
-        <div class="field"><label>Datum</label><input id="od-datum" type="date"></div>
-        <div class="field"><label>Vodoměr (m³)</label>
-          <input id="od-voda" type="number" step="0.01" placeholder="stav na měřidle"></div>
-        <div class="field"><label>Elektroměr VT (kWh)</label>
-          <input id="od-t1" type="number" step="0.01" placeholder="stav na měřidle"></div>
-        <div class="field"><label>Elektroměr NT (kWh)</label>
-          <input id="od-t2" type="number" step="0.01" placeholder="stav na měřidle"></div>
-        <div class="field">
-          <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:11px">
-            <input type="checkbox" id="od-vym-voda" style="width:auto;margin:0"> Vyměněný vodoměr</label>
-        </div>
-        <div class="field">
-          <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:11px">
-            <input type="checkbox" id="od-vym-elektro" style="width:auto;margin:0"> Vyměněný elektroměr</label>
-        </div>
-        <div class="field"><label>Poznámka</label><input id="od-poznamka" type="text" placeholder="nepovinné"></div>
-        <button class="btn" id="btn-odecet" onclick="saveOdecet()">+ Zapsat odečet</button>
-        <button class="btn secondary" id="btn-cancel-odecet" onclick="cancelEditOdecet()" style="display:none;margin-top:6px">Zrušit úpravy</button>
-        <div class="rok-pozn" style="margin-top:10px">
-          Zapisuje se <strong>stav na měřidle</strong>, ne spotřeba — tu si appka dopočítá
-          jako rozdíl proti předchozímu odečtu. Když je stav nižší než posledně, appka se
-          ozve: buď je to překlep, nebo se měnilo měřidlo a patří k tomu zaškrtnutí.
-          Při výměně zapiš <strong>dva odečty k témuž dni</strong>: konečný stav starého
-          měřidla (bez zaškrtnutí) a vynulovaný nový (se zaškrtnutím). Jen tak se nic
-          neztratí. Druhé měřidlo nech na aktuálním stavu, ne na nule — nemění se.
-          Co jsi neodečetl, <strong>nech prázdné</strong>: opsaná hodnota z minula vyrobí
-          nulovou spotřebu, prázdno appka bere jako nenaměřeno a dopočítá to až
-          z příštího skutečného odečtu.
-        </div>
-
-        <div class="form-title" style="margin-top:26px" id="form-cenik-title">Nové období ceníku</div>
-        <div class="field"><label>Platnost od</label><input id="ce-od" type="date"></div>
-        <div class="field"><label>Platnost do</label><input id="ce-do" type="date">
-          <div class="rok-pozn" style="margin-top:4px">prázdné = platí dosud</div></div>
-        <div class="field"><label>VT (Kč/kWh)</label><input id="ce-vt" type="number" step="0.0001"></div>
-        <div class="field"><label>NT (Kč/kWh)</label><input id="ce-nt" type="number" step="0.0001"></div>
-        <div class="field"><label>Měsíční fix (Kč)</label><input id="ce-fix" type="number" step="0.01" placeholder="jistič a stálé platby"></div>
-        <div class="field"><label>Voda (Kč/m³)</label><input id="ce-voda" type="number" step="0.01"></div>
-        <div class="field"><label>Záloha elektřina (Kč)</label><input id="ce-zal-el" type="number" step="0.01"></div>
-        <div class="field"><label>Záloha voda (Kč)</label><input id="ce-zal-voda" type="number" step="0.01"></div>
-        <div class="field"><label>Poznámka</label><input id="ce-poznamka" type="text" placeholder="nepovinné"></div>
-        <button class="btn" id="btn-cenik" onclick="saveCenik()">+ Přidat období</button>
-        <button class="btn secondary" id="btn-cancel-cenik" onclick="cancelEditCenik()" style="display:none;margin-top:6px">Zrušit úpravy</button>
-        <div class="rok-pozn" style="margin-top:10px">
-          Období se nesmí překrývat — sazba k datu se hledá jako první odpovídající,
-          takže z překryvu by appka tiše brala jednu z nich a nikdo by nevěděl kterou.
-        </div>
-      </div>
-      <div>
     <div class="summary-grid" id="energie-karty"></div>
 
     <div class="section-title" style="margin-bottom:10px">Spotřeba po měsících</div>
@@ -497,7 +459,10 @@
       slitá z víc měsíců, takže je označený stejně.
     </div>
 
-    <div class="section-title" style="margin-bottom:10px">Ceník</div>
+    <div class="list-head" style="margin-bottom:10px">
+      <div class="section-title">Ceník</div>
+      <button class="btn uzky" onclick="otevriDlg('dlg-cenik','ce-od')">+ Přidat období</button>
+    </div>
     <div class="rok-wrap">
       <table class="rok-table" id="energie-cenik"></table>
     </div>
@@ -506,7 +471,10 @@
       z jediné buňky a platí pro celou historii stejně.
     </div>
 
-    <div class="section-title" style="margin-bottom:10px">Zapsané odečty</div>
+    <div class="list-head" style="margin-bottom:10px">
+      <div class="section-title">Zapsané odečty</div>
+      <button class="btn uzky" onclick="otevriDlg('dlg-odecet','od-voda')">+ Zapsat odečet</button>
+    </div>
     <div class="rok-wrap">
       <table class="rok-table" id="energie-odecty"></table>
     </div>
@@ -520,9 +488,78 @@
     <div id="energie-empty" class="empty" style="display:none">
       <span class="emoji">⚡</span>Žádné odečty
     </div>
+    <!-- zadávací dialog -->
+    <div class="dlg-pozadi" id="dlg-odecet" onclick="if(event.target===this)zavriDlg('dlg-odecet')">
+      <div class="dlg-box" role="dialog" aria-modal="true" aria-labelledby="form-odecet-title">
+        <div class="dlg-hlava">
+          <div class="form-title" id="form-odecet-title">Nový odečet</div>
+          <button class="dlg-x" onclick="zavriDlg('dlg-odecet')" title="Zavřít" aria-label="Zavřít">✕</button>
+        </div>
+        <div class="dlg-telo">
+        <div class="field"><label>Datum</label><input id="od-datum" type="date"></div>
+        <div class="field"><label>Vodoměr (m³)</label>
+          <input id="od-voda" type="number" step="0.01" placeholder="stav na měřidle"></div>
+        <div class="field"><label>Elektroměr VT (kWh)</label>
+          <input id="od-t1" type="number" step="0.01" placeholder="stav na měřidle"></div>
+        <div class="field"><label>Elektroměr NT (kWh)</label>
+          <input id="od-t2" type="number" step="0.01" placeholder="stav na měřidle"></div>
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:11px">
+            <input type="checkbox" id="od-vym-voda" style="width:auto;margin:0"> Vyměněný vodoměr</label>
+        </div>
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:11px">
+            <input type="checkbox" id="od-vym-elektro" style="width:auto;margin:0"> Vyměněný elektroměr</label>
+        </div>
+        <div class="field"><label>Poznámka</label><input id="od-poznamka" type="text" placeholder="nepovinné"></div>
+        <button class="btn" id="btn-odecet" onclick="saveOdecet()">+ Zapsat odečet</button>
+        <button class="btn secondary" id="btn-cancel-odecet" onclick="zavriDlg('dlg-odecet')" style="display:none;margin-top:6px">Zrušit úpravy</button>
+        <div class="rok-pozn" style="margin-top:10px">
+          Zapisuje se <strong>stav na měřidle</strong>, ne spotřeba — tu si appka dopočítá
+          jako rozdíl proti předchozímu odečtu. Když je stav nižší než posledně, appka se
+          ozve: buď je to překlep, nebo se měnilo měřidlo a patří k tomu zaškrtnutí.
+          Při výměně zapiš <strong>dva odečty k témuž dni</strong>: konečný stav starého
+          měřidla (bez zaškrtnutí) a vynulovaný nový (se zaškrtnutím). Jen tak se nic
+          neztratí. Druhé měřidlo nech na aktuálním stavu, ne na nule — nemění se.
+          Co jsi neodečetl, <strong>nech prázdné</strong>: opsaná hodnota z minula vyrobí
+          nulovou spotřebu, prázdno appka bere jako nenaměřeno a dopočítá to až
+          z příštího skutečného odečtu.
+        </div>
+
+        </div>
       </div>
     </div>
+
+    <!-- zadávací dialog -->
+    <div class="dlg-pozadi" id="dlg-cenik" onclick="if(event.target===this)zavriDlg('dlg-cenik')">
+      <div class="dlg-box" role="dialog" aria-modal="true" aria-labelledby="form-cenik-title">
+        <div class="dlg-hlava">
+          <div class="form-title" id="form-cenik-title">Nové období ceníku</div>
+          <button class="dlg-x" onclick="zavriDlg('dlg-cenik')" title="Zavřít" aria-label="Zavřít">✕</button>
+        </div>
+        <div class="dlg-telo">
+        <div class="field"><label>Platnost od</label><input id="ce-od" type="date"></div>
+        <div class="field"><label>Platnost do</label><input id="ce-do" type="date">
+          <div class="rok-pozn" style="margin-top:4px">prázdné = platí dosud</div></div>
+        <div class="field"><label>VT (Kč/kWh)</label><input id="ce-vt" type="number" step="0.0001"></div>
+        <div class="field"><label>NT (Kč/kWh)</label><input id="ce-nt" type="number" step="0.0001"></div>
+        <div class="field"><label>Měsíční fix (Kč)</label><input id="ce-fix" type="number" step="0.01" placeholder="jistič a stálé platby"></div>
+        <div class="field"><label>Voda (Kč/m³)</label><input id="ce-voda" type="number" step="0.01"></div>
+        <div class="field"><label>Záloha elektřina (Kč)</label><input id="ce-zal-el" type="number" step="0.01"></div>
+        <div class="field"><label>Záloha voda (Kč)</label><input id="ce-zal-voda" type="number" step="0.01"></div>
+        <div class="field"><label>Poznámka</label><input id="ce-poznamka" type="text" placeholder="nepovinné"></div>
+        <button class="btn" id="btn-cenik" onclick="saveCenik()">+ Přidat období</button>
+        <button class="btn secondary" id="btn-cancel-cenik" onclick="zavriDlg('dlg-cenik')" style="display:none;margin-top:6px">Zrušit úpravy</button>
+        <div class="rok-pozn" style="margin-top:10px">
+          Období se nesmí překrývat — sazba k datu se hledá jako první odpovídající,
+          takže z překryvu by appka tiše brala jednu z nich a nikdo by nevěděl kterou.
+        </div>
+        </div>
+      </div>
+    </div>
+
   </div>
+
 
   <!-- SPOŘENÍ — měsíční snímek majetku a závazků (list Sporeni) -->
   <div class="view" id="view-sporeni">
@@ -605,9 +642,37 @@
   </div>
 
   <div class="view" id="view-zaznamy">
-    <div class="split">
-      <div class="form-card">
-        <div class="form-title" id="form-zaznam-title">Přidat záznam</div>
+        <div class="list-head">
+          <div class="section-title">Záznamy — <span id="records-month"></span></div>
+          <select id="z-filtr" class="filtr" onchange="renderZaznamy()">
+            <option value="vse">Vše</option>
+            <option value="skutecnost">Jen skutečnost</option>
+            <option value="plan">Jen plán</option>
+            <option value="pravidelne">Jen pravidelné</option>
+            <option value="prevody">Jen převody</option>
+          </select>
+          <button class="btn uzky" onclick="otevriDlg('dlg-zaznam','z-castka')">+ Přidat záznam</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table>
+            <thead><tr>
+              <th>Datum</th><th>Kde</th><th>Kategorie</th><th>Peněženka</th>
+              <th class="right">Částka</th><th></th>
+            </tr></thead>
+            <tbody id="zaznamy-table"></tbody>
+          </table>
+          <div id="zaznamy-empty" class="empty" style="display:none">
+            <span class="emoji">📋</span>Žádné záznamy pro tento měsíc
+          </div>
+        </div>
+    <!-- zadávací dialog -->
+    <div class="dlg-pozadi" id="dlg-zaznam" onclick="if(event.target===this)zavriDlg('dlg-zaznam')">
+      <div class="dlg-box" role="dialog" aria-modal="true" aria-labelledby="form-zaznam-title">
+        <div class="dlg-hlava">
+          <div class="form-title" id="form-zaznam-title">Přidat záznam</div>
+          <button class="dlg-x" onclick="zavriDlg('dlg-zaznam')" title="Zavřít" aria-label="Zavřít">✕</button>
+        </div>
+        <div class="dlg-telo">
         <div class="row2">
           <div class="field"><label>Typ</label>
             <select id="z-typ" onchange="updateCategorySelect()">
@@ -633,64 +698,21 @@
           <label for="z-pravidelna" style="margin:0;text-transform:none;letter-spacing:0;font-size:11px">Pravidelná platba — mandatorní výdaj</label>
         </div>
         <button class="btn" id="btn-zaznam" onclick="saveZaznam()">+ Přidat</button>
-        <button class="btn secondary" id="btn-cancel-zaznam" onclick="cancelEditZaznam()" style="display:none;margin-top:6px">Zrušit úpravy</button>
-      </div>
-      <div>
-        <div class="list-head">
-          <div class="section-title">Záznamy — <span id="records-month"></span></div>
-          <select id="z-filtr" class="filtr" onchange="renderZaznamy()">
-            <option value="vse">Vše</option>
-            <option value="skutecnost">Jen skutečnost</option>
-            <option value="plan">Jen plán</option>
-            <option value="pravidelne">Jen pravidelné</option>
-            <option value="prevody">Jen převody</option>
-          </select>
-        </div>
-        <div style="overflow-x:auto">
-          <table>
-            <thead><tr>
-              <th>Datum</th><th>Kde</th><th>Kategorie</th><th>Peněženka</th>
-              <th class="right">Částka</th><th></th>
-            </tr></thead>
-            <tbody id="zaznamy-table"></tbody>
-          </table>
-          <div id="zaznamy-empty" class="empty" style="display:none">
-            <span class="emoji">📋</span>Žádné záznamy pro tento měsíc
-          </div>
+        <button class="btn secondary" id="btn-cancel-zaznam" onclick="zavriDlg('dlg-zaznam')" style="display:none;margin-top:6px">Zrušit úpravy</button>
         </div>
       </div>
     </div>
+
   </div>
+
 
   <!-- PENĚŽENKY -->
   <div class="view" id="view-penezenky">
-    <div class="split">
-      <div class="form-card">
-        <div class="form-title" id="form-penezenka-title">Přidat peněženku</div>
-        <div class="field"><label>Název</label><input id="w-nazev" type="text" placeholder="např. Hotovost, KB účet…"></div>
-        <div class="field"><label>Počáteční zůstatek (Kč)</label><input id="w-zustatek" type="number" placeholder="0" step="0.01"></div>
-        <div class="field">
-          <label>Barva</label>
-          <div class="color-swatches" id="w-barva-swatches"></div>
-          <input type="hidden" id="w-barva" value="#c8f060">
+        <div class="list-head">
+          <div class="section-title">Zůstatky</div>
+          <button class="btn uzky secondary" onclick="otevriDlg('dlg-prevod','pr-castka')">⇄ Převod</button>
+          <button class="btn uzky" onclick="otevriDlg('dlg-penezenka','w-nazev')">+ Peněženka</button>
         </div>
-        <button class="btn" id="btn-penezenka" onclick="savePenezenka()">+ Přidat peněženku</button>
-        <button class="btn secondary" id="btn-cancel-penezenka" onclick="cancelEditPenezenka()" style="display:none;margin-top:6px">Zrušit úpravy</button>
-
-        <div class="form-title" style="margin-top:26px">Převod mezi peněženkami</div>
-        <div class="field"><label>Z peněženky</label><select id="pr-z"></select></div>
-        <div class="field"><label>Do peněženky</label><select id="pr-do"></select></div>
-        <div class="field"><label>Částka (Kč)</label><input id="pr-castka" type="number" placeholder="0" step="0.01"></div>
-        <div class="field"><label>Datum</label><input id="pr-datum" type="date"></div>
-        <div class="field"><label>Poznámka</label><input id="pr-pozn" type="text" placeholder="např. splátka kreditky"></div>
-        <button class="btn" id="btn-prevod" onclick="savePrevod()">⇄ Zapsat převod</button>
-        <div class="rok-pozn" style="margin-top:10px">
-          Zapíše dva spárované záznamy — odchozí a příchozí. Do zůstatků peněženek
-          se promítne, do součtů příjmů a výdajů ne.
-        </div>
-      </div>
-      <div>
-        <div class="section-title">Zůstatky</div>
         <div class="rok-wrap" id="zustatky-wrap">
           <table class="rok-table" id="zustatky-table"></table>
         </div>
@@ -701,15 +723,71 @@
         <div id="penezenky-empty" class="empty" style="display:none">
           <span class="emoji">👛</span>Žádné peněženky — přidejte první
         </div>
+    <!-- zadávací dialog -->
+    <div class="dlg-pozadi" id="dlg-penezenka" onclick="if(event.target===this)zavriDlg('dlg-penezenka')">
+      <div class="dlg-box" role="dialog" aria-modal="true" aria-labelledby="form-penezenka-title">
+        <div class="dlg-hlava">
+          <div class="form-title" id="form-penezenka-title">Přidat peněženku</div>
+          <button class="dlg-x" onclick="zavriDlg('dlg-penezenka')" title="Zavřít" aria-label="Zavřít">✕</button>
+        </div>
+        <div class="dlg-telo">
+        <div class="field"><label>Název</label><input id="w-nazev" type="text" placeholder="např. Hotovost, KB účet…"></div>
+        <div class="field"><label>Počáteční zůstatek (Kč)</label><input id="w-zustatek" type="number" placeholder="0" step="0.01"></div>
+        <div class="field">
+          <label>Barva</label>
+          <div class="color-swatches" id="w-barva-swatches"></div>
+          <input type="hidden" id="w-barva" value="#c8f060">
+        </div>
+        <button class="btn" id="btn-penezenka" onclick="savePenezenka()">+ Přidat peněženku</button>
+        <button class="btn secondary" id="btn-cancel-penezenka" onclick="zavriDlg('dlg-penezenka')" style="display:none;margin-top:6px">Zrušit úpravy</button>
+
+        </div>
       </div>
     </div>
+
+    <!-- zadávací dialog -->
+    <div class="dlg-pozadi" id="dlg-prevod" onclick="if(event.target===this)zavriDlg('dlg-prevod')">
+      <div class="dlg-box" role="dialog" aria-modal="true" aria-labelledby="form-prevod-title">
+        <div class="dlg-hlava">
+          <div class="form-title" id="form-prevod-title">Převod mezi peněženkami</div>
+          <button class="dlg-x" onclick="zavriDlg('dlg-prevod')" title="Zavřít" aria-label="Zavřít">✕</button>
+        </div>
+        <div class="dlg-telo">
+        <div class="field"><label>Z peněženky</label><select id="pr-z"></select></div>
+        <div class="field"><label>Do peněženky</label><select id="pr-do"></select></div>
+        <div class="field"><label>Částka (Kč)</label><input id="pr-castka" type="number" placeholder="0" step="0.01"></div>
+        <div class="field"><label>Datum</label><input id="pr-datum" type="date"></div>
+        <div class="field"><label>Poznámka</label><input id="pr-pozn" type="text" placeholder="např. splátka kreditky"></div>
+        <button class="btn" id="btn-prevod" onclick="savePrevod()">⇄ Zapsat převod</button>
+        <div class="rok-pozn" style="margin-top:10px">
+          Zapíše dva spárované záznamy — odchozí a příchozí. Do zůstatků peněženek
+          se promítne, do součtů příjmů a výdajů ne.
+        </div>
+        </div>
+      </div>
+    </div>
+
   </div>
+
 
   <!-- OSNOVA -->
   <div class="view" id="view-osnova">
-    <div class="split">
-      <div class="form-card">
-        <div class="form-title" id="form-osnova-title">Přidat do osnovy</div>
+        <div class="list-head">
+          <div class="section-title">Osnova kategorií</div>
+          <button class="btn uzky" onclick="otevriDlg('dlg-osnova','o-nazev')">+ Přidat kategorii</button>
+        </div>
+        <div class="cat-tree" id="cat-tree"></div>
+        <div id="cat-empty" class="empty" style="display:none">
+          <span class="emoji">🗂️</span>Žádné kategorie — přidejte první
+        </div>
+    <!-- zadávací dialog -->
+    <div class="dlg-pozadi" id="dlg-osnova" onclick="if(event.target===this)zavriDlg('dlg-osnova')">
+      <div class="dlg-box" role="dialog" aria-modal="true" aria-labelledby="form-osnova-title">
+        <div class="dlg-hlava">
+          <div class="form-title" id="form-osnova-title">Přidat do osnovy</div>
+          <button class="dlg-x" onclick="zavriDlg('dlg-osnova')" title="Zavřít" aria-label="Zavřít">✕</button>
+        </div>
+        <div class="dlg-telo">
         <div class="field"><label>Úroveň</label>
           <select id="o-uroven" onchange="updateOsnovaForm()">
             <option value="top">Kategorie (1. úroveň)</option>
@@ -731,17 +809,13 @@
         <div class="field" id="o-parent-field" style="display:none"><label>Nadřazená kategorie</label>
           <select id="o-parent"><option value="">— vybrat —</option></select></div>
         <button class="btn" id="btn-osnova" onclick="saveOsnova()">+ Přidat</button>
-        <button class="btn secondary" id="btn-cancel-osnova" onclick="cancelEditOsnova()" style="display:none;margin-top:6px">Zrušit úpravy</button>
-      </div>
-      <div>
-        <div class="section-title">Osnova kategorií</div>
-        <div class="cat-tree" id="cat-tree"></div>
-        <div id="cat-empty" class="empty" style="display:none">
-          <span class="emoji">🗂️</span>Žádné kategorie — přidejte první
+        <button class="btn secondary" id="btn-cancel-osnova" onclick="zavriDlg('dlg-osnova')" style="display:none;margin-top:6px">Zrušit úpravy</button>
         </div>
       </div>
     </div>
+
   </div>
+
 
   <!-- PLÁN -->
   <div class="view" id="view-plan">
@@ -1959,6 +2033,7 @@ async function saveOdecet(){
   if(kolize){toast('K tomuhle datu už odečet je — dvojí zápis má smysl jen u výměny měřidla',true);return;}
   const vada=zkontrolujKlesani(r,editingOdecetId);
   if(vada){toast(vada,true);return;}
+  const bylaEditace=!!editingOdecetId;
   setBtn('btn-odecet',true);syncSt('syncing');
   try{
     if(editingOdecetId){
@@ -1973,20 +2048,45 @@ async function saveOdecet(){
     }
     // Spotřeba se počítá z pořadí, takže po zápisu doprostřed musí jít seřadit.
     odecty.sort(poradiOdectu);
-    syncSt('ok');cancelEditOdecet();renderEnergie();
+    syncSt('ok');
+    if(bylaEditace)zavriDlg('dlg-odecet'); else cancelEditOdecet();
+    renderEnergie();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');
     setBtn('btn-odecet',false,editingOdecetId?'Uložit změny':'+ Zapsat odečet');}
 }
 
-// Posuň formulář do zorného pole. Na mobilu se .split slučuje do jednoho
-// sloupce a formulář zůstane vysoko nad tabulkou — bez tohohle to vypadá,
-// že kliknutí na ✎ nic neudělalo.
-function ukazFormular(titulId,poleId){
-  const t=document.getElementById(titulId);
-  if(t&&t.scrollIntoView)t.scrollIntoView({behavior:'smooth',block:'center'});
-  const f=document.getElementById(poleId);
+// Zavření dialogu musí zrušit i rozkoukanou editaci. Jinak by zůstalo
+// editingXId nastavené a příští „Přidat" by místo nového řádku přepsalo ten
+// upravovaný — a nikdo by nechápal, kam se záznam poděl.
+const DLG_ZRUS={
+  'dlg-zaznam':()=>cancelEditZaznam(),
+  'dlg-penezenka':()=>cancelEditPenezenka(),
+  'dlg-osnova':()=>cancelEditOsnova(),
+  'dlg-odecet':()=>cancelEditOdecet(),
+  'dlg-cenik':()=>cancelEditCenik(),
+};
+
+function otevriDlg(id,poleId){
+  const d=document.getElementById(id);if(!d)return;
+  d.classList.add('open');
+  // Pozadí nesmí scrollovat pod dialogem, jinak se na telefonu rolují oba.
+  document.body.style.overflow='hidden';
+  const f=poleId&&document.getElementById(poleId);
   if(f)try{f.focus({preventScroll:true});}catch(e){f.focus();}
 }
+
+function zavriDlg(id){
+  const seznam=id?[id]:[...document.querySelectorAll('.dlg-pozadi.open')].map(x=>x.id);
+  for(const i of seznam){
+    const d=document.getElementById(i);
+    if(d)d.classList.remove('open');
+    // Reset až po zavření — cancelEditX dialog nezavírá, takže se to nezacyklí.
+    if(DLG_ZRUS[i])DLG_ZRUS[i]();
+  }
+  if(!document.querySelector('.dlg-pozadi.open'))document.body.style.overflow='';
+}
+
+function dlgOtevreny(){return document.querySelector('.dlg-pozadi.open');}
 
 function editOdecet(id){
   const o=odecty.find(x=>x.id===id);if(!o)return;
@@ -2002,7 +2102,7 @@ function editOdecet(id){
   c('form-odecet-title').textContent='Upravit odečet';
   setBtn('btn-odecet',false,'Uložit změny');
   c('btn-cancel-odecet').style.display='block';
-  ukazFormular('form-odecet-title','od-voda');
+  otevriDlg('dlg-odecet','od-voda');
 }
 function cancelEditOdecet(){
   editingOdecetId=null;
@@ -2021,7 +2121,7 @@ async function delOdecet(id){
   try{
     await api('energie_odecty','DELETE',null,`id=eq.${id}`);
     odecty=odecty.filter(x=>x.id!==id);
-    if(editingOdecetId===id)cancelEditOdecet();
+    if(editingOdecetId===id)zavriDlg('dlg-odecet');
     toast('Odečet smazán');syncSt('ok');renderEnergie();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
 }
@@ -2052,6 +2152,7 @@ async function saveCenik(){
   if(r.platnost_do&&r.platnost_do<r.platnost_od){toast('„Do" je dřív než „od"',true);return;}
   const kol=prekryvCeniku(r,editingCenikId);
   if(kol){toast(`Překrývá se s obdobím od ${kol.platnost_od}`,true);return;}
+  const bylaEditace=!!editingCenikId;
   setBtn('btn-cenik',true);syncSt('syncing');
   try{
     if(editingCenikId){
@@ -2065,7 +2166,9 @@ async function saveCenik(){
       toast('Období přidáno ✓');
     }
     cenik.sort((a,b)=>a.platnost_od.localeCompare(b.platnost_od));
-    syncSt('ok');cancelEditCenik();renderEnergie();
+    syncSt('ok');
+    if(bylaEditace)zavriDlg('dlg-cenik'); else cancelEditCenik();
+    renderEnergie();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');
     setBtn('btn-cenik',false,editingCenikId?'Uložit změny':'+ Přidat období');}
 }
@@ -2084,7 +2187,7 @@ function editCenik(id){
   e('form-cenik-title').textContent='Upravit období';
   setBtn('btn-cenik',false,'Uložit změny');
   e('btn-cancel-cenik').style.display='block';
-  ukazFormular('form-cenik-title','ce-vt');
+  otevriDlg('dlg-cenik','ce-vt');
 }
 function cancelEditCenik(){
   editingCenikId=null;
@@ -2101,7 +2204,7 @@ async function delCenik(id){
   try{
     await api('energie_cenik','DELETE',null,`id=eq.${id}`);
     cenik=cenik.filter(x=>x.id!==id);
-    if(editingCenikId===id)cancelEditCenik();
+    if(editingCenikId===id)zavriDlg('dlg-cenik');
     toast('Období smazáno');syncSt('ok');renderEnergie();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
 }
@@ -2227,7 +2330,7 @@ function novaPlanovanaPolozka(){
   cancelEditZaznam();
   document.getElementById('z-polozka').value='plan';
   showTab('zaznamy');
-  document.querySelector('#view-zaznamy .form-card').scrollIntoView({behavior:'smooth',block:'start'});
+  otevriDlg('dlg-zaznam','z-castka');
 }
 
 // --- ZÁZNAMY CRUD ---
@@ -2248,7 +2351,7 @@ async function saveZaznam(){
       await api('zaznamy','PATCH',row,`id=eq.${editingZaznamId}`);
       const idx=zaznamy.findIndex(z=>z.id===editingZaznamId);
       if(idx>=0)zaznamy[idx]={...zaznamy[idx],...row};
-      toast('Záznam upraven ✓');syncSt('ok');render();cancelEditZaznam();
+      toast('Záznam upraven ✓');syncSt('ok');render();zavriDlg('dlg-zaznam');
     }else{
       const res=await api('zaznamy','POST',row);
       zaznamy.unshift(res[0]);
@@ -2281,7 +2384,7 @@ async function savePrevod(){
       {...spolecne,typ:'prijem',penezenka_id:doP, kde:walletName(z)}]);
     zaznamy.unshift(...res);
     ['pr-castka','pr-pozn'].forEach(id=>document.getElementById(id).value='');
-    toast('Převod zapsán ✓');syncSt('ok');render();
+    toast('Převod zapsán ✓');syncSt('ok');zavriDlg('dlg-prevod');render();
     setBtn('btn-prevod',false,'⇄ Zapsat převod');
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');
     setBtn('btn-prevod',false,'⇄ Zapsat převod');}
@@ -2306,7 +2409,7 @@ function editZaznam(id){
   document.getElementById('btn-zaznam').textContent='Uložit změny';
   document.getElementById('btn-cancel-zaznam').style.display='block';
   showTab('zaznamy');
-  document.querySelector('#view-zaznamy .form-card').scrollIntoView({behavior:'smooth',block:'start'});
+  otevriDlg('dlg-zaznam','z-castka');
 }
 function cancelEditZaznam(){
   editingZaznamId=null;
@@ -2329,6 +2432,7 @@ async function savePenezenka(){
   const nazev=document.getElementById('w-nazev').value.trim();
   if(!nazev){toast('Zadejte název peněženky',true);return;}
   const row={nazev,pocatecni_zustatek:parseFloat(document.getElementById('w-zustatek').value)||0,barva:document.getElementById('w-barva').value};
+  const bylaEditace=!!editingPenezenkaId;
   setBtn('btn-penezenka',true);syncSt('syncing');
   try{
     if(editingPenezenkaId){
@@ -2341,7 +2445,8 @@ async function savePenezenka(){
       penezenky.push(res[0]);
       toast('Peněženka přidána ✓');syncSt('ok');
     }
-    cancelEditPenezenka();render();updateWalletSelect();
+    if(bylaEditace)zavriDlg('dlg-penezenka'); else cancelEditPenezenka();
+    render();updateWalletSelect();
   }catch(e){
     toast('Chyba: '+e.message,true);syncSt('error');
     setBtn('btn-penezenka',false,editingPenezenkaId?'Uložit změny':'+ Přidat peněženku');
@@ -2357,7 +2462,7 @@ function editPenezenka(id){
   document.getElementById('btn-penezenka').textContent='Uložit změny';
   document.getElementById('btn-cancel-penezenka').style.display='block';
   showTab('penezenky');
-  document.querySelector('#view-penezenky .form-card').scrollIntoView({behavior:'smooth',block:'start'});
+  otevriDlg('dlg-penezenka','w-nazev');
 }
 function cancelEditPenezenka(){
   editingPenezenkaId=null;
@@ -2384,7 +2489,7 @@ async function toggleSkryta(id){
 
 async function delPenezenka(id){
   if(zaznamy.some(z=>z.penezenka_id==id)){toast('Nelze smazat – peněženka má záznamy',true);return;}
-  if(editingPenezenkaId===id)cancelEditPenezenka();
+  if(editingPenezenkaId===id)zavriDlg('dlg-penezenka');
   syncSt('syncing');
   try{await api('penezenky','DELETE',null,`id=eq.${id}`);penezenky=penezenky.filter(w=>w.id!==id);toast('Peněženka smazána');syncSt('ok');render();}
   catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
@@ -2409,7 +2514,7 @@ function editOsnova(id){
   document.getElementById('form-osnova-title').textContent='Upravit kategorii';
   setBtn('btn-osnova',false,'Uložit změny');
   document.getElementById('btn-cancel-osnova').style.display='block';
-  document.getElementById('o-nazev').focus();
+  otevriDlg('dlg-osnova','o-nazev');
 }
 function cancelEditOsnova(){
   editingOsnovaId=null;
@@ -2441,7 +2546,7 @@ async function saveOsnova(){
       const i=osnova.findIndex(o=>o.id===editingOsnovaId);
       if(i>=0)osnova[i]={...osnova[i],...row};
       toast('Kategorie upravena ✓');syncSt('ok');
-      cancelEditOsnova();
+      zavriDlg('dlg-osnova');
       // Typ kategorie mění, co se kde počítá a nabízí — překreslit všechno.
       render();updateCategorySelect();
     }else{
@@ -2461,7 +2566,7 @@ async function delOsnova(id){
   try{
     await api('osnova','DELETE',null,`id=eq.${id}`);
     osnova=osnova.filter(o=>o.id!==id);
-    if(editingOsnovaId===id)cancelEditOsnova();
+    if(editingOsnovaId===id)zavriDlg('dlg-osnova');
     toast('Odstraněno');syncSt('ok');renderOsnova();updateCategorySelect();renderPlan();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
 }
@@ -2498,8 +2603,12 @@ async function init(){
 // --- BOOT ---
 async function boot(){
   document.getElementById('auth-form').addEventListener('submit',doLogin);
-  // Zavřít rozpad Escapem — na desktopu to čeká každý.
-  document.addEventListener('keydown',e=>{if(e.key==='Escape')zavriRozpad();});
+  // Zavřít Escapem — na desktopu to čeká každý. Zadávací dialog má přednost
+  // před rozpadem: může být otevřený nad ním.
+  document.addEventListener('keydown',e=>{
+    if(e.key!=='Escape')return;
+    if(dlgOtevreny())zavriDlg(); else zavriRozpad();
+  });
   session=readStored();
   if(session&&session.refresh_token){
     try{

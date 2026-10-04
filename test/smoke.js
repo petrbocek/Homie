@@ -120,6 +120,37 @@ const b=await chromium.launch({executablePath:CHROME});
 const ctx=await b.newContext();
 const pg=await ctx.newPage();
 const errors=[];
+
+// Zadávací formuláře jsou v dialogu. Před prací s polem si ho test otevře a
+// před klikem mimo dialog ho zavře — stejně jako člověk, který se k tabulce
+// pod otevřeným dialogem taky nedoklikne. Samotná mechanika dialogu (tlačítko
+// otevře, ✕ / Escape / klik mimo zavřou, editace otevře) má vlastní sekci.
+const vDlg=async sel=>{
+  const akce=await pg.evaluate(s=>{
+    const prekryv=()=>!!document.querySelector('.dlg-pozadi.open,.rozpad-pozadi.open');
+    let el=null;
+    // Playwright selektory jako .tab:text-is(…) nejsou platné CSS. Takové
+    // míří vždy na stránku, ne na pole v dialogu, takže překryv patří zavřít.
+    try{el=document.querySelector(s);}catch(e){return prekryv()?{zavri:true}:null;}
+    if(!el)return prekryv()?{zavri:true}:null;
+    const d=el.closest('.dlg-pozadi');
+    if(d)return d.classList.contains('open')?null:{otevri:d.id};
+    // Rozpad si jeho vlastní sekce řídí sama, do té se neplete.
+    if(el.closest('.rozpad-pozadi'))return null;
+    return prekryv()?{zavri:true}:null;
+  },sel);
+  if(!akce)return;
+  if(akce.otevri)await pg.evaluate(i=>otevriDlg(i),akce.otevri);
+  else await pg.evaluate(()=>{zavriDlg();zavriRozpad();});
+  await pg.waitForTimeout(120);
+};
+const fill=async(sel,v)=>{await vDlg(sel);return pg.fill(sel,v);};
+const klik=async(sel,opts)=>{await vDlg(sel);return pg.click(sel,opts);};
+const vyber=async(sel,v)=>{await vDlg(sel);return pg.selectOption(sel,v);};
+const zaskrtni=async sel=>{await vDlg(sel);return pg.check(sel);};
+const odskrtni=async sel=>{await vDlg(sel);return pg.uncheck(sel);};
+const hodnota=async sel=>{await vDlg(sel);return pg.inputValue(sel);};
+const zaskrtnuto=async sel=>{await vDlg(sel);return pg.isChecked(sel);};
 pg.on('pageerror',e=>errors.push('pageerror: '+e.message));
 pg.on('dialog',async x=>{errors.push('DIALOG (XSS!): '+x.message);await x.dismiss();});
 pg.on('console',m=>{if(m.type()==='error')errors.push('console: '+m.text());});
@@ -183,20 +214,20 @@ check('appka je skrytá',!(await pg.isVisible('main')));
 check('před loginem žádné volání na data',!calls.some(c=>c.url.includes('/rest/v1/')));
 
 console.log('\n== 2. špatné heslo ==');
-await pg.fill('#auth-email','test@domacnost.cz'); await pg.fill('#auth-pass','blbe');
-await pg.click('#btn-login'); await pg.waitForTimeout(400);
+await fill('#auth-email','test@domacnost.cz'); await fill('#auth-pass','blbe');
+await klik('#btn-login'); await pg.waitForTimeout(400);
 check('chyba se zobrazí',await pg.isVisible('#auth-err'));
 check('chyba je česky',(await pg.textContent('#auth-err')).includes('Nesprávný'));
 check('pořád zamčeno',await pg.isVisible('#auth-screen'));
 check('tlačítko znovu aktivní',!(await pg.isDisabled('#btn-login')));
 
 console.log('\n== 3. správné heslo ==');
-await pg.fill('#auth-pass','spravne'); await pg.click('#btn-login');
+await fill('#auth-pass','spravne'); await klik('#btn-login');
 await pg.waitForSelector('main',{state:'visible',timeout:5000}); await pg.waitForTimeout(500);
 check('appka odemčena',await pg.isVisible('main'));
 check('loading zmizel',!(await pg.isVisible('#loading')));
 check('e-mail v hlavičce',(await pg.textContent('#user-email'))==='test@domacnost.cz');
-check('heslo vymazáno z pole',(await pg.inputValue('#auth-pass'))==='');
+check('heslo vymazáno z pole',(await hodnota('#auth-pass'))==='');
 const dc=calls.filter(c=>c.url.includes('/rest/v1/'));
 check('data se tahají s user tokenem',dc.length>0&&dc.every(c=>c.auth.startsWith('Bearer TOK.')));
 check('tabulka plan se už netahá',!calls.some(c=>c.url.includes('/rest/v1/plan')));
@@ -263,7 +294,7 @@ check('výdaje jsou se znaménkem mínus (−5 000 / −1 200)',
 
 // Tatáž kategorie a měsíc musí dát stejné číslo v Přehledu, v rozpadu pod
 // kliknutím i v matici Roku. Rozpad to odhalil u 9/2026 (131 366 vs −17 326).
-await pg.click('#plan-vs-real-table tr:has-text("Ostatni") td:nth-child(3)');
+await klik('#plan-vs-real-table tr:has-text("Ostatni") td:nth-child(3)');
 await pg.waitForTimeout(300);
 const zRozpadu=await pg.evaluate(()=>{
   const v=document.getElementById('rozpad-soucet').textContent.replace(/[^\d-]/g,'');
@@ -271,7 +302,7 @@ const zRozpadu=await pg.evaluate(()=>{
 await pg.keyboard.press('Escape'); await pg.waitForTimeout(200);
 check('rozpad dá stejné číslo jako Přehled',zRozpadu===ostatni.skut,
   `rozpad ${zRozpadu} vs přehled ${ostatni.skut}`);
-await pg.click('.tab:text-is("Rok")'); await pg.waitForTimeout(500);
+await klik('.tab:text-is("Rok")'); await pg.waitForTimeout(500);
 const zMatice=await pg.evaluate(()=>{
   const cis=t=>{const v=t.replace(/[^\d-]/g,'');return v?parseInt(v,10):0;};
   const tr=[...document.querySelectorAll('#rok-table tbody tr')]
@@ -280,41 +311,41 @@ const zMatice=await pg.evaluate(()=>{
 });
 check('matice Roku dá stejné číslo jako Přehled',zMatice===ostatni.skut,
   `matice ${zMatice} vs přehled ${ostatni.skut}`);
-await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
 
 console.log('\n== 6. Záznamy: odznak a filtr ==');
-await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
 check('kde/poznámka jako text',(await pg.textContent('#zaznamy-table')).includes('Albert & <i>spol</i>'));
 check('žádný <i> ze záznamu',(await pg.locator('#zaznamy-table i').count())===0);
 check('výchozí Vše = 9 řádků',(await pg.locator('#zaznamy-table tr').count())===9);
 check('3 odznaky plán',(await pg.locator('#zaznamy-table .badge-plan').count())===3);
-await pg.selectOption('#z-filtr','skutecnost'); await pg.waitForTimeout(200);
+await vyber('#z-filtr','skutecnost'); await pg.waitForTimeout(200);
 check('filtr skutečnost = 6 řádků bez odznaku',
   (await pg.locator('#zaznamy-table tr').count())===6&&(await pg.locator('#zaznamy-table .badge-plan').count())===0);
-await pg.selectOption('#z-filtr','plan'); await pg.waitForTimeout(200);
+await vyber('#z-filtr','plan'); await pg.waitForTimeout(200);
 check('filtr plán = 3 řádky s odznakem',
   (await pg.locator('#zaznamy-table tr').count())===3&&(await pg.locator('#zaznamy-table .badge-plan').count())===3);
-await pg.selectOption('#z-filtr','prevody'); await pg.waitForTimeout(200);
+await vyber('#z-filtr','prevody'); await pg.waitForTimeout(200);
 check('filtr převody = obě nohy jednoho převodu',
   (await pg.locator('#zaznamy-table tr').count())===2&&(await pg.locator('#zaznamy-table .prevod').count())===2);
-await pg.selectOption('#z-filtr','vse'); await pg.waitForTimeout(200);
+await vyber('#z-filtr','vse'); await pg.waitForTimeout(200);
 
 console.log('\n== 7. editace peněženky ==');
-await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
 check('tlačítko upravit u každé peněženky',(await pg.locator('#penezenky-list .edit-btn').count())===3);
-await pg.click('#penezenky-list .edit-btn'); await pg.waitForTimeout(300);
-check('zůstatek předplněn',(await pg.inputValue('#w-zustatek'))==='10000.00');
+await klik('#penezenky-list .edit-btn'); await pg.waitForTimeout(300);
+check('zůstatek předplněn',(await hodnota('#w-zustatek'))==='10000.00');
 check('titulek = Upravit peněženku',(await pg.textContent('#form-penezenka-title'))==='Upravit peněženku');
-await pg.fill('#w-nazev','Ucet opraveny'); await pg.fill('#w-zustatek','7777');
+await fill('#w-nazev','Ucet opraveny'); await fill('#w-zustatek','7777');
 calls.length=0;
-await pg.click('#btn-penezenka'); await pg.waitForTimeout(500);
+await klik('#btn-penezenka'); await pg.waitForTimeout(500);
 const patch=calls.find(c=>c.method==='PATCH');
 check('poslán PATCH, ne POST',!!patch&&!calls.some(c=>c.method==='POST'));
 check('PATCH míří na id=eq.1',!!patch&&patch.url.includes('id=eq.1'));
 check('formulář se resetoval',(await pg.textContent('#form-penezenka-title'))==='Přidat peněženku');
 
 console.log('\n== 8. záložka Plán ==');
-await pg.click('.tab:text-is("Plán")'); await pg.waitForTimeout(400);
+await klik('.tab:text-is("Plán")'); await pg.waitForTimeout(400);
 const souhrn=txt(await pg.textContent('#plan-souhrn'));
 check('souhrn: příjmy 88 000',souhrn.includes('88 000'),souhrn);
 check('souhrn: výdaje 8 300',souhrn.includes('8 300'));
@@ -325,56 +356,56 @@ check('žádné staré plan-inputy',(await pg.locator('.plan-input').count())===
 check('každá plánovaná položka má edit',(await pg.locator('#plan-skupiny .edit-btn').count())===3);
 
 console.log('\n== 9. založení plánované položky ==');
-await pg.click('button:has-text("+ Plánovaná položka")'); await pg.waitForTimeout(400);
+await klik('button:has-text("+ Plánovaná položka")'); await pg.waitForTimeout(400);
 check('přepnuto na Záznamy',await pg.isVisible('#view-zaznamy'));
-check('typ položky předvolen na plán',(await pg.inputValue('#z-polozka'))==='plan');
-await pg.fill('#z-castka','1234'); await pg.fill('#z-datum',d(28)); await pg.fill('#z-kde','Test');
+check('typ položky předvolen na plán',(await hodnota('#z-polozka'))==='plan');
+await fill('#z-castka','1234'); await fill('#z-datum',d(28)); await fill('#z-kde','Test');
 calls.length=0;
-await pg.click('#btn-zaznam'); await pg.waitForTimeout(500);
+await klik('#btn-zaznam'); await pg.waitForTimeout(500);
 const post=calls.find(c=>c.method==='POST');
 check('POST posílá typ_polozky=plan',!!post&&JSON.parse(post.body).typ_polozky==='plan',post&&post.body);
 
 console.log('\n== 10. editace plánované položky si drží typ ==');
-await pg.click('.tab:text-is("Plán")'); await pg.waitForTimeout(300);
-await pg.click('#plan-skupiny .edit-btn'); await pg.waitForTimeout(400);
-check('formulář má plán',(await pg.inputValue('#z-polozka'))==='plan');
-await pg.click('#btn-cancel-zaznam'); await pg.waitForTimeout(200);
-check('po zrušení zpět na skutečnost',(await pg.inputValue('#z-polozka'))==='skutecnost');
+await klik('.tab:text-is("Plán")'); await pg.waitForTimeout(300);
+await klik('#plan-skupiny .edit-btn'); await pg.waitForTimeout(400);
+check('formulář má plán',(await hodnota('#z-polozka'))==='plan');
+await klik('#btn-cancel-zaznam'); await pg.waitForTimeout(200);
+check('po zrušení zpět na skutečnost',(await hodnota('#z-polozka'))==='skutecnost');
 
 console.log('\n== 11. odhlášení a obnova session ==');
-await pg.click('.signout-btn'); await pg.waitForTimeout(400);
+await klik('.signout-btn'); await pg.waitForTimeout(400);
 check('zpět na login',await pg.isVisible('#auth-screen'));
 check('session smazána',(await pg.evaluate(()=>localStorage.getItem('homie_session')))===null);
-await pg.fill('#auth-email','test@domacnost.cz'); await pg.fill('#auth-pass','spravne');
-await pg.click('#btn-login'); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(300);
+await fill('#auth-email','test@domacnost.cz'); await fill('#auth-pass','spravne');
+await klik('#btn-login'); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(300);
 await pg.reload(); await pg.waitForTimeout(800);
 check('po reloadu přihlášen bez hesla',await pg.isVisible('main'));
 
 console.log('\n== 12. pravidelné (mandatorní) platby ==');
-await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
 check('souhrn ukazuje mandatorní výdaje',txt(await pg.textContent('#sum-vydaje-mand')).includes('800'),
   await pg.textContent('#sum-vydaje-mand'));
 check('souhrn ukazuje podíl na výdajích',/%/.test(await pg.textContent('#sum-vydaje-mand')),
   await pg.textContent('#sum-vydaje-mand'));
-await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
 check('pravidelná platba má odznak',(await pg.locator('#zaznamy-table .badge-pravidelna').count())===1,
   String(await pg.locator('#zaznamy-table .badge-pravidelna').count()));
-await pg.selectOption('#z-filtr','pravidelne'); await pg.waitForTimeout(300);
+await vyber('#z-filtr','pravidelne'); await pg.waitForTimeout(300);
 check('filtr Jen pravidelné nechá 1 řádek',(await pg.locator('#zaznamy-table tr').count())===1,
   String(await pg.locator('#zaznamy-table tr').count()));
-await pg.selectOption('#z-filtr','vse'); await pg.waitForTimeout(300);
+await vyber('#z-filtr','vse'); await pg.waitForTimeout(300);
 // Stejná dvojice kde+kategorie jako u označeného záznamu → appka ji navrhne sama,
 // aby označení nezůstalo jen na historii.
-await pg.fill('#z-kde','Action'); await pg.selectOption('#z-kategorie','10'); await pg.waitForTimeout(300);
-check('u shodné dvojice se pravidelná navrhne',await pg.isChecked('#z-pravidelna'));
-await pg.fill('#z-kde','Neznámý obchod'); await pg.waitForTimeout(200);
-await pg.uncheck('#z-pravidelna');
-await pg.selectOption('#z-kategorie','91'); await pg.waitForTimeout(300);
-check('u neznámé dvojice se nenavrhuje',!(await pg.isChecked('#z-pravidelna')));
-await pg.fill('#z-castka','123'); await pg.fill('#z-datum',d(14));
-await pg.check('#z-pravidelna');
+await fill('#z-kde','Action'); await vyber('#z-kategorie','10'); await pg.waitForTimeout(300);
+check('u shodné dvojice se pravidelná navrhne',await zaskrtnuto('#z-pravidelna'));
+await fill('#z-kde','Neznámý obchod'); await pg.waitForTimeout(200);
+await odskrtni('#z-pravidelna');
+await vyber('#z-kategorie','91'); await pg.waitForTimeout(300);
+check('u neznámé dvojice se nenavrhuje',!(await zaskrtnuto('#z-pravidelna')));
+await fill('#z-castka','123'); await fill('#z-datum',d(14));
+await zaskrtni('#z-pravidelna');
 calls.length=0;
-await pg.click('#btn-zaznam'); await pg.waitForTimeout(500);
+await klik('#btn-zaznam'); await pg.waitForTimeout(500);
 const postP=calls.find(c=>c.method==='POST');
 check('POST posílá pravidelna=true',!!postP&&JSON.parse(postP.body).pravidelna===true,postP&&postP.body);
 // Uložený záznam zůstává v paměti appky a posunul by čísla v dalších oddílech,
@@ -382,7 +413,7 @@ check('POST posílá pravidelna=true',!!postP&&JSON.parse(postP.body).pravidelna
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(900);
 
 console.log('\n== 13. zůstatky peněženek ==');
-await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(400);
+await klik('.tab:text-is("Peněženky")'); await pg.waitForTimeout(400);
 check('tabulka zůstatků je vidět',await pg.isVisible('#zustatky-table'));
 const zu=await pg.evaluate(()=>{
   const cis=t=>{const v=t.textContent.replace(/[^\d+-]/g,'');return v?parseInt(v,10):0;};
@@ -409,7 +440,7 @@ check('poznámka vysvětluje vztah k Pivotu',zpozn.includes('Pivot'),zpozn);
 check('poznámka vysvětluje zaplaceno dopředu',/zaplaceno dopředu/.test(zpozn),zpozn);
 
 console.log('\n== 14. záložka Rok: matice plán vs. skutečnost ==');
-await pg.click('.tab:text-is("Rok")'); await pg.waitForTimeout(400);
+await klik('.tab:text-is("Rok")'); await pg.waitForTimeout(400);
 check('pohled Rok je vidět',await pg.isVisible('#view-rok'));
 check('hlavička má 12 měsíců',(await pg.locator('#rok-table th.mesic').count())===12);
 const rRadky=pg.locator('#rok-table tbody tr');
@@ -433,10 +464,10 @@ check('buňka bez plánu nic neradí',
 check('názvy kategorií jako text',mzda.includes('<script>'),mzda);
 check('žádný <script> z názvu',(await pg.locator('#view-rok script').count())===0);
 
-await pg.click('#rok-table tbody tr:nth-child(1) td.kat'); await pg.waitForTimeout(300);
+await klik('#rok-table tbody tr:nth-child(1) td.kat'); await pg.waitForTimeout(300);
 check('rozklik ukáže podkategorii',(await rTxt('#rok-table')).includes('Peta'));
 check('po rozkliku je o řádek víc',(await rRadky.count())===5,String(await rRadky.count()));
-await pg.click('#rok-table tbody tr:nth-child(1) td.kat'); await pg.waitForTimeout(300);
+await klik('#rok-table tbody tr:nth-child(1) td.kat'); await pg.waitForTimeout(300);
 check('druhý klik zabalí',!(await rTxt('#rok-table')).includes('Peta'));
 
 // --- souhrn za kvartály, pololetí a rok (#6) ---
@@ -474,15 +505,15 @@ check('roční čísla sedí na data (78 700 / 87 000)',
   sou.Rok.plan===78700&&sou.Rok.skut===87000,JSON.stringify(sou.Rok));
 
 const letos=await pg.textContent('#rok-label');
-await pg.click('#view-rok .month-nav button:first-child'); await pg.waitForTimeout(400);
+await klik('#view-rok .month-nav button:first-child'); await pg.waitForTimeout(400);
 check('přepnutí roku zpět',(await pg.textContent('#rok-label'))===String(+letos-1));
 check('rok bez dat má prázdný stav',await pg.isVisible('#rok-empty'));
 check('v prázdném roce se souhrn schová',!(await pg.isVisible('#rok-souhrn-blok')));
-await pg.click('#view-rok .month-nav button:last-child'); await pg.waitForTimeout(400);
+await klik('#view-rok .month-nav button:last-child'); await pg.waitForTimeout(400);
 check('zpět na letošek',(await pg.textContent('#rok-label'))===letos);
 
 console.log('\n== 15. energie: odečty, spotřeba, výměna měřidla (#9) ==');
-await pg.click('.tab:text-is("Energie")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Energie")'); await pg.waitForTimeout(300);
 check('záložka Energie je vidět',await pg.isVisible('#view-energie'));
 check('prázdný stav se neukazuje',!(await pg.isVisible('#energie-empty')));
 
@@ -570,7 +601,7 @@ check('legenda má tři roky se součtem',
   &&egraf.legenda[0].startsWith('2024 ·'),JSON.stringify(egraf.legenda));
 
 console.log('\n== 15b. energie: zápis a úprava odečtu ==');
-await pg.click('.tab:text-is("Energie")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Energie")'); await pg.waitForTimeout(300);
 check('tabulka zapsaných odečtů je vidět',
   (await pg.locator('#energie-odecty tbody tr').count())===4);
 check('řádek nabízí úpravu i smazání',
@@ -579,10 +610,10 @@ check('řádek nabízí úpravu i smazání',
 
 // Zápis nového odečtu
 calls.length=0;
-await pg.fill('#od-datum','2026-05-31');
-await pg.fill('#od-voda','20'); await pg.fill('#od-t1','1200'); await pg.fill('#od-t2','5800');
-await pg.fill('#od-poznamka','kontrolní');
-await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+await fill('#od-datum','2026-05-31');
+await fill('#od-voda','20'); await fill('#od-t1','1200'); await fill('#od-t2','5800');
+await fill('#od-poznamka','kontrolní');
+await klik('#btn-odecet'); await pg.waitForTimeout(500);
 const postOd=calls.find(c=>c.method==='POST'&&c.url.includes('energie_odecty'));
 check('odečet se pošle POSTem',!!postOd,calls.map(c=>c.method+' '+c.url).join(' | '));
 check('posílá se stav měřidla, ne spotřeba',
@@ -599,48 +630,48 @@ check('spotřeba se dopočítá z pořadí (8 m³)',
 // Klesající stav bez zaškrtnuté výměny je přesně ta chyba, co v sheetu
 // vyrobila −757 m³. Nesmí projít.
 calls.length=0;
-await pg.fill('#od-datum','2026-06-30');
-await pg.fill('#od-voda','5'); await pg.fill('#od-t1','1300'); await pg.fill('#od-t2','5900');
-await pg.click('#btn-odecet'); await pg.waitForTimeout(400);
+await fill('#od-datum','2026-06-30');
+await fill('#od-voda','5'); await fill('#od-t1','1300'); await fill('#od-t2','5900');
+await klik('#btn-odecet'); await pg.waitForTimeout(400);
 check('klesající stav bez výměny neprojde',
   !calls.some(c=>c.method==='POST'),calls.map(c=>c.method+' '+c.url).join(' | '));
 check('appka řekne proč',/klesl/.test(await pg.textContent('.toast')),
   await pg.textContent('.toast'));
 // Se zaškrtnutou výměnou je to legitimní.
-await pg.check('#od-vym-voda');
-await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+await zaskrtni('#od-vym-voda');
+await klik('#btn-odecet'); await pg.waitForTimeout(500);
 check('se zaškrtnutou výměnou projde',calls.some(c=>c.method==='POST'));
-await pg.uncheck('#od-vym-voda');
+await odskrtni('#od-vym-voda');
 
 // Úprava existujícího
 calls.length=0;
 const predUpravou=await odRadky();
 check('nejnovější nahoře je odečet s výměnou',predUpravou[0][0].startsWith('2026-06-30'),
   JSON.stringify(predUpravou[0]));
-await pg.click('#energie-odecty tbody tr:first-child .edit-btn'); await pg.waitForTimeout(300);
-check('úprava předvyplní stav',(await pg.inputValue('#od-voda'))==='5',
-  await pg.inputValue('#od-voda'));
-check('úprava předvyplní zaškrtnutí výměny',await pg.isChecked('#od-vym-voda'));
+await klik('#energie-odecty tbody tr:first-child .edit-btn'); await pg.waitForTimeout(300);
+check('úprava předvyplní stav',(await hodnota('#od-voda'))==='5',
+  await hodnota('#od-voda'));
+check('úprava předvyplní zaškrtnutí výměny',await zaskrtnuto('#od-vym-voda'));
 // Řádek s výměnou nemá spotřebu vody — jinak by vyšla −15.
 check('u výměny se spotřeba vody nepočítá',predUpravou[0][4]==='—',JSON.stringify(predUpravou[0]));
-await pg.fill('#od-poznamka','opraveno');
-await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+await fill('#od-poznamka','opraveno');
+await klik('#btn-odecet'); await pg.waitForTimeout(500);
 const patchOd=calls.find(c=>c.method==='PATCH'&&c.url.includes('energie_odecty'));
 check('úprava pošle PATCH',patchOd&&JSON.parse(patchOd.body).poznamka==='opraveno',
   patchOd?patchOd.body:'žádný PATCH');
 check('formulář se vrátí do režimu zápisu',
-  (await pg.inputValue('#od-poznamka'))===''&&!(await pg.isChecked('#od-vym-voda')));
+  (await hodnota('#od-poznamka'))===''&&!(await zaskrtnuto('#od-vym-voda')));
 
 // Dvakrát totéž datum nedává smysl
 calls.length=0;
-await pg.fill('#od-datum','2026-04-30'); await pg.fill('#od-voda','99');
-await pg.click('#btn-odecet'); await pg.waitForTimeout(400);
+await fill('#od-datum','2026-04-30'); await fill('#od-voda','99');
+await klik('#btn-odecet'); await pg.waitForTimeout(400);
 check('dva odečty k témuž datu neprojdou',!calls.some(c=>c.method==='POST'));
-await pg.click('#btn-cancel-odecet').catch(()=>{});
+await pg.evaluate(()=>zavriDlg());
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
 console.log('\n== 15c. energie: částka u odečtu a editace ceníku ==');
-await pg.click('.tab:text-is("Energie")'); await pg.waitForTimeout(400);
+await klik('.tab:text-is("Energie")'); await pg.waitForTimeout(400);
 const odC=await pg.evaluate(()=>[...document.querySelectorAll('#energie-odecty tbody tr')]
   .map(tr=>[...tr.children].map(td=>td.textContent.replace(/[\s\u00a0\u202f]+/g,' ').trim())));
 // 2026-02-28: voda 10 m³ × 90 = 900, VT 50 × 6 + NT 200 × 3 = 900, celkem 1 800.
@@ -667,14 +698,14 @@ const vPrvnim=await pg.evaluate(()=>({
 check('✎/✕ jsou v prvním, přilepeném sloupci — ne mimo displej',
   vPrvnim.odecty&&vPrvnim.cenik&&vPrvnim.prilepeny==='sticky',JSON.stringify(vPrvnim));
 calls.length=0;
-await pg.click('#energie-cenik tbody tr:first-child .edit-btn'); await pg.waitForTimeout(300);
+await klik('#energie-cenik tbody tr:first-child .edit-btn'); await pg.waitForTimeout(300);
 check('úprava ceníku předvyplní sazby',
-  parseFloat(await pg.inputValue('#ce-vt'))===6&&parseFloat(await pg.inputValue('#ce-nt'))===3,
-  (await pg.inputValue('#ce-vt'))+'/'+(await pg.inputValue('#ce-nt')));
-await pg.fill('#ce-vt','7');
+  parseFloat(await hodnota('#ce-vt'))===6&&parseFloat(await hodnota('#ce-nt'))===3,
+  (await hodnota('#ce-vt'))+'/'+(await hodnota('#ce-nt')));
+await fill('#ce-vt','7');
 // Zároveň uzavřeme otevřené období, ať jde níž otestovat navazující.
-await pg.fill('#ce-do','2026-12-31');
-await pg.click('#btn-cenik'); await pg.waitForTimeout(500);
+await fill('#ce-do','2026-12-31');
+await klik('#btn-cenik'); await pg.waitForTimeout(500);
 const patchC=calls.find(c=>c.method==='PATCH'&&c.url.includes('energie_cenik'));
 check('úprava ceníku pošle PATCH',patchC&&JSON.parse(patchC.body).vt===7,
   patchC?patchC.body:'žádný PATCH');
@@ -687,16 +718,16 @@ check('změna sazby se hned projeví v částce (950)',poZmene&&poZmene[8]==='95
 
 // Překrývající se období by znamenalo, že sazba k datu je nejednoznačná.
 calls.length=0;
-await pg.fill('#ce-od','2026-01-01'); await pg.fill('#ce-do','2026-06-30');
-await pg.fill('#ce-vt','9'); await pg.fill('#ce-nt','4');
-await pg.click('#btn-cenik'); await pg.waitForTimeout(400);
+await fill('#ce-od','2026-01-01'); await fill('#ce-do','2026-06-30');
+await fill('#ce-vt','9'); await fill('#ce-nt','4');
+await klik('#btn-cenik'); await pg.waitForTimeout(400);
 check('překrývající se období neprojde',!calls.some(c=>c.method==='POST'),
   calls.map(c=>c.method+' '+c.url).join(' | '));
 check('appka řekne s čím se překrývá',/překrývá/i.test(await pg.textContent('.toast')),
   await pg.textContent('.toast'));
 // Navazující období (po uzavřeném konci) už projít musí.
-await pg.fill('#ce-od','2027-01-01'); await pg.fill('#ce-do','');
-await pg.click('#btn-cenik'); await pg.waitForTimeout(500);
+await fill('#ce-od','2027-01-01'); await fill('#ce-do','');
+await klik('#btn-cenik'); await pg.waitForTimeout(500);
 check('navazující období projde',calls.some(c=>c.method==='POST'&&c.url.includes('energie_cenik')));
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
@@ -704,7 +735,7 @@ console.log('\n== 15d. výměna měřidla se zapsaným konečným stavem ==');
 // Reálný případ z 3/2026: 4. 3. se měnil elektroměr, zapsal se jen vynulovaný
 // nový stav a 1 132 kWh zmizelo — měsíc vyšel na 118 kWh. Když se k témuž dni
 // zapíše i konečný stav starého měřidla, nemá se co ztratit.
-await pg.click('.tab:text-is("Energie")'); await pg.waitForTimeout(400);
+await klik('.tab:text-is("Energie")'); await pg.waitForTimeout(400);
 const odRadky2=async()=>pg.evaluate(()=>[...document.querySelectorAll('#energie-odecty tbody tr')]
   .map(tr=>[...tr.children].map(td=>td.textContent.replace(/[\s  ]+/g,' ').trim())));
 const mesRadek=async m=>pg.evaluate(mm=>{
@@ -715,19 +746,19 @@ const mesRadek=async m=>pg.evaluate(mm=>{
 },m);
 
 // 1) konečný stav starého elektroměru
-await pg.fill('#od-datum','2026-05-31');
-await pg.fill('#od-voda','20'); await pg.fill('#od-t1','1200'); await pg.fill('#od-t2','5800');
-await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+await fill('#od-datum','2026-05-31');
+await fill('#od-voda','20'); await fill('#od-t1','1200'); await fill('#od-t2','5800');
+await klik('#btn-odecet'); await pg.waitForTimeout(500);
 // 2) vynulovaný nový elektroměr k TÉMUŽ dni. Vodoměr se nemění, zůstává na 20.
 calls.length=0;
-await pg.fill('#od-datum','2026-05-31');
-await pg.fill('#od-voda','20'); await pg.fill('#od-t1','0'); await pg.fill('#od-t2','0');
-await pg.check('#od-vym-elektro');
-await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+await fill('#od-datum','2026-05-31');
+await fill('#od-voda','20'); await fill('#od-t1','0'); await fill('#od-t2','0');
+await zaskrtni('#od-vym-elektro');
+await klik('#btn-odecet'); await pg.waitForTimeout(500);
 check('druhý odečet k témuž dni projde, když je to výměna',
   calls.some(c=>c.method==='POST'&&c.url.includes('energie_odecty')),
   await pg.textContent('.toast').catch(()=>''));
-await pg.uncheck('#od-vym-elektro');
+await odskrtni('#od-vym-elektro');
 
 const paru=await odRadky2();
 check('vynulovaný řádek je v dni až za konečným stavem',
@@ -740,9 +771,9 @@ check('konečný stav starého měřidla se započítá (50 / 200)',
 
 // 3) další běžný odečet na novém měřidle
 calls.length=0;
-await pg.fill('#od-datum','2026-06-30');
-await pg.fill('#od-voda','26'); await pg.fill('#od-t1','40'); await pg.fill('#od-t2','60');
-await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+await fill('#od-datum','2026-06-30');
+await fill('#od-voda','26'); await fill('#od-t1','40'); await fill('#od-t2','60');
+await klik('#btn-odecet'); await pg.waitForTimeout(500);
 check('odečet na novém měřidle nehlásí pokles proti starému',
   calls.some(c=>c.method==='POST'),await pg.textContent('.toast').catch(()=>''));
 const poNovem=await odRadky2();
@@ -762,19 +793,19 @@ check('nikde negativní spotřeba',
 
 // Dvojí zápis k jednomu dni bez výměny je pořád překlep.
 calls.length=0;
-await pg.fill('#od-datum','2026-04-30'); await pg.fill('#od-voda','12');
-await pg.fill('#od-t1','1150'); await pg.fill('#od-t2','5600');
-await pg.click('#btn-odecet'); await pg.waitForTimeout(400);
+await fill('#od-datum','2026-04-30'); await fill('#od-voda','12');
+await fill('#od-t1','1150'); await fill('#od-t2','5600');
+await klik('#btn-odecet'); await pg.waitForTimeout(400);
 check('dvojí zápis bez výměny pořád neprojde',!calls.some(c=>c.method==='POST'),
   calls.map(c=>c.method+' '+c.url).join(' | '));
-await pg.click('#btn-cancel-odecet').catch(()=>{});
+await pg.evaluate(()=>zavriDlg());
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
 console.log('\n== 15e. vynechaný odečet se nepočítá jako nulová spotřeba ==');
 // Reálný případ: v srpnu a září 2026 se odečetla jen voda a stav elektroměru
 // se opsal z července, takže spotřeba vyšla 0 kWh. Prázdno musí zůstat
 // prázdnem a další skutečný odečet se počítat proti poslednímu zapsanému.
-await pg.click('.tab:text-is("Energie")'); await pg.waitForTimeout(400);
+await klik('.tab:text-is("Energie")'); await pg.waitForTimeout(400);
 const odRadky3=async()=>pg.evaluate(()=>[...document.querySelectorAll('#energie-odecty tbody tr')]
   .map(tr=>({bunky:[...tr.children].map(td=>td.textContent.replace(/[\s  ]+/g,' ').trim()),
              tipy:[...tr.children].map(td=>td.getAttribute('title')||''),
@@ -786,14 +817,14 @@ const mesRadek3=async m=>pg.evaluate(mm=>{
              vymena:!!tr.querySelector('.vymena')}:null;
 },m);
 
-await pg.fill('#od-datum','2026-05-31');
-await pg.fill('#od-voda','20'); await pg.fill('#od-t1','1200'); await pg.fill('#od-t2','5800');
-await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+await fill('#od-datum','2026-05-31');
+await fill('#od-voda','20'); await fill('#od-t1','1200'); await fill('#od-t2','5800');
+await klik('#btn-odecet'); await pg.waitForTimeout(500);
 // Červen: odečetla se jen voda, elektroměr zůstal prázdný.
 calls.length=0;
-await pg.fill('#od-datum','2026-06-30');
-await pg.fill('#od-voda','26'); await pg.fill('#od-t1',''); await pg.fill('#od-t2','');
-await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+await fill('#od-datum','2026-06-30');
+await fill('#od-voda','26'); await fill('#od-t1',''); await fill('#od-t2','');
+await klik('#btn-odecet'); await pg.waitForTimeout(500);
 const postJen=calls.find(c=>c.method==='POST'&&c.url.includes('energie_odecty'));
 check('odečet jen s vodou projde',!!postJen,await pg.textContent('.toast').catch(()=>''));
 check('nenaměřený stav se pošle jako prázdno, ne jako nula',
@@ -808,9 +839,9 @@ check('voda se počítá dál i bez elektřiny (6 m³)',r3[0].bunky[4]==='6',
 
 // Červenec: skutečný odečet. Počítá se proti květnu (1 200 / 5 800), ne proti
 // prázdnému červnu — 1 300 − 1 200 = 100, 6 000 − 5 800 = 200.
-await pg.fill('#od-datum','2026-07-31');
-await pg.fill('#od-voda','32'); await pg.fill('#od-t1','1300'); await pg.fill('#od-t2','6000');
-await pg.click('#btn-odecet'); await pg.waitForTimeout(500);
+await fill('#od-datum','2026-07-31');
+await fill('#od-voda','32'); await fill('#od-t1','1300'); await fill('#od-t2','6000');
+await klik('#btn-odecet'); await pg.waitForTimeout(500);
 r3=await odRadky3();
 check('další odečet se počítá proti poslednímu ZAPSANÉMU stavu (100 / 200)',
   r3[0].bunky[0].startsWith('2026-07-31')&&r3[0].bunky[5].startsWith('100')
@@ -845,7 +876,7 @@ check('nikde negativní spotřeba',
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
 console.log('\n== 16. spoření: čisté jmění, změna, projekce (#10) ==');
-await pg.click('.tab:text-is("Spoření")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Spoření")'); await pg.waitForTimeout(300);
 check('záložka Spoření je vidět',await pg.isVisible('#view-sporeni'));
 check('prázdný stav se neukazuje',!(await pg.isVisible('#sporeni-empty')));
 
@@ -913,7 +944,7 @@ check('projekce je čárkovaná a navazuje na skutečnost',
   graf&&graf[1].body===2&&graf[1].carkovana,JSON.stringify(graf));
 
 console.log('\n== 17. převody mezi peněženkami (#11) ==');
-await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
 const pr=await pg.evaluate(()=>{
   const c=s=>{const t=(document.getElementById(s)||{}).textContent||'';
     const v=t.replace(/[^\d-]/g,'');return v?parseInt(v,10):null;};
@@ -931,7 +962,7 @@ check('zůstatek obě nohy započítá (101 000)',pr.zustatek===101000,JSON.stri
 check('podíl mandatorních se počítá z výdajů bez převodů (40 %)',
   /40 % výdajů/.test(pr.mand),pr.mand);
 
-await pg.click('.tab:text-is("Rok")'); await pg.waitForTimeout(400);
+await klik('.tab:text-is("Rok")'); await pg.waitForTimeout(400);
 const rokPrevod=await pg.evaluate(()=>{
   const tr=document.querySelector('#rok-table tr.soucet');
   return tr?[...tr.children].map(x=>x.textContent.replace(/[\s\u00a0\u202f]+/g,' ').trim()):null;
@@ -954,12 +985,12 @@ check('kategorie převodu nesebrala jeho částku',
   katOstatni&&!katOstatni.some(v=>v==='-2 800'||v==='−2 800'),JSON.stringify(katOstatni));
 
 // Zápis převodu: dvě nohy, jedna skupina, obě bez kategorie.
-await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
 calls.length=0;
-await pg.selectOption('#pr-z','1'); await pg.selectOption('#pr-do','2');
-await pg.fill('#pr-castka','1500'); await pg.fill('#pr-datum',d(9));
-await pg.fill('#pr-pozn','test převod');
-await pg.click('#btn-prevod'); await pg.waitForTimeout(500);
+await vyber('#pr-z','1'); await vyber('#pr-do','2');
+await fill('#pr-castka','1500'); await fill('#pr-datum',d(9));
+await fill('#pr-pozn','test převod');
+await klik('#btn-prevod'); await pg.waitForTimeout(500);
 const postPr=calls.find(c=>c.method==='POST'&&c.url.includes('/rest/v1/zaznamy'));
 const telo=postPr?JSON.parse(postPr.body):null;
 check('převod posílá dvě nohy najednou',Array.isArray(telo)&&telo.length===2,JSON.stringify(telo));
@@ -973,18 +1004,18 @@ check('převod nedostane kategorii',telo&&telo[0].kategorie_id===null&&telo[1].k
 
 // Pojistky ve formuláři. Stejná peněženka na obou stranách není převod.
 calls.length=0;
-await pg.selectOption('#pr-do','1'); await pg.fill('#pr-castka','100');
-await pg.click('#btn-prevod'); await pg.waitForTimeout(300);
+await vyber('#pr-do','1'); await fill('#pr-castka','100');
+await klik('#btn-prevod'); await pg.waitForTimeout(300);
 check('převod na sebe sama neprojde',
   !calls.some(c=>c.method==='POST'),calls.map(c=>c.method+' '+c.url).join(' | '));
-await pg.selectOption('#pr-do','2'); await pg.fill('#pr-castka','-50');
-await pg.click('#btn-prevod'); await pg.waitForTimeout(300);
+await vyber('#pr-do','2'); await fill('#pr-castka','-50');
+await klik('#btn-prevod'); await pg.waitForTimeout(300);
 check('záporná částka neprojde',
   !calls.some(c=>c.method==='POST'),calls.map(c=>c.method+' '+c.url).join(' | '));
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
 console.log('\n== 18. typ kategorie: příjem / výdaj / obojí ==');
-await pg.click('.tab:text-is("Osnova")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Osnova")'); await pg.waitForTimeout(300);
 const volbyTyp=await pg.evaluate(()=>[...document.querySelectorAll('#o-typ option')]
   .map(o=>[o.value,o.textContent.trim()]));
 check('typ nabízí tři možnosti včetně obojího',
@@ -994,9 +1025,9 @@ const strom=txt(await pg.textContent('#cat-tree'));
 check('obojí má v osnově vlastní odznak',strom.includes('příjem i výdaj'),strom);
 
 // Jádro věci: kategorie s typem „obojí" se musí nabídnout u obou směrů.
-await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
 const nabidka=async typ=>{
-  await pg.selectOption('#z-typ',typ); await pg.waitForTimeout(200);
+  await vyber('#z-typ',typ); await pg.waitForTimeout(200);
   return pg.evaluate(()=>[...document.querySelectorAll('#z-kategorie option, #z-kategorie optgroup')]
     .map(o=>o.label||o.textContent.trim()));
 };
@@ -1013,34 +1044,34 @@ check('příjmová kategorie zůstává jen u příjmu',
 
 // Bez editace by typ šlo nastavit jen při zakládání a všechny kategorie
 // už existují — nová volba by byla k ničemu.
-await pg.click('.tab:text-is("Osnova")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Osnova")'); await pg.waitForTimeout(300);
 calls.length=0;
-await pg.click('#cat-tree .cat-item.top:has-text("Ostatni") .edit-btn'); await pg.waitForTimeout(300);
-check('úprava předvyplní název',(await pg.inputValue('#o-nazev'))==='Ostatni');
-check('úprava předvyplní typ',(await pg.inputValue('#o-typ'))==='vydaj');
+await klik('#cat-tree .cat-item.top:has-text("Ostatni") .edit-btn'); await pg.waitForTimeout(300);
+check('úprava předvyplní název',(await hodnota('#o-nazev'))==='Ostatni');
+check('úprava předvyplní typ',(await hodnota('#o-typ'))==='vydaj');
 check('úroveň se při úpravě nedá přepnout',await pg.isDisabled('#o-uroven'));
-await pg.selectOption('#o-typ','obe');
-await pg.click('#btn-osnova'); await pg.waitForTimeout(500);
+await vyber('#o-typ','obe');
+await klik('#btn-osnova'); await pg.waitForTimeout(500);
 const patchO=calls.find(c=>c.method==='PATCH'&&c.url.includes('/rest/v1/osnova'));
 check('uložení pošle PATCH s novým typem',
   patchO&&JSON.parse(patchO.body).typ==='obe',patchO?patchO.body:'žádný PATCH');
 check('po uložení se formulář vrátí do režimu přidání',
-  (await pg.inputValue('#o-nazev'))===''&&!(await pg.isDisabled('#o-uroven')));
-await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
+  (await hodnota('#o-nazev'))===''&&!(await pg.isDisabled('#o-uroven')));
+await klik('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
 check('změna typu se hned projeví v nabídce',
   (await nabidka('prijem')).includes('Ostatni'));
 
-await pg.click('.tab:text-is("Osnova")'); await pg.waitForTimeout(300);
-await pg.click('#cat-tree .cat-item.top:has-text("Mzda") .edit-btn'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Osnova")'); await pg.waitForTimeout(300);
+await klik('#cat-tree .cat-item.top:has-text("Mzda") .edit-btn'); await pg.waitForTimeout(300);
 calls.length=0;
-await pg.click('#btn-cancel-osnova'); await pg.waitForTimeout(300);
+await klik('#btn-cancel-osnova'); await pg.waitForTimeout(300);
 check('zrušení úprav nic neuloží',!calls.some(c=>c.method==='PATCH'));
 check('zrušení uklidí formulář',
-  (await pg.inputValue('#o-nazev'))===''&&!(await pg.isDisabled('#o-uroven')));
+  (await hodnota('#o-nazev'))===''&&!(await pg.isDisabled('#o-uroven')));
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
 console.log('\n== 19. souhrn za každý rok (#graf v Přehledu) ==');
-await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(400);
+await klik('.tab:text-is("Přehled")'); await pg.waitForTimeout(400);
 const ro=await pg.evaluate(()=>[...document.querySelectorAll('#roky-chart .bar-col')].map(c=>({
   rok:c.querySelector('.bar-col-label').textContent.trim(),
   saldo:c.querySelector('.bar-col-val').textContent.trim(),
@@ -1061,7 +1092,7 @@ check('běžící rok je označený jako neúplný',ro[0]&&ro[0].neuplny,JSON.st
 check('neúplný rok nese značku v popisku',ro[0]&&/\u26a0/.test(ro[0].rok),JSON.stringify(ro));
 
 console.log('\n== 20. Rok: třetí tabulka přes všechny roky ==');
-await pg.click('.tab:text-is("Rok")'); await pg.waitForTimeout(500);
+await klik('.tab:text-is("Rok")'); await pg.waitForTimeout(500);
 check('tabulka všech let je vidět',await pg.isVisible('#roky-kat-blok'));
 const vr=async()=>pg.evaluate(()=>{
   const cis=t=>{const v=t.replace(/[^\d+-]/g,'');return v?parseInt(v,10):0;};
@@ -1097,19 +1128,19 @@ check('má se co srovnávat',Object.keys(vsechny.radky).length>=3,JSON.stringify
 
 // Rozbalení kategorie platí pro všechny tři tabulky naráz.
 const pred=Object.keys((await vr()).radky).length;
-await pg.click('#rok-table tbody tr.rozbalitelna'); await pg.waitForTimeout(400);
+await klik('#rok-table tbody tr.rozbalitelna'); await pg.waitForTimeout(400);
 const po=Object.keys((await vr()).radky).length;
 check('rozbalení v matici rozbalí i tabulku let',po===pred+1,`${pred} → ${po}`);
-await pg.click('#rok-table tbody tr.rozbalitelna'); await pg.waitForTimeout(400);
+await klik('#rok-table tbody tr.rozbalitelna'); await pg.waitForTimeout(400);
 
 // Přepínač roku se téhle tabulky netýká — je to pohled napříč lety.
-await pg.click('#view-rok .month-nav button:first-child'); await pg.waitForTimeout(400);
+await klik('#view-rok .month-nav button:first-child'); await pg.waitForTimeout(400);
 check('prázdný rok tabulku let neschová',await pg.isVisible('#roky-kat-blok'));
 const poPrepnuti=await vr();
 check('přepnutí roku čísla nezmění',
   JSON.stringify(poPrepnuti.radky)===JSON.stringify(vsechny.radky),
   JSON.stringify({pred:vsechny.radky,po:poPrepnuti.radky}));
-await pg.click('#view-rok .month-nav button:last-child'); await pg.waitForTimeout(400);
+await klik('#view-rok .month-nav button:last-child'); await pg.waitForTimeout(400);
 
 console.log('\n== 21. nic nepřetéká do strany (mobil) ==');
 // Hlavička se na telefon nevešla a posouvala do strany celou stránku, ne jen
@@ -1119,7 +1150,7 @@ for(const sirka of [320,390]){
   await pg.setViewportSize({width:sirka,height:800}); await pg.waitForTimeout(250);
   const pretekaji=[];
   for(const z of ZALOZKY){
-    await pg.click(`.tab:text-is("${z}")`); await pg.waitForTimeout(250);
+    await klik(`.tab:text-is("${z}")`); await pg.waitForTimeout(250);
     const p=await pg.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);
     if(p>0)pretekaji.push(`${z}: +${p}px`);
   }
@@ -1131,10 +1162,10 @@ check('na mobilu je zkrácený název',
 await pg.setViewportSize({width:1280,height:720}); await pg.waitForTimeout(250);
 check('na širokém displeji je celý název',
   (await pg.isVisible('.logo-dlouhy'))&&!(await pg.isVisible('.logo-kratky')));
-await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
 
 console.log('\n== 22. skryté peněženky a zůstatky po letech ==');
-await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(400);
+await klik('.tab:text-is("Peněženky")'); await pg.waitForTimeout(400);
 const vSeznamu=await pg.evaluate(()=>[...document.querySelectorAll('#penezenky-list .wallet-name')]
   .map(e=>e.textContent.trim()));
 check('administrace ukazuje i skryté',vSeznamu.length===3,JSON.stringify(vSeznamu));
@@ -1144,24 +1175,24 @@ const vTabulce=await pg.evaluate(()=>[...document.querySelectorAll('#zustatky-ta
   .map(e=>e.textContent.trim()));
 check('prázdná skrytá peněženka v zůstatcích není',vTabulce.length===2,JSON.stringify(vTabulce));
 
-await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
 const nabidkaP=await pg.evaluate(()=>[...document.querySelectorAll('#z-penezenka option')].map(o=>o.textContent.trim()));
 check('skrytá se nenabízí při zápisu',!nabidkaP.some(x=>x.includes('Stravenka')),JSON.stringify(nabidkaP));
-await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
 const nabidkaPrevod=await pg.evaluate(()=>[...document.querySelectorAll('#pr-z option')].map(o=>o.textContent.trim()));
 check('skrytá se nenabízí ani u převodu',!nabidkaPrevod.some(x=>x.includes('Stravenka')),
   JSON.stringify(nabidkaPrevod));
 
 // Přepínač v administraci
 calls.length=0;
-await pg.click('#penezenky-list .wallet-list-item:nth-child(2) .skryt-btn'); await pg.waitForTimeout(400);
+await klik('#penezenky-list .wallet-list-item:nth-child(2) .skryt-btn'); await pg.waitForTimeout(400);
 const patchSk=calls.find(c=>c.method==='PATCH'&&c.url.includes('/rest/v1/penezenky'));
 check('přepínač pošle PATCH se skryta',patchSk&&JSON.parse(patchSk.body).skryta===true,
   patchSk?patchSk.body:'žádný PATCH');
 // Dlaždice v Přehledu: podtitulek je stav k 1. 1. zvoleného roku, ne kotva
 // peněženky z roku 2015. Mock má všechny záznamy v letošku, takže se oboje
 // shoduje — kontroluje se popisek a to, že se číslo mění s přepnutím roku.
-await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
 const dlazdice=async()=>pg.evaluate(()=>[...document.querySelectorAll('#prehled-wallets .wallet-preview')]
   .map(e=>({nazev:e.querySelector('.wallet-preview-name').textContent.trim(),
             poc:e.querySelector('.wallet-preview-init').textContent.replace(/[\s\u00a0\u202f]+/g,' ').trim()})));
@@ -1187,25 +1218,25 @@ const sLonskym=await pg.evaluate(()=>{
 // kotva 10 000 − 4 000 z loňska
 check('se starším záznamem se počítá kotva mínus pohyby do konce loňska',
   sLonskym.endsWith(': 6 000 Kč'),sLonskym);
-await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
 check('skrytá zmizí z přehledu',await pg.evaluate(()=>
   ![...document.querySelectorAll('#prehled-wallets .wallet-preview-name')].some(e=>e.textContent.includes('Kreditka'))));
-await pg.click('#penezenky-list .wallet-list-item:nth-child(2) .skryt-btn'); await pg.waitForTimeout(400);
+await klik('#penezenky-list .wallet-list-item:nth-child(2) .skryt-btn'); await pg.waitForTimeout(400);
 
 // Záznam na skryté peněžence nesmí při úpravě přijít o peněženku.
-await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
+await klik('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
 // Konkrétní záznam, ne „první řádek" — ten se řadí podle data a mohl by to
 // být jiný, než na kterém jsme peněženku přehodili.
 await pg.evaluate(()=>{const z=zaznamy.find(z=>z.id===101);z.penezenka_id=3;editZaznam(101);});
 await pg.waitForTimeout(400);
 check('skrytá peněženka upravovaného záznamu se do nabídky doplní',
-  (await pg.inputValue('#z-penezenka'))==='3',
+  (await hodnota('#z-penezenka'))==='3',
   JSON.stringify(await pg.evaluate(()=>[...document.querySelectorAll('#z-penezenka option')].map(o=>o.value+':'+o.textContent))));
-await pg.click('#btn-cancel-zaznam').catch(()=>{});
+await pg.evaluate(()=>zavriDlg());
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
 // Zůstatky po letech
-await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(400);
+await klik('.tab:text-is("Peněženky")'); await pg.waitForTimeout(400);
 const zuRok=async()=>pg.evaluate(()=>{
   const cis=t=>{const v=t.textContent.replace(/[^\d+-]/g,'');return v?parseInt(v,10):0;};
   const tr=[...document.querySelectorAll('#zustatky-table tbody tr:not(.soucet)')];
@@ -1226,21 +1257,21 @@ check('zůstatek Účtu sedí na dlaždici v Přehledu',await pg.evaluate(()=>{
     .find(r=>r.children[0].textContent.includes('Ucet'));
   return dl&&tr&&cis(dl.querySelector('.wallet-preview-balance').textContent)===cis(tr.children[3].textContent);
 }));
-await pg.click('header .month-nav button:first-child'); await pg.waitForTimeout(400);
+await klik('header .month-nav button:first-child'); await pg.waitForTimeout(400);
 const jinyMesic=await zuRok();
 check('přepnutí měsíce zůstatky nemění',
   JSON.stringify(jinyMesic.radky)===JSON.stringify(zuLetos.radky),
   JSON.stringify({pred:zuLetos.radky,po:jinyMesic.radky}));
-await pg.click('header .month-nav button:last-child'); await pg.waitForTimeout(400);
+await klik('header .month-nav button:last-child'); await pg.waitForTimeout(400);
 
 console.log('\n== 23. rozpad částky z Přehledu na záznamy ==');
-await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(400);
+await klik('.tab:text-is("Přehled")'); await pg.waitForTimeout(400);
 check('rozpad je zavřený',!(await pg.isVisible('#rozpad')));
 // Kategorie Jídlo: skutečnost 1 200 (Albert), plán 5 000.
 const radekJidlo='#plan-vs-real-table tr:has-text("Jídlo")';
 check('klikatelná je jen buňka, kde je co ukázat',
   (await pg.locator(radekJidlo+' .klik').count())===2);
-await pg.click(radekJidlo+' td:nth-child(3)'); await pg.waitForTimeout(300);
+await klik(radekJidlo+' td:nth-child(3)'); await pg.waitForTimeout(300);
 check('rozpad se otevřel',await pg.isVisible('#rozpad'));
 check('nadpis je kategorie',(await pg.textContent('#rozpad-titulek')).includes('Jídlo'));
 check('podtitulek říká skutečnost a počet',
@@ -1259,20 +1290,20 @@ await pg.keyboard.press('Escape'); await pg.waitForTimeout(250);
 check('Escape rozpad zavře',!(await pg.isVisible('#rozpad')));
 
 // Plán téže kategorie — jiný seznam, jiný součet.
-await pg.click(radekJidlo+' td:nth-child(2)'); await pg.waitForTimeout(300);
+await klik(radekJidlo+' td:nth-child(2)'); await pg.waitForTimeout(300);
 check('rozpad plánu ukáže plánovanou částku',
   txt(await pg.textContent('#rozpad-soucet')).includes('5 000')
   &&/plán ·/.test(await pg.textContent('#rozpad-podtitulek')),
   txt(await pg.textContent('#rozpad-soucet'))+' | '+await pg.textContent('#rozpad-podtitulek'));
-await pg.click('#rozpad',{position:{x:5,y:5}}); await pg.waitForTimeout(250);
+await klik('#rozpad',{position:{x:5,y:5}}); await pg.waitForTimeout(250);
 check('klik mimo okno ho zavře',!(await pg.isVisible('#rozpad')));
 
 // Mzda: příjem 90 000 skutečnost — jiné znaménko i barva.
-await pg.click('#plan-vs-real-table tr:has-text("Mzda") td:nth-child(3)'); await pg.waitForTimeout(300);
+await klik('#plan-vs-real-table tr:has-text("Mzda") td:nth-child(3)'); await pg.waitForTimeout(300);
 check('u příjmu je součet zelený',
   (await pg.evaluate(()=>document.getElementById('rozpad-soucet').style.color)).includes('green'),
   await pg.evaluate(()=>document.getElementById('rozpad-soucet').style.color));
-await pg.click('.rozpad-hlava .edit-btn'); await pg.waitForTimeout(250);
+await klik('.rozpad-hlava .edit-btn'); await pg.waitForTimeout(250);
 check('křížek rozpad zavře',!(await pg.isVisible('#rozpad')));
 
 console.log('\n== 24. stránkování: víc záznamů než strop PostgRESTu ==');
@@ -1344,6 +1375,93 @@ check('zůstatek počítá se všemi záznamy (7 500)',
   txt(await pg.textContent('#sum-zustatek')).includes('7 500'),
   await pg.textContent('#sum-zustatek'));
 DB.zaznamy=puvodni;
+
+console.log('\n== 25. zadávací dialogy ==');
+// Formuláře už nestojí vedle obsahu, otevírá je tlačítko. Tady se testuje
+// samotná mechanika — jinde si ji obálky v testu otevírají zkratkou.
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
+await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
+check('formulář není vidět, dokud ho nikdo nevyvolá',
+  !(await pg.isVisible('#dlg-zaznam')));
+check('v hlavičce je tlačítko',await pg.isVisible('#view-zaznamy .list-head .btn'));
+await pg.click('#view-zaznamy .list-head .btn'); await pg.waitForTimeout(300);
+check('tlačítko dialog otevře',await pg.isVisible('#dlg-zaznam'));
+check('kurzor skočí do částky',
+  (await pg.evaluate(()=>document.activeElement&&document.activeElement.id))==='z-castka');
+check('pozadí se pod dialogem nescrolluje',
+  (await pg.evaluate(()=>document.body.style.overflow))==='hidden');
+// Tabulka pod dialogem je nedosažitelná — proto si testy dialog zavírají.
+check('dialog zakrývá obsah pod sebou',
+  (await pg.evaluate(()=>{
+    const d=document.querySelector('#dlg-zaznam');
+    const r=d.getBoundingClientRect();
+    return document.elementFromPoint(r.width/2,8)===d
+        || d.contains(document.elementFromPoint(r.width/2,8));
+  })));
+await pg.keyboard.press('Escape'); await pg.waitForTimeout(250);
+check('Escape dialog zavře',!(await pg.isVisible('#dlg-zaznam')));
+check('scroll pozadí se vrátí',(await pg.evaluate(()=>document.body.style.overflow))==='');
+
+await pg.click('#view-zaznamy .list-head .btn'); await pg.waitForTimeout(250);
+await pg.click('#dlg-zaznam .dlg-x'); await pg.waitForTimeout(250);
+check('✕ dialog zavře',!(await pg.isVisible('#dlg-zaznam')));
+await pg.click('#view-zaznamy .list-head .btn'); await pg.waitForTimeout(250);
+await pg.click('#dlg-zaznam',{position:{x:5,y:5}}); await pg.waitForTimeout(250);
+check('klik mimo okno dialog zavře',!(await pg.isVisible('#dlg-zaznam')));
+
+// Editace musí dialog otevřít sama — jinak by se předvyplnil formulář,
+// který není vidět, a vypadalo by to, že ✎ nic neudělalo.
+await pg.click('#zaznamy-table .edit-btn'); await pg.waitForTimeout(400);
+check('✎ dialog otevře',await pg.isVisible('#dlg-zaznam'));
+check('nadpis je v hlavě dialogu',
+  (await pg.textContent('#dlg-zaznam .dlg-hlava .form-title')).includes('Upravit'));
+check('je nabídnuté i zrušení',await pg.isVisible('#btn-cancel-zaznam'));
+// A zavření rozkoukané editace ji musí zrušit. Kdyby editingZaznamId zůstalo
+// nastavené, příští „Přidat" by přepsalo upravovaný řádek.
+await pg.keyboard.press('Escape'); await pg.waitForTimeout(250);
+await pg.click('#view-zaznamy .list-head .btn'); await pg.waitForTimeout(250);
+check('zavření Escapem zruší editaci, dialog je zpátky v režimu zápisu',
+  (await pg.textContent('#dlg-zaznam .dlg-hlava .form-title')).includes('Přidat')
+  &&!(await pg.isVisible('#btn-cancel-zaznam')));
+calls.length=0;
+await pg.fill('#z-castka','4321'); await pg.fill('#z-datum',d(15));
+await pg.click('#btn-zaznam'); await pg.waitForTimeout(600);
+const postD=calls.find(c=>c.method==='POST'&&c.url.includes('zaznamy'));
+check('po zrušené editaci vzniká nový záznam, ne PATCH',
+  !!postD&&!calls.some(c=>c.method==='PATCH'),
+  calls.map(c=>c.method+' '+c.url).join(' | '));
+// Přidávání nechá dialog otevřený (zadává se po sobě víc řádků), uložená
+// editace ho zavře.
+check('po přidání zůstává dialog otevřený',await pg.isVisible('#dlg-zaznam'));
+check('pole se vyprázdní pro další zápis',(await pg.inputValue('#z-castka'))==='');
+await pg.keyboard.press('Escape'); await pg.waitForTimeout(200);
+calls.length=0;
+await pg.click('#zaznamy-table .edit-btn'); await pg.waitForTimeout(400);
+await pg.fill('#z-castka','999');
+await pg.click('#btn-zaznam'); await pg.waitForTimeout(600);
+check('uložená editace dialog zavře',!(await pg.isVisible('#dlg-zaznam')),
+  calls.map(c=>c.method+' '+c.url).join(' | '));
+
+// Všechny zadávací formuláře jsou v dialogu a každý má své tlačítko.
+const dlgy=await pg.evaluate(()=>[...document.querySelectorAll('.dlg-pozadi')].map(d=>({
+  id:d.id,
+  nadpis:!!d.querySelector('.dlg-hlava .form-title'),
+  krizek:!!d.querySelector('.dlg-x'),
+  otevreny:d.classList.contains('open')})));
+check('v appce je šest zadávacích dialogů',dlgy.length===6,JSON.stringify(dlgy.map(x=>x.id)));
+check('každý má nadpis i křížek',dlgy.every(x=>x.nadpis&&x.krizek),JSON.stringify(dlgy));
+check('žádný nezůstal otevřený',dlgy.every(x=>!x.otevreny),JSON.stringify(dlgy));
+const sirotci=await pg.evaluate(()=>
+  [...document.querySelectorAll('.form-title')].filter(t=>!t.closest('.dlg-hlava')).length);
+check('žádný formulář nezůstal mimo dialog',sirotci===0,String(sirotci));
+for(const [zal,tl] of [['Energie',2],['Peněženky',2],['Osnova',1],['Záznamy',1]]){
+  await pg.click(`.tab:text-is("${zal}")`); await pg.waitForTimeout(250);
+  const n=await pg.evaluate(z=>document.querySelectorAll(
+    '#view-'+z+' .list-head .btn').length,
+    {'Energie':'energie','Peněženky':'penezenky','Osnova':'osnova','Záznamy':'zaznamy'}[zal]);
+  check(`záložka ${zal} má ${tl} tlačítko/a pro zápis`,n===tl,String(n));
+}
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
 console.log('\n== chyby v konzoli ==');
 // 400 = záměrně špatné heslo v testu 2
