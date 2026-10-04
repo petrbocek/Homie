@@ -1463,6 +1463,82 @@ for(const [zal,tl] of [['Energie',2],['Peněženky',2],['Osnova',1],['Záznamy',
 }
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
+console.log('\n== 26. filtr na peněženku v Záznamech ==');
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
+await klik('.tab:text-is("Záznamy")'); await pg.waitForTimeout(400);
+
+const volbyPen=async()=>pg.evaluate(()=>[...document.querySelectorAll('#z-filtr-penezenka option')]
+  .map(o=>({v:o.value,t:o.textContent.trim()})));
+const radkyPen=async()=>pg.evaluate(()=>[...document.querySelectorAll('#zaznamy-table tr')]
+  .map(tr=>tr.children[3].textContent.trim()));
+
+check('filtr na peněženku je vedle filtru typu',
+  await pg.isVisible('#z-filtr-penezenka'));
+let vol=await volbyPen();
+check('první volba je Všechny peněženky',vol[0].v==='vse'&&vol[0].t==='Všechny peněženky',
+  JSON.stringify(vol));
+check('nabízí viditelné peněženky',
+  vol.some(o=>o.t.startsWith('Ucet'))&&vol.some(o=>o.t==='Kreditka'),JSON.stringify(vol));
+// Stravenka je skrytá a v tomhle měsíci nemá záznam — nemá co nabízet.
+check('skrytá peněženka bez záznamů se nenabízí',
+  !vol.some(o=>o.t==='Stravenka'),JSON.stringify(vol));
+check('bez záznamů bez peněženky se ta volba nenabízí',
+  !vol.some(o=>o.v==='zadna'),JSON.stringify(vol));
+
+// Součet po peněženkách musí dát totéž co „Všechny" — nic se nesmí ztratit
+// ani zdvojit. Počty se berou ze stránky, ať test nezkřehne na fixture.
+const celkem=(await radkyPen()).length;
+let soucetPen=0;
+for(const o of vol.filter(x=>x.v!=='vse')){
+  await vyber('#z-filtr-penezenka',o.v); await pg.waitForTimeout(250);
+  const r=await radkyPen();
+  soucetPen+=r.length;
+  check(`filtr „${o.t}" ukáže jen jeho řádky (${r.length})`,
+    r.length>0&&r.every(x=>x===o.t),JSON.stringify(r));
+}
+check('součet po peněženkách sedí na „Všechny"',soucetPen===celkem,soucetPen+' vs '+celkem);
+await vyber('#z-filtr-penezenka','vse'); await pg.waitForTimeout(250);
+check('zpět na Všechny ukáže všechno',(await radkyPen()).length===celkem);
+
+// Oba filtry musí platit zároveň, ne se přebíjet.
+const ucet=vol.find(o=>o.t.startsWith('Ucet')).v;
+await vyber('#z-filtr-penezenka',ucet); await vyber('#z-filtr','plan');
+await pg.waitForTimeout(300);
+const planUctu=await pg.evaluate(()=>[...document.querySelectorAll('#zaznamy-table tr')]
+  .map(tr=>({pen:tr.children[3].textContent.trim(),plan:!!tr.querySelector('.badge-plan')})));
+check('filtry se kombinují, ne přebíjejí',
+  planUctu.length>0&&planUctu.every(r=>r.plan&&r.pen.startsWith('Ucet')),
+  JSON.stringify(planUctu));
+await vyber('#z-filtr','vse'); await pg.waitForTimeout(250);
+check('volba peněženky přežije překreslení',
+  (await pg.evaluate(()=>document.getElementById('z-filtr-penezenka').value))===ucet);
+
+// Záznam bez peněženky má v tabulce jen pomlčku — bez vlastní volby by se
+// k němu nedalo profiltrovat.
+await vyber('#z-filtr-penezenka','vse'); await pg.waitForTimeout(200);
+await klik('#view-zaznamy .list-head .btn'); await pg.waitForTimeout(250);
+await fill('#z-castka','777'); await fill('#z-datum',d(11));
+await fill('#z-kde','Bez penezenky');
+await vyber('#z-penezenka','');
+await klik('#btn-zaznam'); await pg.waitForTimeout(600);
+await pg.evaluate(()=>zavriDlg());
+await pg.waitForTimeout(250);
+vol=await volbyPen();
+check('po záznamu bez peněženky se volba objeví',
+  vol.some(o=>o.v==='zadna'&&o.t==='Bez peněženky'),JSON.stringify(vol));
+await vyber('#z-filtr-penezenka','zadna'); await pg.waitForTimeout(250);
+const bezPen=await radkyPen();
+check('filtr Bez peněženky ukáže jen je',
+  bezPen.length>0&&bezPen.every(x=>x==='—'),JSON.stringify(bezPen));
+
+// Po přepnutí měsíce nemusí zvolená peněženka v nabídce zůstat.
+await klik('header .month-nav button:first-child'); await pg.waitForTimeout(500);
+check('nabídka se přepočítá podle měsíce',
+  (await pg.evaluate(()=>document.getElementById('z-filtr-penezenka').value))==='vse'
+  ||(await volbyPen()).some(o=>o.v==='zadna'));
+await klik('header .month-nav button:last-child'); await pg.waitForTimeout(500);
+await vyber('#z-filtr-penezenka','vse'); await pg.waitForTimeout(200);
+
 console.log('\n== chyby v konzoli ==');
 // 400 = záměrně špatné heslo v testu 2
 const real=errors.filter(e=>!e.includes('net::ERR_')&&!e.includes('fonts.googleapis')

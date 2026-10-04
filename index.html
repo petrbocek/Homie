@@ -651,6 +651,9 @@
             <option value="pravidelne">Jen pravidelné</option>
             <option value="prevody">Jen převody</option>
           </select>
+          <select id="z-filtr-penezenka" class="filtr" onchange="renderZaznamy()">
+            <option value="vse">Všechny peněženky</option>
+          </select>
           <button class="btn uzky" onclick="otevriDlg('dlg-zaznam','z-castka')">+ Přidat záznam</button>
         </div>
         <div style="overflow-x:auto">
@@ -2209,10 +2212,32 @@ async function delCenik(id){
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
 }
 
+// Nabídka peněženek do filtru. Skrytá peněženka se nabídne, jen když v daném
+// měsíci opravdu nějaký záznam má — jinak by ve výběru jen zabírala místo.
+// Stejně tak „bez peněženky": bez té volby by se k takovým záznamům nedalo
+// dostat, protože v tabulce mají jen pomlčku.
+function updateFiltrPenezenka(){
+  const sel=document.getElementById('z-filtr-penezenka');
+  if(!sel)return 'vse';
+  const puvodni=sel.value;
+  const vMesici=new Set(mZaz().map(z=>z.penezenka_id||0));
+  const volby=penezenky.filter(w=>!w.skryta||vMesici.has(w.id))
+    .map(w=>`<option value="${w.id}">${esc(w.nazev)}</option>`);
+  if(vMesici.has(0))volby.push('<option value="zadna">Bez peněženky</option>');
+  sel.innerHTML='<option value="vse">Všechny peněženky</option>'+volby.join('');
+  // Po přepnutí měsíce nemusí dřív zvolená peněženka v nabídce zůstat.
+  sel.value=[...sel.options].some(o=>o.value===puvodni)?puvodni:'vse';
+  return sel.value;
+}
+
 function renderZaznamy(){
   const f=(document.getElementById('z-filtr')||{}).value||'vse';
+  const fw=updateFiltrPenezenka();
   const mz=mZaz().filter(z=>f==='vse'?true:f==='pravidelne'?z.pravidelna
                           :f==='prevody'?jePrevod(z):(f==='plan')===jePlan(z))
+                 .filter(z=>fw==='vse'?true
+                           :fw==='zadna'?!z.penezenka_id
+                           :String(z.penezenka_id)===fw)
                  .sort((a,b)=>b.datum.localeCompare(a.datum));
   const tbody=document.getElementById('zaznamy-table');
   const empty=document.getElementById('zaznamy-empty');
