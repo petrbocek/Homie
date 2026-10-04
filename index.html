@@ -871,9 +871,13 @@ function penezenkyVidet(){return penezenky.filter(w=>!w.skryta);}
 function walletPocatekRoku(wId,rok){
   const w=penezenky.find(p=>p.id==wId);if(!w)return 0;
   const hranice=`${rok}-01-01`;
-  return Number(w.pocatecni_zustatek)+zaznamy
-    .filter(z=>z.penezenka_id==wId&&!jePlan(z)&&z.datum<hranice)
-    .reduce((s,z)=>s+(z.typ==='prijem'?1:-1)*Number(z.castka),0);
+  const drive=zaznamy.filter(z=>z.penezenka_id==wId&&!jePlan(z)&&z.datum<hranice);
+  // Peněženka, která v tom roce teprve vznikla, na jeho začátku nic neměla.
+  // Počáteční zůstatek je kotva k začátku celé historie a u takové peněženky
+  // je to dopočítané číslo, které by tady jen lhalo.
+  if(!drive.length)return 0;
+  return Number(w.pocatecni_zustatek)
+    +drive.reduce((s,z)=>s+(z.typ==='prijem'?1:-1)*Number(z.castka),0);
 }
 function walletPohybyRoku(wId,rok){
   return zaznamy.filter(z=>z.penezenka_id==wId&&!jePlan(z)&&z.datum.startsWith(rok+'-'))

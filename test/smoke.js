@@ -801,8 +801,25 @@ const dlazdice=async()=>pg.evaluate(()=>[...document.querySelectorAll('#prehled-
 const dl=await dlazdice();
 check('dlaždice ukazuje počáteční stav k 1. 1. zvoleného roku',
   dl.length&&/^k 1\. 1\. \d{4}: /.test(dl[0].poc),JSON.stringify(dl));
-check('je to kotva peněženky, dokud jsou záznamy jen v letošku',
-  dl[0].poc.endsWith('10 000 Kč'),JSON.stringify(dl));
+// Všechny záznamy v mocku jsou z letoška, takže všechny peněženky letos
+// „vznikly" — kotva (10 000) se ukázat nesmí, na začátku roku nic neměly.
+check('peněženka vzniklá v tomto roce začíná na nule',
+  dl.every(d=>/: 0 Kč$/.test(d.poc)),JSON.stringify(dl));
+// A naopak: jakmile má peněženka záznam z dřívějška, počítá se kotva i s ním.
+const sLonskym=await pg.evaluate(()=>{
+  const r=(new Date().getFullYear()-1)+'-06-10';
+  zaznamy.push({id:99901,datum:r,castka:'4000.00',typ:'vydaj',typ_polozky:'skutecnost',
+    kategorie_id:null,kde:'Loni',poznamka:null,penezenka_id:1});
+  renderPrehled();
+  const e=[...document.querySelectorAll('#prehled-wallets .wallet-preview')]
+    .find(x=>x.querySelector('.wallet-preview-name').textContent.includes('Ucet'));
+  const v=e.querySelector('.wallet-preview-init').textContent.replace(/[\s\u00a0\u202f]+/g,' ');
+  zaznamy=zaznamy.filter(z=>z.id!==99901); renderPrehled();
+  return v;
+});
+// kotva 10 000 − 4 000 z loňska
+check('se starším záznamem se počítá kotva mínus pohyby do konce loňska',
+  sLonskym.endsWith(': 6 000 Kč'),sLonskym);
 await pg.click('.tab:text-is("Peněženky")'); await pg.waitForTimeout(300);
 check('skrytá zmizí z přehledu',await pg.evaluate(()=>
   ![...document.querySelectorAll('#prehled-wallets .wallet-preview-name')].some(e=>e.textContent.includes('Kreditka'))));
