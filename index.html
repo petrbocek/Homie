@@ -1141,14 +1141,22 @@ function renderPrehled(){
   if(!catTop().length){tbody.innerHTML='<tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px">Nejprve nastavte osnovu</td></tr>';return;}
   tbody.innerHTML=tops.map(top=>{
     const catIds=[top.id,...catSub(top.id).map(s=>s.id)];
+    // Součet MUSÍ brát znaménko podle typu záznamu. Dokud se sečetly jen
+    // absolutní hodnoty, kategorie s příjmem i výdajem (Ostatni mívá obojí)
+    // vyšla jako jejich součet místo rozdílu — za 9/2026 to bylo 131 366
+    // místo −17 326. Stejně to počítá matice v Roku i rozpad pod kliknutím.
+    const soucet=rows=>rows.reduce((s,z)=>s+(z.typ==='prijem'?1:-1)*Number(z.castka),0);
     const planRows=mp.filter(z=>catIds.includes(z.kategorie_id));
-    const planned=planRows.length?planRows.reduce((s,z)=>s+Number(z.castka),0):null;
-    const actual=mz.filter(z=>catIds.includes(z.kategorie_id)).reduce((s,z)=>s+Number(z.castka),0);
+    const planned=planRows.length?soucet(planRows):null;
+    const aktRows=mz.filter(z=>catIds.includes(z.kategorie_id));
+    const actual=soucet(aktRows);
     let diff='—',cls='diff-none';
-    if(planned!==null){const d=actual-planned;diff=(d>=0?'+':'')+fmt(Math.abs(d));cls=top.typ==='prijem'?(d>=0?'diff-ok':'diff-over'):(actual<=planned?'diff-ok':'diff-over');}
+    // Rozdíl je `skutečnost − plán` jako v souhrnu Roku: kladné číslo znamená
+    // „lépe, než bylo v plánu" u výdajů (utratil jsem míň) i u příjmů.
+    if(planned!==null){const d=actual-planned;diff=(d>=0?'+':'')+fmt(Math.abs(d));
+      cls=d>=0?'diff-ok':'diff-over';}
     // Klikat jde jen tam, kde je co ukázat — podtržení jinak slibuje rozpad,
     // který by byl prázdný.
-    const aktRows=mz.filter(z=>catIds.includes(z.kategorie_id));
     const bunka=(txt,rows,plan)=>rows.length
       ? `<td class="right mono klik" onclick="rozpad(${top.id},${plan})" title="Rozepsat na jednotlivé záznamy">${txt}</td>`
       : `<td class="right mono">${txt}</td>`;
@@ -1183,7 +1191,7 @@ function rozpad(topId,plan){
   document.getElementById('rozpad-podtitulek').textContent=
     `${plan?'plán':'skutečnost'} · ${MONTHS_CS[cM]} ${cY} · ${polozek(rows.length)}`;
   const sc=document.getElementById('rozpad-soucet');
-  sc.textContent=fmt(Math.abs(soucet));
+  sc.textContent=fmt(soucet);
   sc.style.color=soucet>=0?'var(--green)':'var(--red)';
 
   document.getElementById('rozpad-telo').innerHTML=rows.length?rows.map(z=>{

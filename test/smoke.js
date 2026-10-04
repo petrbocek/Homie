@@ -40,6 +40,10 @@ const DB={
     {id:100,datum:d(3),castka:'90000.00',typ:'prijem',typ_polozky:'skutecnost',kategorie_id:11,kde:'Demos',poznamka:null,penezenka_id:1},
     {id:101,datum:d(5),castka:'1200.00',typ:'vydaj',typ_polozky:'skutecnost',kategorie_id:91,kde:'Albert & <i>spol</i>',poznamka:'pozn "x" <hr>',penezenka_id:1},
     {id:102,datum:d(6),castka:'800.00',typ:'vydaj',typ_polozky:'skutecnost',kategorie_id:10,kde:'Action',poznamka:null,penezenka_id:1,pravidelna:true},
+    // Příjem ve výdajové kategorii — Ostatni v reálných datech mívá obojí.
+    // Bez toho projde i součet, který znaménko ignoruje a sčítá absolutní
+    // hodnoty (za 9/2026 to dávalo 131 366 místo −17 326).
+    {id:104,datum:d(2),castka:'3000.00',typ:'prijem',typ_polozky:'skutecnost',kategorie_id:10,kde:'Vratka',poznamka:null,penezenka_id:1},
     {id:200,datum:d(15),castka:'88000.00',typ:'prijem',typ_polozky:'plan',kategorie_id:11,kde:'Demos',poznamka:'Plat',penezenka_id:1},
     {id:201,datum:d(20),castka:'5000.00',typ:'vydaj',typ_polozky:'plan',kategorie_id:91,kde:'NA',poznamka:null,penezenka_id:1},
     {id:202,datum:d(25),castka:'3300.00',typ:'vydaj',typ_polozky:'plan',kategorie_id:null,kde:'Colliery',poznamka:'Bez kategorie',penezenka_id:1},
@@ -203,13 +207,13 @@ const ws=await pg.getAttribute('.wallet-dot','style');
 check('nesmyslná barva sanitizována',/888888|rgb\(136, 136, 136\)/.test(ws),ws);
 
 console.log('\n== 5. Přehled: plán se bere ze záznamů typu plán ==');
-check('příjmy = jen skutečnost (90 000)',txt(await pg.textContent('#sum-prijmy')).includes('90 000'));
+check('příjmy = jen skutečnost (93 000)',txt(await pg.textContent('#sum-prijmy')).includes('93 000'));
 check('výdaje = jen skutečnost (2 000)',txt(await pg.textContent('#sum-vydaje')).includes('2 000'));
 check('plán příjmů = 88 000',txt(await pg.textContent('#sum-prijmy-plan')).includes('88 000'));
 check('plán výdajů = 8 300',txt(await pg.textContent('#sum-vydaje-plan')).includes('8 300'));
 check('zbývá = 6 300',txt(await pg.textContent('#sum-zbyva')).includes('6 300'));
 // 10000 + 90000 - 1200 - 800 = 98 000 (se započtením plánu by vyšlo 177 700)
-check('zůstatek ignoruje plán (98 000)',txt(await pg.textContent('#sum-zustatek')).includes('98 000'),
+check('zůstatek ignoruje plán (101 000)',txt(await pg.textContent('#sum-zustatek')).includes('101 000'),
   txt(await pg.textContent('#sum-zustatek')));
 const tab=txt(await pg.textContent('#plan-vs-real-table'));
 check('plán vs skutečnost: 5 000 / 1 200',tab.includes('5 000')&&tab.includes('1 200'),tab);
@@ -231,15 +235,58 @@ const zivaPoPridani=await pg.evaluate(()=>{
 });
 check('se záznamem v tomto roce se kategorie vrátí',zivaPoPridani);
 
+// Kategorie Ostatni má tenhle měsíc výdaj 800 a příjem 3 000. Součet musí
+// brát znaménko: 3 000 − 800 = +2 200. Dokud se sčítaly absolutní hodnoty,
+// vycházelo 3 800 a nikdo si toho nevšiml, protože žádná kategorie v testech
+// obojí neměla.
+const ostatni=await pg.evaluate(()=>{
+  const cis=t=>{const v=t.replace(/[^\d-]/g,'');return v?parseInt(v,10):0;};
+  const tr=[...document.querySelectorAll('#plan-vs-real-table tr')]
+    .find(r=>r.children[0].textContent.includes('Ostatni'));
+  return tr?{plan:cis(tr.children[1].textContent),skut:cis(tr.children[2].textContent)}:null;
+});
+check('součet kategorie bere znaménko (+2 200, ne 3 800)',
+  ostatni&&ostatni.skut===2200,JSON.stringify(ostatni));
+// Výdajová kategorie musí vyjít záporně, ne jako kladné číslo bez znaménka.
+const jidloCis=await pg.evaluate(()=>{
+  const cis=t=>{const v=t.replace(/[^\d-]/g,'');return v?parseInt(v,10):0;};
+  const tr=[...document.querySelectorAll('#plan-vs-real-table tr')]
+    .find(r=>r.children[0].textContent.includes('Jídlo'));
+  return {plan:cis(tr.children[1].textContent),skut:cis(tr.children[2].textContent)};
+});
+check('výdaje jsou se znaménkem mínus (−5 000 / −1 200)',
+  jidloCis.plan===-5000&&jidloCis.skut===-1200,JSON.stringify(jidloCis));
+
+// Tatáž kategorie a měsíc musí dát stejné číslo v Přehledu, v rozpadu pod
+// kliknutím i v matici Roku. Rozpad to odhalil u 9/2026 (131 366 vs −17 326).
+await pg.click('#plan-vs-real-table tr:has-text("Ostatni") td:nth-child(3)');
+await pg.waitForTimeout(300);
+const zRozpadu=await pg.evaluate(()=>{
+  const v=document.getElementById('rozpad-soucet').textContent.replace(/[^\d-]/g,'');
+  return v?parseInt(v,10):0;});
+await pg.keyboard.press('Escape'); await pg.waitForTimeout(200);
+check('rozpad dá stejné číslo jako Přehled',zRozpadu===ostatni.skut,
+  `rozpad ${zRozpadu} vs přehled ${ostatni.skut}`);
+await pg.click('.tab:text-is("Rok")'); await pg.waitForTimeout(500);
+const zMatice=await pg.evaluate(()=>{
+  const cis=t=>{const v=t.replace(/[^\d-]/g,'');return v?parseInt(v,10):0;};
+  const tr=[...document.querySelectorAll('#rok-table tbody tr')]
+    .find(r=>r.children[0].textContent.includes('Ostatni'));
+  return cis(tr.children[2+2*new Date().getMonth()].textContent);
+});
+check('matice Roku dá stejné číslo jako Přehled',zMatice===ostatni.skut,
+  `matice ${zMatice} vs přehled ${ostatni.skut}`);
+await pg.click('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
+
 console.log('\n== 6. Záznamy: odznak a filtr ==');
 await pg.click('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
 check('kde/poznámka jako text',(await pg.textContent('#zaznamy-table')).includes('Albert & <i>spol</i>'));
 check('žádný <i> ze záznamu',(await pg.locator('#zaznamy-table i').count())===0);
-check('výchozí Vše = 8 řádků',(await pg.locator('#zaznamy-table tr').count())===8);
+check('výchozí Vše = 9 řádků',(await pg.locator('#zaznamy-table tr').count())===9);
 check('3 odznaky plán',(await pg.locator('#zaznamy-table .badge-plan').count())===3);
 await pg.selectOption('#z-filtr','skutecnost'); await pg.waitForTimeout(200);
-check('filtr skutečnost = 5 řádků bez odznaku',
-  (await pg.locator('#zaznamy-table tr').count())===5&&(await pg.locator('#zaznamy-table .badge-plan').count())===0);
+check('filtr skutečnost = 6 řádků bez odznaku',
+  (await pg.locator('#zaznamy-table tr').count())===6&&(await pg.locator('#zaznamy-table .badge-plan').count())===0);
 await pg.selectOption('#z-filtr','plan'); await pg.waitForTimeout(200);
 check('filtr plán = 3 řádky s odznakem',
   (await pg.locator('#zaznamy-table tr').count())===3&&(await pg.locator('#zaznamy-table .badge-plan').count())===3);
@@ -351,7 +398,7 @@ check('výhled = zůstatek + plán dopředu',zu.radky.every(r=>r.vyhled===r.zust
 check('součtový řádek sedí',zu.celkem.zust===zu.radky.reduce((a,r)=>a+r.zust,0)
   &&zu.celkem.vyhled===zu.celkem.zust+zu.celkem.plan,JSON.stringify(zu.celkem));
 // 10 000 + 90 000 − 1 200 − 800 − 2 000 (odchozí noha převodu)
-check('zůstatek Účtu je 96 000 (plán ne, převod ano)',zu.radky[0].zust===96000,JSON.stringify(zu.radky[0]));
+check('zůstatek Účtu je 99 000 (plán ne, převod ano)',zu.radky[0].zust===99000,JSON.stringify(zu.radky[0]));
 check('příchozí noha převodu je na cílové peněžence (2 000)',zu.radky[1].zust===2000,JSON.stringify(zu.radky[1]));
 const zpozn=txt(await pg.textContent('#zustatky-pozn'));
 check('poznámka vysvětluje vztah k Pivotu',zpozn.includes('Pivot'),zpozn);
@@ -372,8 +419,8 @@ check('Jídlo: plán −5 000 a skutečnost −1 200',jidlo.includes('-5 000')&&
 // Součet bere i plán bez kategorie (−3 300), takže NENÍ součtem vypsaných řádků:
 // plán 88 000 − 5 000 − 3 300 = 79 700, skutečnost 90 000 − 1 200 − 800 = 88 000
 const soucet=await rTxt('#rok-table tr.soucet');
-check('součet 79 700 / 88 000 (včetně položky bez kategorie)',
-  soucet.includes('79 700')&&soucet.includes('88 000'),soucet);
+check('součet 79 700 / 91 000 (včetně položky bez kategorie)',
+  soucet.includes('79 700')&&soucet.includes('91 000'),soucet);
 check('překročení plánu je červené',(await pg.locator('#rok-table td.diff-over').count())>=1,
   'diff-over: '+(await pg.locator('#rok-table td.diff-over').count()));
 check('nepřekročené je zelené',(await pg.locator('#rok-table td.diff-ok').count())>=2);
@@ -419,8 +466,8 @@ check('součet 12 měsíců = roční sloupec',
   mesicniSoucet.plan===sou.Rok.plan&&mesicniSoucet.skut===sou.Rok.skut,
   JSON.stringify({mesicni:mesicniSoucet,rok:sou.Rok}));
 // plán 88 000 − 5 000 − 3 300 − 1 000, skutečnost 90 000 − 1 200 − 800 − 4 000
-check('roční čísla sedí na data (78 700 / 84 000)',
-  sou.Rok.plan===78700&&sou.Rok.skut===84000,JSON.stringify(sou.Rok));
+check('roční čísla sedí na data (78 700 / 87 000)',
+  sou.Rok.plan===78700&&sou.Rok.skut===87000,JSON.stringify(sou.Rok));
 
 const letos=await pg.textContent('#rok-label');
 await pg.click('#view-rok .month-nav button:first-child'); await pg.waitForTimeout(400);
@@ -573,9 +620,9 @@ const pr=await pg.evaluate(()=>{
 // nepočítá — kdyby ano, vyšlo by 4 000 a podíl mandatorních by spadl na půlku.
 check('odchozí noha převodu není výdaj (2 000, ne 4 000)',pr.vydaje===2000,JSON.stringify(pr));
 // Příjem měsíce je mzda 90 000. Příchozí noha (2 000) není příjem domácnosti.
-check('příchozí noha převodu není příjem (90 000, ne 92 000)',pr.prijmy===90000,JSON.stringify(pr));
+check('příchozí noha převodu není příjem (93 000, ne 95 000)',pr.prijmy===93000,JSON.stringify(pr));
 // Zůstatek naopak obě nohy počítá: 10 000 + 90 000 − 1 200 − 800 − 2 000 + 2 000.
-check('zůstatek obě nohy započítá (98 000)',pr.zustatek===98000,JSON.stringify(pr));
+check('zůstatek obě nohy započítá (101 000)',pr.zustatek===101000,JSON.stringify(pr));
 // 800 z 2 000 je 40 %; se započítaným převodem by to bylo 20 %.
 check('podíl mandatorních se počítá z výdajů bez převodů (40 %)',
   /40 % výdajů/.test(pr.mand),pr.mand);
@@ -590,8 +637,8 @@ const rokPrevod=await pg.evaluate(()=>{
 // kategoriích by u Ostatni seděly 2 000 navíc; obě nohy by se v součtu
 // vyrušily, takže na celkovém čísle by to nebylo vidět.
 const mIdx=new Date().getMonth();
-check('matice Rok převod ignoruje (88 000 za aktuální měsíc)',
-  rokPrevod&&rokPrevod[2+2*mIdx]==='88 000',JSON.stringify(rokPrevod&&rokPrevod[2+2*mIdx]));
+check('matice Rok převod ignoruje (91 000 za aktuální měsíc)',
+  rokPrevod&&rokPrevod[2+2*mIdx]==='91 000',JSON.stringify(rokPrevod&&rokPrevod[2+2*mIdx]));
 const katOstatni=await pg.evaluate(()=>{
   for(const tr of document.querySelectorAll('#rok-table tbody tr')){
     if(tr.children[0].textContent.includes('Ostatni'))
@@ -701,10 +748,10 @@ check('sloupec za každý rok s daty',ro.length===1,JSON.stringify(ro));
 check('dva bary na rok — příjmy a výdaje',ro[0]&&ro[0].bary===2,JSON.stringify(ro));
 // Příjmy 90 000, výdaje 1 200 + 800 + 4 000 (jiný měsíc téhož roku) = 6 000.
 // Převod (2 000 ven i dovnitř) se nepočítá, plán taky ne.
-check('saldo je příjmy − výdaje bez plánu a převodů (+84k)',
-  ro[0]&&ro[0].saldo==='+84k',JSON.stringify(ro));
+check('saldo je příjmy − výdaje bez plánu a převodů (+87k)',
+  ro[0]&&ro[0].saldo==='+87k',JSON.stringify(ro));
 check('popisek nese obě čísla',
-  ro[0]&&/90 000/.test(ro[0].popis)&&/6 000/.test(ro[0].popis),ro[0]&&ro[0].popis);
+  ro[0]&&/93 000/.test(ro[0].popis)&&/6 000/.test(ro[0].popis),ro[0]&&ro[0].popis);
 // Letošek ještě neskončil, takže se s hotovými roky srovnávat nedá.
 check('běžící rok je označený jako neúplný',ro[0]&&ro[0].neuplny,JSON.stringify(ro));
 check('neúplný rok nese značku v popisku',ro[0]&&/\u26a0/.test(ro[0].rok),JSON.stringify(ro));
