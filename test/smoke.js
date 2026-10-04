@@ -614,6 +614,57 @@ check('dva odečty k témuž datu neprojdou',!calls.some(c=>c.method==='POST'));
 await pg.click('#btn-cancel-odecet').catch(()=>{});
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
+console.log('\n== 15c. energie: částka u odečtu a editace ceníku ==');
+await pg.click('.tab:text-is("Energie")'); await pg.waitForTimeout(400);
+const odC=await pg.evaluate(()=>[...document.querySelectorAll('#energie-odecty tbody tr')]
+  .map(tr=>[...tr.children].map(td=>td.textContent.replace(/[\s\u00a0\u202f]+/g,' ').trim())));
+// 2026-02-28: voda 10 m³ × 90 = 900, VT 50 × 6 + NT 200 × 3 = 900, celkem 1 800.
+// Měsíční fix 100 se sem schválně nepočítá — je měsíční, ne za odečet.
+const r0228=odC.find(r=>r[0].startsWith('2026-02-28'));
+check('u odečtu je i částka za vodu (900)',r0228&&r0228[7]==='900',JSON.stringify(r0228));
+check('u odečtu je i částka za elektřinu (900)',r0228&&r0228[8]==='900',JSON.stringify(r0228));
+check('celkem je součet a bez měsíčního fixu (1 800)',r0228&&r0228[9]==='1 800',JSON.stringify(r0228));
+const r0131=odC.find(r=>r[0].startsWith('2026-01-31'));
+check('první odečet nemá spotřebu, tedy ani částku',
+  r0131&&r0131[7]==='—'&&r0131[9]==='—',JSON.stringify(r0131));
+
+// Ceník jde upravit
+check('ceník nabízí úpravu i smazání',
+  (await pg.locator('#energie-cenik tbody tr .edit-btn').count())===2);
+calls.length=0;
+await pg.click('#energie-cenik tbody tr:first-child .edit-btn'); await pg.waitForTimeout(300);
+check('úprava ceníku předvyplní sazby',
+  parseFloat(await pg.inputValue('#ce-vt'))===6&&parseFloat(await pg.inputValue('#ce-nt'))===3,
+  (await pg.inputValue('#ce-vt'))+'/'+(await pg.inputValue('#ce-nt')));
+await pg.fill('#ce-vt','7');
+// Zároveň uzavřeme otevřené období, ať jde níž otestovat navazující.
+await pg.fill('#ce-do','2026-12-31');
+await pg.click('#btn-cenik'); await pg.waitForTimeout(500);
+const patchC=calls.find(c=>c.method==='PATCH'&&c.url.includes('energie_cenik'));
+check('úprava ceníku pošle PATCH',patchC&&JSON.parse(patchC.body).vt===7,
+  patchC?patchC.body:'žádný PATCH');
+// Změna sazby se musí hned promítnout do částek: VT 50 × 7 + NT 200 × 3 = 950.
+const poZmene=await pg.evaluate(()=>[...document.querySelectorAll('#energie-odecty tbody tr')]
+  .map(tr=>[...tr.children].map(td=>td.textContent.replace(/[\s\u00a0\u202f]+/g,' ').trim())))
+  .then(rs=>rs.find(r=>r[0].startsWith('2026-02-28')));
+check('změna sazby se hned projeví v částce (950)',poZmene&&poZmene[8]==='950',
+  JSON.stringify(poZmene));
+
+// Překrývající se období by znamenalo, že sazba k datu je nejednoznačná.
+calls.length=0;
+await pg.fill('#ce-od','2026-01-01'); await pg.fill('#ce-do','2026-06-30');
+await pg.fill('#ce-vt','9'); await pg.fill('#ce-nt','4');
+await pg.click('#btn-cenik'); await pg.waitForTimeout(400);
+check('překrývající se období neprojde',!calls.some(c=>c.method==='POST'),
+  calls.map(c=>c.method+' '+c.url).join(' | '));
+check('appka řekne s čím se překrývá',/překrývá/i.test(await pg.textContent('.toast')),
+  await pg.textContent('.toast'));
+// Navazující období (po uzavřeném konci) už projít musí.
+await pg.fill('#ce-od','2027-01-01'); await pg.fill('#ce-do','');
+await pg.click('#btn-cenik'); await pg.waitForTimeout(500);
+check('navazující období projde',calls.some(c=>c.method==='POST'&&c.url.includes('energie_cenik')));
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
+
 console.log('\n== 16. spoření: čisté jmění, změna, projekce (#10) ==');
 await pg.click('.tab:text-is("Spoření")'); await pg.waitForTimeout(300);
 check('záložka Spoření je vidět',await pg.isVisible('#view-sporeni'));

@@ -429,6 +429,24 @@
           jako rozdíl proti předchozímu odečtu. Když je stav nižší než posledně, appka se
           ozve: buď je to překlep, nebo se měnilo měřidlo a patří k tomu zaškrtnutí.
         </div>
+
+        <div class="form-title" style="margin-top:26px" id="form-cenik-title">Nové období ceníku</div>
+        <div class="field"><label>Platnost od</label><input id="ce-od" type="date"></div>
+        <div class="field"><label>Platnost do</label><input id="ce-do" type="date">
+          <div class="rok-pozn" style="margin-top:4px">prázdné = platí dosud</div></div>
+        <div class="field"><label>VT (Kč/kWh)</label><input id="ce-vt" type="number" step="0.0001"></div>
+        <div class="field"><label>NT (Kč/kWh)</label><input id="ce-nt" type="number" step="0.0001"></div>
+        <div class="field"><label>Měsíční fix (Kč)</label><input id="ce-fix" type="number" step="0.01" placeholder="jistič a stálé platby"></div>
+        <div class="field"><label>Voda (Kč/m³)</label><input id="ce-voda" type="number" step="0.01"></div>
+        <div class="field"><label>Záloha elektřina (Kč)</label><input id="ce-zal-el" type="number" step="0.01"></div>
+        <div class="field"><label>Záloha voda (Kč)</label><input id="ce-zal-voda" type="number" step="0.01"></div>
+        <div class="field"><label>Poznámka</label><input id="ce-poznamka" type="text" placeholder="nepovinné"></div>
+        <button class="btn" id="btn-cenik" onclick="saveCenik()">+ Přidat období</button>
+        <button class="btn secondary" id="btn-cancel-cenik" onclick="cancelEditCenik()" style="display:none;margin-top:6px">Zrušit úpravy</button>
+        <div class="rok-pozn" style="margin-top:10px">
+          Období se nesmí překrývat — sazba k datu se hledá jako první odpovídající,
+          takže z překryvu by appka tiše brala jednu z nich a nikdo by nevěděl kterou.
+        </div>
       </div>
       <div>
     <div class="summary-grid" id="energie-karty"></div>
@@ -466,7 +484,9 @@
     </div>
     <div class="rok-pozn">
       Od nejnovějšího. Spotřeba je rozdíl proti předchozímu odečtu; u řádku, kterým
-      začíná nové měřidlo, se nepočítá.
+      začíná nové měřidlo, se nepočítá. Částka je ta spotřeba vynásobená sazbou platnou
+      k datu odečtu — <strong>bez měsíčního fixu</strong>, ten je měsíční, ne za odečet,
+      a najdeš ho v tabulce po měsících.
     </div>
 
     <div id="energie-empty" class="empty" style="display:none">
@@ -1512,10 +1532,18 @@ function odectySeSpotrebou(){
   const out=[];
   let p=null;
   for(const o of odecty){
-    out.push({...o,
-      sp_voda:(p&&!o.vymena_vodomer)?Number(o.voda)-Number(p.voda):null,
-      sp_t1:(p&&!o.vymena_elektromer)?Number(o.t1)-Number(p.t1):null,
-      sp_t2:(p&&!o.vymena_elektromer)?Number(o.t2)-Number(p.t2):null});
+    const sp_voda=(p&&!o.vymena_vodomer)?Number(o.voda)-Number(p.voda):null;
+    const sp_t1=(p&&!o.vymena_elektromer)?Number(o.t1)-Number(p.t1):null;
+    const sp_t2=(p&&!o.vymena_elektromer)?Number(o.t2)-Number(p.t2):null;
+    // Co ta spotřeba stála, sazbou platnou k datu odečtu. Měsíční fix (jistič
+    // a stálé platby) se sem schválně nepočítá — je měsíční, ne za odečet, a
+    // v měsíci se dvěma odečty by se připočetl dvakrát. Je v tabulce po měsících.
+    const c=sazbaK(o.datum);
+    const kc_voda=(c&&c.voda!=null&&sp_voda!=null)?sp_voda*Number(c.voda):null;
+    const kc_el=(c&&(sp_t1!=null||sp_t2!=null))
+      ?(sp_t1||0)*Number(c.vt)+(sp_t2||0)*Number(c.nt):null;
+    out.push({...o,sp_voda,sp_t1,sp_t2,kc_voda,kc_el,
+      kc:(kc_voda==null&&kc_el==null)?null:(kc_voda||0)+(kc_el||0)});
     p=o;
   }
   return out;
@@ -1605,6 +1633,7 @@ function renderEnergie(){
     `<thead><tr><th class="kat">Datum</th><th class="right">voda m³</th><th class="right">VT kWh</th>
       <th class="right">NT kWh</th><th class="right plan">sp. voda</th>
       <th class="right plan">sp. VT</th><th class="right plan">sp. NT</th>
+      <th class="right">Kč voda</th><th class="right">Kč elektřina</th><th class="right">Kč celkem</th>
       <th class="kat">poznámka</th><th></th></tr></thead><tbody>`
     + odectySeSpotrebou().slice().reverse().map(o=>
       `<tr><td class="kat">${esc(o.datum)}${vym(o.vymena_vodomer,o.vymena_elektromer)}</td>`
@@ -1613,6 +1642,9 @@ function renderEnergie(){
       + `<td class="hodnota plan">${o.sp_voda==null?'—':cis(o.sp_voda)}</td>`
       + `<td class="hodnota plan">${o.sp_t1==null?'—':cis(o.sp_t1)}</td>`
       + `<td class="hodnota plan">${o.sp_t2==null?'—':cis(o.sp_t2)}</td>`
+      + `<td class="hodnota">${o.kc_voda==null?'—':cis(o.kc_voda)}</td>`
+      + `<td class="hodnota">${o.kc_el==null?'—':cis(o.kc_el)}</td>`
+      + `<td class="hodnota">${o.kc==null?'—':cis(o.kc)}</td>`
       + `<td class="kat" style="font-weight:400">${esc(o.poznamka||'')}</td>`
       + `<td class="hodnota" style="white-space:nowrap">`
       +   `<button class="edit-btn" onclick="editOdecet(${o.id})" title="Upravit">✎</button>`
@@ -1623,13 +1655,16 @@ function renderEnergie(){
   document.getElementById('energie-cenik').innerHTML=
     `<thead><tr><th class="kat">Platnost od</th><th class="kat">do</th><th class="right">VT Kč/kWh</th>
       <th class="right">NT Kč/kWh</th><th class="right">měsíční fix</th><th class="right">voda Kč/m³</th>
-      <th class="right plan">záloha el.</th><th class="right plan">záloha voda</th></tr></thead><tbody>`
+      <th class="right plan">záloha el.</th><th class="right plan">záloha voda</th><th></th></tr></thead><tbody>`
     + cenik.slice().reverse().map(c=>
       `<tr><td class="kat">${esc(c.platnost_od)}</td><td class="kat">${esc(c.platnost_do||'—')}</td>`
       + `<td class="hodnota">${esc(c.vt)}</td><td class="hodnota">${esc(c.nt)}</td>`
       + `<td class="hodnota">${cis(c.mesicni_fix)}</td><td class="hodnota">${c.voda==null?'—':cis(c.voda)}</td>`
       + `<td class="hodnota plan">${c.zaloha_elektrina==null?'—':cis(c.zaloha_elektrina)}</td>`
-      + `<td class="hodnota plan">${c.zaloha_voda==null?'—':cis(c.zaloha_voda)}</td></tr>`).join('')
+      + `<td class="hodnota plan">${c.zaloha_voda==null?'—':cis(c.zaloha_voda)}</td>`
+      + `<td class="hodnota" style="white-space:nowrap">`
+      +   `<button class="edit-btn" onclick="editCenik(${c.id})" title="Upravit">✎</button>`
+      +   `<button class="del-btn" onclick="delCenik(${c.id})" title="Smazat">✕</button></td></tr>`).join('')
     + '</tbody>';
 }
 
@@ -1843,6 +1878,86 @@ async function delOdecet(id){
     odecty=odecty.filter(x=>x.id!==id);
     if(editingOdecetId===id)cancelEditOdecet();
     toast('Odečet smazán');syncSt('ok');renderEnergie();
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
+}
+
+// --- CENÍK ENERGIÍ ---
+let editingCenikId=null;
+
+function cenikForm(){
+  const c=i=>document.getElementById(i);
+  const n=i=>c(i).value===''?null:parseFloat(c(i).value);
+  return {platnost_od:c('ce-od').value,platnost_do:c('ce-do').value||null,
+    vt:n('ce-vt'),nt:n('ce-nt'),mesicni_fix:n('ce-fix')??0,voda:n('ce-voda'),
+    zaloha_elektrina:n('ce-zal-el'),zaloha_voda:n('ce-zal-voda'),
+    poznamka:c('ce-poznamka').value.trim()||null};
+}
+// Dvě období nesmí pokrývat totéž datum: sazbaK() bere první odpovídající,
+// takže z překryvu by se tiše vzala jedna z nich a nikdo by nepoznal která.
+function prekryvCeniku(r,krome){
+  const konec=a=>a.platnost_do||'9999-12-31';
+  return cenik.find(c=>c.id!==krome
+    && r.platnost_od<=konec(c) && c.platnost_od<=konec(r))||null;
+}
+
+async function saveCenik(){
+  const r=cenikForm();
+  if(!r.platnost_od){toast('Vyplňte platnost od',true);return;}
+  if(r.vt==null||r.nt==null){toast('Vyplňte sazbu VT i NT',true);return;}
+  if(r.platnost_do&&r.platnost_do<r.platnost_od){toast('„Do" je dřív než „od"',true);return;}
+  const kol=prekryvCeniku(r,editingCenikId);
+  if(kol){toast(`Překrývá se s obdobím od ${kol.platnost_od}`,true);return;}
+  setBtn('btn-cenik',true);syncSt('syncing');
+  try{
+    if(editingCenikId){
+      await api('energie_cenik','PATCH',r,`id=eq.${editingCenikId}`);
+      const i=cenik.findIndex(c=>c.id===editingCenikId);
+      if(i>=0)cenik[i]={...cenik[i],...r};
+      toast('Období upraveno ✓');
+    }else{
+      const res=await api('energie_cenik','POST',r);
+      cenik.push(res[0]);
+      toast('Období přidáno ✓');
+    }
+    cenik.sort((a,b)=>a.platnost_od.localeCompare(b.platnost_od));
+    syncSt('ok');cancelEditCenik();renderEnergie();
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');
+    setBtn('btn-cenik',false,editingCenikId?'Uložit změny':'+ Přidat období');}
+}
+
+function editCenik(id){
+  const c=cenik.find(x=>x.id===id);if(!c)return;
+  editingCenikId=id;
+  const e=i=>document.getElementById(i);
+  e('ce-od').value=c.platnost_od; e('ce-do').value=c.platnost_do||'';
+  e('ce-vt').value=c.vt; e('ce-nt').value=c.nt;
+  e('ce-fix').value=c.mesicni_fix==null?'':c.mesicni_fix;
+  e('ce-voda').value=c.voda==null?'':c.voda;
+  e('ce-zal-el').value=c.zaloha_elektrina==null?'':c.zaloha_elektrina;
+  e('ce-zal-voda').value=c.zaloha_voda==null?'':c.zaloha_voda;
+  e('ce-poznamka').value=c.poznamka||'';
+  e('form-cenik-title').textContent='Upravit období';
+  setBtn('btn-cenik',false,'Uložit změny');
+  e('btn-cancel-cenik').style.display='block';
+  e('ce-vt').focus();
+}
+function cancelEditCenik(){
+  editingCenikId=null;
+  ['ce-od','ce-do','ce-vt','ce-nt','ce-fix','ce-voda','ce-zal-el','ce-zal-voda','ce-poznamka']
+    .forEach(i=>document.getElementById(i).value='');
+  document.getElementById('form-cenik-title').textContent='Nové období ceníku';
+  setBtn('btn-cenik',false,'+ Přidat období');
+  document.getElementById('btn-cancel-cenik').style.display='none';
+}
+async function delCenik(id){
+  const c=cenik.find(x=>x.id===id);if(!c)return;
+  if(!confirm(`Smazat období od ${c.platnost_od}? Odečty z té doby zůstanou bez sazby.`))return;
+  syncSt('syncing');
+  try{
+    await api('energie_cenik','DELETE',null,`id=eq.${id}`);
+    cenik=cenik.filter(x=>x.id!==id);
+    if(editingCenikId===id)cancelEditCenik();
+    toast('Období smazáno');syncSt('ok');renderEnergie();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
 }
 
