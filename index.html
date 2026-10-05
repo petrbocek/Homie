@@ -34,6 +34,12 @@
   .tab:hover:not(.active){color:var(--text);}
 
   main{padding:24px 28px;max-width:1200px;margin:0 auto;}
+  /* Matice Plán vs. skutečnost má 25 sloupců a do čtecí šířky 1 200px se
+     nevejde — scrollovala do strany i na širokém monitoru, kam by se vešla
+     celá. Záložka Rok proto strop zvedá; ostatní záložky si čtecí šířku
+     nechávají, roztažené přes celý 4K displej by se četly hůř. Šířku pořád
+     omezuje okno, takže se tím nic nerozbije ani na malém displeji. */
+  main.sirsi{max-width:2000px;}
   .view{display:none;} .view.active{display:block;}
 
   .summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px;}
@@ -69,7 +75,9 @@
      kategorii jde. .table-wrap má overflow:hidden, proto vlastní obal. */
   .rok-wrap{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow-x:auto;margin-bottom:24px;}
   .rok-table{width:auto;min-width:100%;white-space:nowrap;}
-  .rok-table th,.rok-table td{padding:7px 10px;font-size:11px;}
+  /* Užší odsazení než ve zbytku appky: na 24 číselných sloupcích ušetří
+     přes 140px a rozhodne o tom, jestli se matice na monitor vejde. */
+  .rok-table th,.rok-table td{padding:7px 7px;font-size:11px;}
   .rok-table th.mesic{text-align:center;border-left:1px solid var(--border);}
   .rok-table th.podhlavicka{text-transform:none;letter-spacing:0;font-size:9px;text-align:right;}
   .rok-table td.kat,.rok-table th.kat{position:sticky;left:0;background:var(--surface);z-index:1;min-width:150px;}
@@ -1186,6 +1194,8 @@ function showTab(id){
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===id));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+id).classList.add('active');
+  // Rok potřebuje víc šířky než zbytek appky, viz main.sirsi.
+  document.querySelector('main').classList.toggle('sirsi',id==='rok');
   if(id==='prehled')renderRoky(true);
   if(id==='plan')renderPlan();
   if(id==='rok')renderRok(true);

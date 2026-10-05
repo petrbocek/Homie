@@ -1146,7 +1146,7 @@ console.log('\n== 21. nic nepřetéká do strany (mobil) ==');
 // Hlavička se na telefon nevešla a posouvala do strany celou stránku, ne jen
 // sebe — tabulky i grafy mají vlastní posuvník, takže ven nic lézt nemá.
 const ZALOZKY=['Přehled','Rok','Záznamy','Peněženky','Osnova','Energie','Spoření','Plán'];
-for(const sirka of [320,390]){
+for(const sirka of [320,390,1440,1920]){
   await pg.setViewportSize({width:sirka,height:800}); await pg.waitForTimeout(250);
   const pretekaji=[];
   for(const z of ZALOZKY){
@@ -1156,6 +1156,23 @@ for(const sirka of [320,390]){
   }
   check(`na ${sirka} px se stránka neposouvá do strany`,pretekaji.length===0,pretekaji.join(', '));
 }
+
+// Matice Plán vs. skutečnost má 25 sloupců. Do čtecí šířky 1 200px se nevejde
+// a scrollovala do strany i na monitoru, kam by se vešla celá — proto Rok
+// strop zvedá a ostatní záložky si čtecí šířku nechávají.
+await pg.setViewportSize({width:1920,height:950}); await pg.waitForTimeout(250);
+await klik('.tab:text-is("Rok")'); await pg.waitForTimeout(400);
+const sirkaRok=await pg.evaluate(()=>({
+  trida:document.querySelector('main').classList.contains('sirsi'),
+  main:document.querySelector('main').clientWidth}));
+check('Rok využije šířku monitoru, ne jen čtecí sloupec',
+  sirkaRok.trida&&sirkaRok.main>1200,JSON.stringify(sirkaRok));
+await klik('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);
+const sirkaPrehled=await pg.evaluate(()=>({
+  trida:document.querySelector('main').classList.contains('sirsi'),
+  main:document.querySelector('main').clientWidth}));
+check('ostatní záložky zůstávají v čtecí šířce',
+  !sirkaPrehled.trida&&sirkaPrehled.main<=1200,JSON.stringify(sirkaPrehled));
 await pg.setViewportSize({width:390,height:800}); await pg.waitForTimeout(250);
 check('na mobilu je zkrácený název',
   (await pg.isVisible('.logo-kratky'))&&!(await pg.isVisible('.logo-dlouhy')));
