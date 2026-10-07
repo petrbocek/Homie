@@ -1900,11 +1900,15 @@ function sporeniRadky(){
   const out=[];
   let p=null;
   for(const s of sporeni){
-    const aktiva=Number(s.penzijko)+Number(s.uniqua)+Number(s.amundi);
+    // Sloupce „uniqua" a „amundi" ze sheetu jsou dvě části jedné věci —
+    // investic. Od 4/2024 je amundi nula a uniqua nese součet všeho, takže
+    // dva sloupce jen předstírají rozpad, který v datech dávno není.
+    const investice=Number(s.uniqua)+Number(s.amundi);
+    const aktiva=Number(s.penzijko)+investice;
     const zavazky=Number(s.garant)+Number(s.hypoteka)+Number(s.pujcky);
     const ciste=aktiva+zavazky;
     const disp=(s.akarta==null&&s.ucet==null)?null:Number(s.akarta||0)+Number(s.ucet||0);
-    out.push({...s,aktiva,zavazky,ciste,disp,
+    out.push({...s,investice,aktiva,zavazky,ciste,disp,
       cashflow:(disp==null||s.rezerva==null)?null:disp-Number(s.rezerva),
       zmena:p===null?null:ciste-p.ciste,
       // V řadě chybí prosinec 2022. Změna je pak za dva měsíce, ne za jeden,
@@ -1976,7 +1980,7 @@ function renderSporeni(){
       <div class="card-sub">${predRokem?'proti '+esc(predRokem.datum):'není s čím srovnat'}</div></div>
     <div class="card info"><div class="card-label">Spoření</div>
       <div class="card-value">${fmt(pos.aktiva)}</div>
-      <div class="card-sub">penzijko ${fmt(pos.penzijko)} · UNIQUA ${fmt(pos.uniqua)}</div></div>
+      <div class="card-sub">penzijko ${fmt(pos.penzijko)} · investice ${fmt(pos.investice)}</div></div>
     <div class="card danger"><div class="card-label">Závazky</div>
       <div class="card-value" style="color:var(--red)">${fmt(Math.abs(pos.zavazky))}</div>
       <div class="card-sub">hypotéka ${fmt(Math.abs(pos.hypoteka))} · půjčky ${fmt(Math.abs(pos.pujcky))}</div></div>`;
@@ -1985,8 +1989,8 @@ function renderSporeni(){
 
   const c=n=>n==null?'—':Math.round(n).toLocaleString('cs-CZ');
   document.getElementById('sporeni-table').innerHTML=
-    `<thead><tr><th class="kat">Snímek</th><th class="right">Penzijko</th><th class="right">UNIQUA</th>
-      <th class="right">Amundi</th><th class="right">aktiva</th><th class="right plan">Garant</th>
+    `<thead><tr><th class="kat">Snímek</th><th class="right">Penzijko</th>
+      <th class="right">Investice</th><th class="right">aktiva</th><th class="right plan">Garant</th>
       <th class="right plan">Hypotéka</th><th class="right plan">Půjčky</th><th class="right">závazky</th>
       <th class="right">čisté jmění</th><th class="right">změna</th><th class="right plan">Áčkarta</th>
       <th class="right plan">Účet</th><th class="right">cashflow</th></tr></thead><tbody>`
@@ -1995,8 +1999,8 @@ function renderSporeni(){
       + (r.projekce?' <span class="projekce">odhad</span>':'')
       + (r.mezera?` <span class="mezera" title="předchozí snímek není o měsíc dřív — změna je za delší období">\u26a0</span>`:'')
       + `</td>`
-      + `<td class="hodnota">${c(r.penzijko)}</td><td class="hodnota">${c(r.uniqua)}</td>`
-      + `<td class="hodnota">${c(r.amundi)}</td><td class="hodnota">${c(r.aktiva)}</td>`
+      + `<td class="hodnota">${c(r.penzijko)}</td><td class="hodnota">${c(r.investice)}</td>`
+      + `<td class="hodnota">${c(r.aktiva)}</td>`
       + `<td class="hodnota plan">${c(r.garant)}</td><td class="hodnota plan">${c(r.hypoteka)}</td>`
       + `<td class="hodnota plan">${c(r.pujcky)}</td><td class="hodnota">${c(r.zavazky)}</td>`
       + `<td class="hodnota ${r.ciste>=0?'diff-ok':'diff-over'}">${c(r.ciste)}</td>`

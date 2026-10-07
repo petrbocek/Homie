@@ -934,22 +934,31 @@ const sp=await pg.evaluate(()=>{
   }
   return r;
 });
-// 2021-02: aktiva 110+210+310 = 630 000, závazky −2 085 000 → čisté −1 455 000
-// změna proti lednu (−1 500 000) = +45 000; cashflow 5 000 + 45 000 − 20 000 = 30 000
-check('aktiva jsou součet tří položek (630 000)',
-  sp['2021-02-01'] && sp['2021-02-01'][4]==='630 000',JSON.stringify(sp['2021-02-01']));
+// 2021-02: investice 210+310 = 520 000, aktiva +110 = 630 000,
+// závazky −2 085 000 → čisté −1 455 000; změna proti lednu (−1 500 000) = +45 000;
+// cashflow 5 000 + 45 000 − 20 000 = 30 000
+check('UNIQUA a Amundi jsou jeden sloupec Investice (520 000)',
+  sp['2021-02-01'] && sp['2021-02-01'][2]==='520 000',JSON.stringify(sp['2021-02-01']));
+check('aktiva jsou penzijko + investice (630 000)',
+  sp['2021-02-01'] && sp['2021-02-01'][3]==='630 000',JSON.stringify(sp['2021-02-01']));
 check('závazky jsou součet tří položek (−2 085 000)',
-  sp['2021-02-01'] && /^[-−]2 085 000$/.test(sp['2021-02-01'][8]),JSON.stringify(sp['2021-02-01']));
+  sp['2021-02-01'] && /^[-−]2 085 000$/.test(sp['2021-02-01'][7]),JSON.stringify(sp['2021-02-01']));
 check('čisté jmění = aktiva + závazky (−1 455 000)',
-  sp['2021-02-01'] && /^[-−]1 455 000$/.test(sp['2021-02-01'][9]),JSON.stringify(sp['2021-02-01']));
+  sp['2021-02-01'] && /^[-−]1 455 000$/.test(sp['2021-02-01'][8]),JSON.stringify(sp['2021-02-01']));
 check('změna proti předchozímu snímku (+45 000)',
-  sp['2021-02-01'] && sp['2021-02-01'][10]==='+45 000',JSON.stringify(sp['2021-02-01']));
+  sp['2021-02-01'] && sp['2021-02-01'][9]==='+45 000',JSON.stringify(sp['2021-02-01']));
 check('cashflow = Áčkarta + Účet − rezerva (30 000)',
-  sp['2021-02-01'] && sp['2021-02-01'][13]==='30 000',JSON.stringify(sp['2021-02-01']));
+  sp['2021-02-01'] && sp['2021-02-01'][12]==='30 000',JSON.stringify(sp['2021-02-01']));
 check('první snímek nemá s čím srovnat',
-  sp['2021-01-01'] && sp['2021-01-01'][10]==='—',JSON.stringify(sp['2021-01-01']));
+  sp['2021-01-01'] && sp['2021-01-01'][9]==='—',JSON.stringify(sp['2021-01-01']));
 check('bez zůstatků zůstane cashflow prázdný, ne nula',
-  sp['2021-01-01'] && sp['2021-01-01'][13]==='—',JSON.stringify(sp['2021-01-01']));
+  sp['2021-01-01'] && sp['2021-01-01'][12]==='—',JSON.stringify(sp['2021-01-01']));
+// Hlavička musí sedět na data, ne jen počtem sloupců.
+const spHlav=await pg.evaluate(()=>[...document.querySelectorAll('#sporeni-table thead th')]
+  .map(th=>th.textContent.trim()));
+check('v hlavičce je Investice a žádná UNIQUA ani Amundi',
+  spHlav.includes('Investice')&&!spHlav.includes('UNIQUA')&&!spHlav.includes('Amundi'),
+  JSON.stringify(spHlav));
 // Mezi únorem a dubnem chybí březen — změna je za dva měsíce a musí to být vidět.
 check('díra v řadě je na řádku označená',
   sp['2021-04-01'] && /\u26a0/.test(sp['2021-04-01'][0]),JSON.stringify(sp['2021-04-01']));
