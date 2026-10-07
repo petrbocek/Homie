@@ -117,6 +117,19 @@ const DB={
     {id:8,fond_id:3,datum:'2021-04-01',hodnota:'140000.00'},
     {id:9,fond_id:4,datum:'2021-04-01',hodnota:'90000.00'},
   ],
+  // Půjčky pod sloupcem Půjčky. Součty sedí na `pujcky` ve snímku (−95 000 /
+  // −90 000); 2021-01 rozpad nemá, takže se nesmí stát klikacím. Hodnoty jsou
+  // v datech záporné, stejně jako součet ve snímku.
+  zavazky:[
+    {id:1,nazev:'Auto',veritel:'UniCredit',poradi:1,aktivni:true,poznamka:null},
+    {id:2,nazev:'Konsolidace',veritel:'KB',poradi:2,aktivni:true,poznamka:null},
+  ],
+  zavazky_stavy:[
+    {id:1,zavazek_id:1,datum:'2021-02-01',hodnota:'-65000.00'},
+    {id:2,zavazek_id:2,datum:'2021-02-01',hodnota:'-30000.00'},
+    {id:3,zavazek_id:1,datum:'2021-04-01',hodnota:'-60000.00'},
+    {id:4,zavazek_id:2,datum:'2021-04-01',hodnota:'-30000.00'},
+  ],
   // Druhé období je dávno skončené a nese HTML v datu „do" — nesmí se
   // vyrenderovat jako kód a nesmí se vybrat pro odečty z roku 2026.
   energie_cenik:[
@@ -970,24 +983,27 @@ check('UNIQUA a Amundi jsou jeden sloupec Investice (520 000)',
   sp['2021-02-01'] && sp['2021-02-01'][2]==='520 000',JSON.stringify(sp['2021-02-01']));
 check('aktiva jsou penzijko + investice (630 000)',
   sp['2021-02-01'] && sp['2021-02-01'][3]==='630 000',JSON.stringify(sp['2021-02-01']));
-check('závazky jsou součet tří položek (−2 085 000)',
-  sp['2021-02-01'] && /^[-−]2 085 000$/.test(sp['2021-02-01'][7]),JSON.stringify(sp['2021-02-01']));
+check('závazky jsou hypotéka + půjčky (−2 085 000)',
+  sp['2021-02-01'] && /^[-−]2 085 000$/.test(sp['2021-02-01'][6]),JSON.stringify(sp['2021-02-01']));
 check('čisté jmění = aktiva + závazky (−1 455 000)',
-  sp['2021-02-01'] && /^[-−]1 455 000$/.test(sp['2021-02-01'][8]),JSON.stringify(sp['2021-02-01']));
+  sp['2021-02-01'] && /^[-−]1 455 000$/.test(sp['2021-02-01'][7]),JSON.stringify(sp['2021-02-01']));
 check('změna proti předchozímu snímku (+45 000)',
-  sp['2021-02-01'] && sp['2021-02-01'][9]==='+45 000',JSON.stringify(sp['2021-02-01']));
+  sp['2021-02-01'] && sp['2021-02-01'][8]==='+45 000',JSON.stringify(sp['2021-02-01']));
 check('cashflow = Áčkarta + Účet − rezerva (30 000)',
-  sp['2021-02-01'] && sp['2021-02-01'][12]==='30 000',JSON.stringify(sp['2021-02-01']));
+  sp['2021-02-01'] && sp['2021-02-01'][11]==='30 000',JSON.stringify(sp['2021-02-01']));
 check('první snímek nemá s čím srovnat',
-  sp['2021-01-01'] && sp['2021-01-01'][9]==='—',JSON.stringify(sp['2021-01-01']));
+  sp['2021-01-01'] && sp['2021-01-01'][8]==='—',JSON.stringify(sp['2021-01-01']));
 check('bez zůstatků zůstane cashflow prázdný, ne nula',
-  sp['2021-01-01'] && sp['2021-01-01'][12]==='—',JSON.stringify(sp['2021-01-01']));
+  sp['2021-01-01'] && sp['2021-01-01'][11]==='—',JSON.stringify(sp['2021-01-01']));
 // Hlavička musí sedět na data, ne jen počtem sloupců.
 const spHlav=await pg.evaluate(()=>[...document.querySelectorAll('#sporeni-table thead th')]
   .map(th=>th.textContent.trim()));
 check('v hlavičce je Investice a žádná UNIQUA ani Amundi',
   spHlav.includes('Investice')&&!spHlav.includes('UNIQUA')&&!spHlav.includes('Amundi'),
   JSON.stringify(spHlav));
+// Garant byl ve všech snímcích kromě tří nula; jeho historické zůstatky se
+// slily do Půjček, takže se nesmí ztratit ani sloupec navíc nezůstat.
+check('sloupec Garant je pryč',!spHlav.includes('Garant'),JSON.stringify(spHlav));
 // Mezi únorem a dubnem chybí březen — změna je za dva měsíce a musí to být vidět.
 check('díra v řadě je na řádku označená',
   sp['2021-04-01'] && /\u26a0/.test(sp['2021-04-01'][0]),JSON.stringify(sp['2021-04-01']));
@@ -1760,6 +1776,52 @@ check('nabídka se přepočítá podle měsíce',
 await klik('header .month-nav button:last-child'); await pg.waitForTimeout(500);
 await vyber('#z-filtr-penezenka','vse'); await pg.waitForTimeout(200);
 
+console.log('\n== 26b. rozpad půjček ==');
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
+await klik('.tab:text-is("Spoření")'); await pg.waitForTimeout(300);
+const pujKlik=await pg.evaluate(()=>{
+  const o={};
+  for(const tr of document.querySelectorAll('#sporeni-table tbody tr')){
+    const td=[...tr.querySelectorAll('td')];
+    o[td[0].textContent.trim().slice(0,10)]=
+      {klik:td[5].classList.contains('klik'),hodnota:td[5].textContent.trim()};
+  }
+  return o;
+});
+check('snímek s rozepsanými půjčkami je klikací',pujKlik['2021-04-01'].klik,
+  JSON.stringify(pujKlik));
+// 2021-01 má jen součet −100 000, rozpad k němu není.
+check('snímek bez rozpadu klikací není',!pujKlik['2021-01-01'].klik,JSON.stringify(pujKlik));
+await klik('#sporeni-table tbody tr:nth-child(2) td:nth-child(6)');
+await pg.waitForTimeout(250);
+const rozP=await pg.evaluate(()=>({
+  titulek:document.getElementById('rozpad-titulek').textContent,
+  podtitulek:document.getElementById('rozpad-podtitulek').textContent,
+  soucet:document.getElementById('rozpad-soucet').textContent,
+  radky:[...document.querySelectorAll('#rozpad-telo .rozpad-radek')]
+    .map(r=>r.textContent.replace(/\s+/g,' ').trim())}));
+check('rozpad půjček se otevřel za správný snímek',
+  rozP.titulek==='Půjčky'&&rozP.podtitulek.includes('2021-04-01'),JSON.stringify(rozP));
+// Dluh je v datech záporný, v rozpadu se čte kladně — nadpis už říká, že
+// jde o dluh, a mínus u každé řádky by bylo navíc. 60 000 + 30 000.
+check('součet rozpadu sedí na sloupec Půjčky (90 000)',
+  txt(rozP.soucet)==='90 000 Kč',JSON.stringify(rozP));
+check('u půjčky je i věřitel',/Auto \(UniCredit\)/.test(rozP.radky[0]),JSON.stringify(rozP));
+check('rozpad je od největší půjčky',/Auto/.test(rozP.radky[0]),JSON.stringify(rozP));
+// 2021-03 ve snímcích chybí, takže pohyb je proti 2021-02 (65 000 → 60 000).
+// Dluh je vypsaný kladně, takže splátka ho snižuje — a protože je to zlepšení,
+// musí být zelená. Opačně než u fondu, kde zelený je růst.
+check('splátka snižuje vypsaný dluh',
+  txt(rozP.radky[0]).includes('−5 000 Kč za 2 měsíce'),JSON.stringify(rozP));
+const barvy=await pg.evaluate(()=>[...document.querySelectorAll('#rozpad-telo .rozpad-meta')]
+  .map(m=>m.style.color));
+check('splátka je zelená, ne červená',/green/.test(barvy[0]),JSON.stringify(barvy));
+// „+0 Kč" vypadá jako pohyb, který se nekonal.
+check('nulový pohyb se řekne slovy',
+  /beze změny/.test(rozP.radky[1])&&!/0 Kč za/.test(rozP.radky[1]),JSON.stringify(rozP));
+await pg.evaluate(()=>zavriRozpad());
+await pg.waitForTimeout(150);
+
 console.log('\n== 27. zápis měsíčního snímku ==');
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 await klik('.tab:text-is("Spoření")'); await pg.waitForTimeout(300);
@@ -1800,7 +1862,19 @@ check('je vidět, z kolika fondů se součet skládá',
 
 await fill('#sn-penzijko','140000');
 await fill('#sn-hypoteka','1960000');
-await fill('#sn-pujcky','80000');
+// Půjčky se zadávají po jednotlivých dluzích, kladně; součet si appka sečte.
+const polPuj=await pg.evaluate(()=>[...document.querySelectorAll('#sn-zavazky input')]
+  .map(i=>({id:i.id,ph:i.placeholder})));
+check('nabídnou se obě půjčky',polPuj.length===2,JSON.stringify(polPuj));
+check('nápověda u půjčky je kladná',
+  txt(polPuj[0].ph)==='minule 60 000',JSON.stringify(polPuj));
+await fill('#sn-z-1','55000');
+await fill('#sn-z-2','25000');
+await pg.waitForTimeout(150);
+const sPuj=await pg.evaluate(()=>({v:document.getElementById('sn-pujcky').value,
+  ro:document.getElementById('sn-pujcky').readOnly}));
+check('půjčky se sečtou (80 000) a nejdou přepsat',
+  sPuj.v==='80000'&&sPuj.ro,JSON.stringify(sPuj));
 await fill('#sn-akarta','2000');
 await fill('#sn-ucet','38000');
 await fill('#sn-rezerva','20000');
@@ -1819,7 +1893,8 @@ check('nahrazený odhad přestane být odhadem',snTelo.projekce===false,postSn.b
 // Dluh nikdo nepíše s mínusem, ale čisté jmění = aktiva + závazky, takže
 // v datech musí být záporný. Kdyby se uložil kladně, jmění by vyskočilo.
 check('závazky se ukládají záporně',
-  snTelo.hypoteka===-1960000&&snTelo.pujcky===-80000&&snTelo.garant===0,postSn.body);
+  snTelo.hypoteka===-1960000&&snTelo.pujcky===-80000,postSn.body);
+check('garant se už neposílá',!('garant' in snTelo),postSn.body);
 check('investice jdou do sloupce uniqua, amundi zůstává nula',
   snTelo.uniqua===470000&&snTelo.amundi===0,postSn.body);
 
@@ -1835,6 +1910,16 @@ check('prázdný fond se nezapíše jako nula',
   !telaFo.some(x=>x.fond_id===4),postFo.body);
 check('stav fondu nese měsíc snímku',
   telaFo.every(x=>x.datum==='2021-05-01'),postFo.body);
+
+const postZa=calls.filter(c=>c.method==='POST'&&c.url.includes('zavazky_stavy')).pop();
+check('stavy půjček se zapíšou taky',!!postZa,
+  calls.map(c=>c.method+' '+c.url).join(' | '));
+const telaZa=JSON.parse(postZa.body);
+// Dluh se zadává kladně, ale v datech musí být záporný — stejně jako součet.
+check('půjčky se ukládají záporně',
+  telaZa.length===2&&telaZa.every(x=>x.hodnota<0),postZa.body);
+check('součet uložených půjček sedí na snímek',
+  telaZa.reduce((a,x)=>a+x.hodnota,0)===snTelo.pujcky,postZa.body+' | '+snTelo.pujcky);
 
 check('po zápisu zůstává dialog otevřený',await pg.isVisible('#dlg-sporeni'));
 check('pole se vyprázdní pro další měsíc',(await hodnota('#sn-penzijko'))==='');
@@ -1862,10 +1947,12 @@ const ed=await pg.evaluate(()=>({mesic:document.getElementById('sn-mesic').value
   hyp:document.getElementById('sn-hypoteka').value,
   inv:document.getElementById('sn-investice').value,
   f1:(document.getElementById('sn-f-1')||{}).value,
+  z1:(document.getElementById('sn-z-1')||{}).value,
   nadpis:document.getElementById('form-sporeni-title').textContent}));
 check('✎ otevře snímek k úpravě',ed.nadpis==='Upravit snímek'&&ed.mesic==='2021-04',
   JSON.stringify(ed));
 check('dluh se nabídne kladně',ed.hyp==='1980000',JSON.stringify(ed));
+check('rozepsaná půjčka se nabídne kladně',Number(ed.z1)===60000,JSON.stringify(ed));
 check('stavy fondů se do formuláře načtou',Number(ed.f1)===310000,JSON.stringify(ed));
 check('investice odpovídají součtu fondů',ed.inv==='540000',JSON.stringify(ed));
 calls.length=0;
