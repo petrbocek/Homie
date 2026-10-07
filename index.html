@@ -1726,7 +1726,13 @@ function energieMesice(){
     if(!mapa.has(k))mapa.set(k,
       {mesic:k,voda:0,t1:0,t2:0,vodaZnama:false,elZnama:false,chybi:false,posledni:o.datum});
     const m=mapa.get(k);
-    if(o.sp_voda===null||o.sp_t1===null||o.slito_voda||o.slito_el)m.chybi=true;
+    // ⚠ patří měsíci, jehož spotřeba není úplná ani srovnatelná. Díra je až
+    // tam, kde řádek dané měřidlo nese, ale spotřebu z něj spočítat nelze.
+    // Řádek, který měřidlo vůbec nenese — vynulovaný vodoměr bez stavu
+    // elektřiny — o něm nic netvrdí a značit kvůli němu měsíc nemá co.
+    const vodaDira=o.voda!=null&&o.sp_voda===null;
+    const elDira=(o.t1!=null&&o.t2!=null)&&o.sp_t1===null;
+    if(vodaDira||elDira||o.slito_voda||o.slito_el)m.chybi=true;
     // Měsíc, ve kterém se měřidlo vůbec neodečetlo, nemá spotřebu nula — nemá
     // ji vůbec. Nula by se čtla jako „nic jsme nespotřebovali" a u elektřiny
     // by k ní appka ještě přidala měsíční fix jako celý náklad měsíce.
@@ -1745,6 +1751,8 @@ function energieMesice(){
     // vyšel jako přeplatek jen proto, že chybí odečet.
     const cely=el!=null&&vo!=null;
     return {...m,voda,t1,t2,sazba:c,naklad_el:el,naklad_voda:vo,naklad,zaloha:zal,
+            // Měsíc, kde se jedno z měřidel neodečetlo vůbec, je taky neúplný.
+            chybi:m.chybi||!m.vodaZnama||!m.elZnama,
             rozdil:(!cely||zal==null)?null:zal-naklad};
   }).sort((a,b)=>a.mesic.localeCompare(b.mesic));
 }

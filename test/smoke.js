@@ -875,6 +875,52 @@ check('nikde negativní spotřeba',
   JSON.stringify(r3.map(r=>r.bunky)));
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
+console.log('\n== 15f. vynulované měřidlo bez stavu toho druhého ==');
+// Reálný případ ze 7/2025: vodoměr se měnil hned po odečtu k 30. 6., takže
+// k témuž dni patří i vynulovaný nový vodoměr — ale stav elektroměru se
+// k výměně vody nezapisuje. Takový řádek o elektřině nic netvrdí a nesmí
+// kvůli němu měsíc spadnout do ⚠.
+await klik('.tab:text-is("Energie")'); await pg.waitForTimeout(400);
+const mesRadek4=async m=>pg.evaluate(mm=>{
+  const tr=[...document.querySelectorAll('#energie-mesice tbody tr')]
+    .find(x=>x.children[0].textContent.trim().startsWith(mm));
+  return tr?{bunky:[...tr.children].map(td=>td.textContent.replace(/[\s  ]+/g,' ').trim()),
+             vymena:!!tr.querySelector('.vymena')}:null;
+},m);
+
+await fill('#od-datum','2026-05-31');
+await fill('#od-voda','20'); await fill('#od-t1','1200'); await fill('#od-t2','5800');
+await klik('#btn-odecet'); await pg.waitForTimeout(500);
+// Vynulovaný vodoměr k témuž dni, elektroměr prázdný.
+calls.length=0;
+await fill('#od-datum','2026-05-31');
+await fill('#od-voda','0'); await fill('#od-t1',''); await fill('#od-t2','');
+await zaskrtni('#od-vym-voda');
+await klik('#btn-odecet'); await pg.waitForTimeout(500);
+check('vynulovaný vodoměr k témuž dni projde',
+  calls.some(c=>c.method==='POST'&&c.url.includes('energie_odecty')),
+  await pg.textContent('.toast').catch(()=>''));
+await odskrtni('#od-vym-voda');
+
+const kveten2=await mesRadek4('2026-05');
+check('voda se počítá dál (8 m³) a výměna přidá nulu',
+  kveten2&&kveten2.bunky[1]==='8',JSON.stringify(kveten2));
+check('elektřina měsíce se vynulovaným vodoměrem nerozbije (50 / 200)',
+  kveten2&&kveten2.bunky[2]==='50'&&kveten2.bunky[3]==='200',JSON.stringify(kveten2));
+// Tohle je ta oprava: řádek bez stavu elektroměru o elektřině nic netvrdí.
+check('měsíc není ⚠ jen proto, že řádek nenese druhé měřidlo',
+  kveten2&&!kveten2.vymena,JSON.stringify(kveten2));
+
+// A nový vodoměr se od nuly počítá dál.
+await fill('#od-datum','2026-06-30');
+await fill('#od-voda','6'); await fill('#od-t1','1250'); await fill('#od-t2','5900');
+await klik('#btn-odecet'); await pg.waitForTimeout(500);
+const cerven2=await mesRadek4('2026-06');
+check('nový vodoměr se počítá od nuly (6 m³)',
+  cerven2&&cerven2.bunky[1]==='6',JSON.stringify(cerven2));
+check('následující měsíc je úplný, bez ⚠',cerven2&&!cerven2.vymena,JSON.stringify(cerven2));
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
+
 console.log('\n== 16. spoření: čisté jmění, změna, projekce (#10) ==');
 await klik('.tab:text-is("Spoření")'); await pg.waitForTimeout(300);
 check('záložka Spoření je vidět',await pg.isVisible('#view-sporeni'));
