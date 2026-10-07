@@ -88,6 +88,35 @@ const DB={
      garant:'0.00',hypoteka:'-1970000.00',pujcky:'-85000.00',
      akarta:'0.00',ucet:'40000.00',rezerva:'20000.00',projekce:true,poznamka:null,zdroj_radek:5},
   ],
+  // Fondy pod sloupcem Investice. Součty za měsíc musí sedět na `uniqua` +
+  // `amundi` ze snímku (500 000 / 520 000 / 540 000) — rozpad pod kliknutím
+  // nemá být přibližný. Projekce 2021-05 fondy nemá, takže se nesmí stát
+  // klikací. „Starý fond" končí v 2021-02 a „Nový fond" ve 2021-04 začíná,
+  // takže 2021-04 je přesunový měsíc a změna se v něm nepočítá nikomu.
+  // Půjčka sám sobě není investice: nemá výnos, jen splácení.
+  fondy:[
+    {id:1,nazev:'Akciovy fond',mesicni_vklad:'1000.00',poradi:1,druh:'fond',
+     aktivni:true,barva:null,poznamka:null},
+    {id:2,nazev:'Stary fond',mesicni_vklad:'0.00',poradi:2,druh:'fond',
+     aktivni:false,barva:null,poznamka:null},
+    {id:3,nazev:'Novy fond',mesicni_vklad:'0.00',poradi:3,druh:'fond',
+     aktivni:true,barva:null,poznamka:null},
+    {id:4,nazev:'Pujcka sam sobe',mesicni_vklad:'0.00',poradi:4,druh:'pujcka',
+     aktivni:true,barva:null,poznamka:null},
+    {id:5,nazev:'Fond bez stavu',mesicni_vklad:'0.00',poradi:5,druh:'fond',
+     aktivni:true,barva:null,poznamka:null},
+  ],
+  fondy_stavy:[
+    {id:1,fond_id:1,datum:'2021-01-01',hodnota:'290000.00'},
+    {id:2,fond_id:2,datum:'2021-01-01',hodnota:'110000.00'},
+    {id:3,fond_id:4,datum:'2021-01-01',hodnota:'100000.00'},
+    {id:4,fond_id:1,datum:'2021-02-01',hodnota:'300000.00'},
+    {id:5,fond_id:2,datum:'2021-02-01',hodnota:'120000.00'},
+    {id:6,fond_id:4,datum:'2021-02-01',hodnota:'100000.00'},
+    {id:7,fond_id:1,datum:'2021-04-01',hodnota:'310000.00'},
+    {id:8,fond_id:3,datum:'2021-04-01',hodnota:'140000.00'},
+    {id:9,fond_id:4,datum:'2021-04-01',hodnota:'90000.00'},
+  ],
   // Druhé období je dávno skončené a nese HTML v datu „do" — nesmí se
   // vyrenderovat jako kód a nesmí se vybrat pro odečty z roku 2026.
   energie_cenik:[
@@ -997,6 +1026,125 @@ check('skutečnost je plná čára přes tři body',
 // Projekce musí začít v posledním skutečném bodě, jinak je v čáře díra.
 check('projekce je čárkovaná a navazuje na skutečnost',
   graf&&graf[1].body===2&&graf[1].carkovana,JSON.stringify(graf));
+
+console.log('\n== 16b. fondy pod Investicemi ==');
+await klik('.tab:text-is("Spoření")'); await pg.waitForTimeout(300);
+check('blok výkonnosti fondů je vidět',await pg.isVisible('#fondy-blok'));
+const fo=await pg.evaluate(()=>{
+  const o={};
+  for(const tr of document.querySelectorAll('#fondy-table tbody tr')){
+    const td=[...tr.querySelectorAll('td')].map(x=>x.textContent.trim());
+    o[td[0].replace(/\s+/g,' ')]=td;
+  }
+  return o;
+});
+const fk=Object.keys(fo);
+check('fond bez jediného stavu se nevypisuje',!fk.some(k=>/Fond bez stavu/.test(k)),fk.join('|'));
+check('fondy jsou v pořadí ze sheetu',
+  fk[0].startsWith('Akciovy')&&fk[1].startsWith('Stary')&&fk[2].startsWith('Novy'),fk.join('|'));
+const fAkc=fo[fk.find(k=>k.startsWith('Akciovy'))];
+// 290 000 → 300 000 při vkladu 1 000 je zisk 9 000; druhý krok (do 2021-04) je
+// přesunový měsíc a nepočítá se, jinak by se přičetlo i 10 000 z přeskládání.
+check('hodnota fondu je poslední stav (310 000)',txt(fAkc[2])==='310 000',JSON.stringify(fAkc));
+check('vložené se dopočte z měsíčního vkladu (1 000)',txt(fAkc[3])==='1 000',JSON.stringify(fAkc));
+check('zisk je změna bez vkladu (+9 000)',txt(fAkc[4])==='+9 000',JSON.stringify(fAkc));
+check('výnos je přepočtený na rok (+37,2 %)',txt(fAkc[5])==='+37,2 %',JSON.stringify(fAkc));
+check('přesunový měsíc se do sledovaných nepočítá (1 m)',txt(fAkc[6])==='1 m',JSON.stringify(fAkc));
+const fStary=fo[fk.find(k=>k.startsWith('Stary'))];
+check('skončený fond je označený ⚠',/⚠/.test(fk.find(k=>k.startsWith('Stary'))),fk.join('|'));
+check('fond bez vkladu má u vkladu pomlčku',txt(fStary[1])==='—',JSON.stringify(fStary));
+check('zisk fondu bez vkladu je celá změna (+10 000)',txt(fStary[4])==='+10 000',JSON.stringify(fStary));
+const fNovy=fo[fk.find(k=>k.startsWith('Novy'))];
+check('fond s jediným snímkem nepředstírá výkonnost',
+  txt(fNovy[4])==='—'&&txt(fNovy[5])==='—',JSON.stringify(fNovy));
+const fPuj=fo[fk.find(k=>/Pujcka/.test(k))];
+check('půjčka je označená jako půjčka',/půjčka/.test(fk.find(k=>/Pujcka/.test(k))),fk.join('|'));
+check('u půjčky se výnos nepočítá',/splácím sám sobě/.test(fPuj.join(' ')),JSON.stringify(fPuj));
+const fSoucet=await pg.evaluate(()=>[...document.querySelectorAll('#fondy-table tbody tr.soucet td')]
+  .map(x=>x.textContent.trim()));
+// Součet hodnot je jen za fondy, které se drží: 310 000 + 140 000. Půjčka
+// (90 000) do investic nepatří a „Stary fond" (120 000) už v portfoliu není —
+// jeho poslední stav by v součtu lhal.
+check('součet nezahrnuje půjčku ani skončený fond (450 000)',
+  txt(fSoucet[2])==='450 000',JSON.stringify(fSoucet));
+// Zisk se naopak sčítá i za skončený fond: 9 000 + 10 000 vydělal.
+check('součet zisků bere i skončený fond (+19 000)',
+  txt(fSoucet[4])==='+19 000',JSON.stringify(fSoucet));
+
+// Ztráta i procenta stojí v řádku vedle sebe a musí mít stejné mínus —
+// toLocaleString sází spojovník, zbytek appky typografické −.
+const ztrata=await pg.evaluate(()=>{
+  const puv=JSON.parse(JSON.stringify(fondyStavy));
+  fondyStavy.find(s=>s.fond_id===1&&s.datum==='2021-02-01').hodnota='270000.00';
+  const tr=[...new DOMParser().parseFromString('<table>'+fondyTabulka()+'</table>','text/html')
+    .querySelectorAll('tbody tr')][0];
+  fondyStavy.length=0;fondyStavy.push(...puv);
+  return [...tr.querySelectorAll('td')].map(x=>x.textContent.trim());
+});
+check('ztráta má typografické mínus, ne spojovník',
+  txt(ztrata[4])==='\u221221 000'&&txt(ztrata[5]).startsWith('\u2212'),JSON.stringify(ztrata));
+
+// Rozpad investic za snímek: součet fondů musí sedět na číslo ve sloupci.
+const invKlik=await pg.evaluate(()=>{
+  const o={};
+  for(const tr of document.querySelectorAll('#sporeni-table tbody tr')){
+    const td=[...tr.querySelectorAll('td')];
+    o[td[0].textContent.trim().slice(0,10)]=
+      {klik:td[2].classList.contains('klik'),hodnota:td[2].textContent.trim()};
+  }
+  return o;
+});
+check('snímek s fondy je klikací',invKlik['2021-04-01'].klik,JSON.stringify(invKlik));
+check('projekce bez fondů klikací není',!invKlik['2021-05-01'].klik,JSON.stringify(invKlik));
+await klik('#sporeni-table tbody tr:nth-child(2) td.klik');
+await pg.waitForTimeout(200);
+check('rozpad investic se otevřel',await pg.isVisible('#rozpad'));
+const rozInv=await pg.evaluate(()=>({
+  titulek:document.getElementById('rozpad-titulek').textContent,
+  podtitulek:document.getElementById('rozpad-podtitulek').textContent,
+  soucet:document.getElementById('rozpad-soucet').textContent,
+  radky:[...document.querySelectorAll('#rozpad-telo .rozpad-radek')]
+    .map(r=>r.textContent.replace(/\s+/g,' ').trim())}));
+check('rozpad je za správný snímek',
+  rozInv.titulek==='Investice'&&rozInv.podtitulek.includes('2021-04-01'),JSON.stringify(rozInv));
+// 310 000 + 140 000 + 90 000 = 540 000 = uniqua 220 000 + amundi 320 000.
+check('součet rozpadu sedí na sloupec Investice (540 000)',
+  txt(rozInv.soucet)==='540 000 Kč',JSON.stringify(rozInv));
+check('rozpad vypsal všechny tři fondy',rozInv.radky.length===3,JSON.stringify(rozInv));
+check('rozpad je od největšího',/Akciovy/.test(rozInv.radky[0]),JSON.stringify(rozInv));
+// 2021-03 ve snímcích chybí, takže pohyb je proti 2021-02 (90 000 − 100 000)
+// a je za dva měsíce, ne za jeden. Dokud se hledal striktně předchozí měsíc,
+// nezobrazil se u takového snímku pohyb vůbec.
+check('rozpad ukazuje pohyb proti předchozímu snímku fondu',
+  rozInv.radky.some(r=>txt(r).includes('−10 000 Kč za 2 měsíce')),JSON.stringify(rozInv));
+check('nově vzniklý fond pohyb nepředstírá',
+  rozInv.radky.some(r=>/Novy fond/.test(r)&&!/za \d+ měsíc/.test(r)),JSON.stringify(rozInv));
+await pg.evaluate(()=>zavriRozpad());
+await pg.waitForTimeout(150);
+
+// Historie jednoho fondu — klikem na jeho řádek.
+await klik('#fondy-table tbody tr:nth-child(1)');
+await pg.waitForTimeout(200);
+const rozF=await pg.evaluate(()=>({
+  titulek:document.getElementById('rozpad-titulek').textContent,
+  podtitulek:document.getElementById('rozpad-podtitulek').textContent,
+  soucet:document.getElementById('rozpad-soucet').textContent,
+  radky:[...document.querySelectorAll('#rozpad-telo .rozpad-radek')]
+    .map(r=>r.textContent.replace(/\s+/g,' ').trim())}));
+check('historie fondu se otevřela',rozF.titulek==='Akciovy fond',JSON.stringify(rozF));
+check('v podtitulku je měsíční vklad i zisk',
+  txt(rozF.podtitulek).includes('vklad 1 000 Kč/měs')&&txt(rozF.podtitulek).includes('+9 000'),
+  JSON.stringify(rozF));
+check('historie jde od nejnovějšího',txt(rozF.radky[0]).includes('2021-04'),JSON.stringify(rozF));
+check('přesunový měsíc je v historii přiznaný',
+  /přeskládání portfolia/.test(rozF.radky[0]),JSON.stringify(rozF));
+check('běžný měsíc rozdělí pohyb na vklad a výnos',
+  txt(rozF.radky[1]).includes('z toho vklad 1 000 Kč')&&txt(rozF.radky[1]).includes('výnos +9 000'),
+  JSON.stringify(rozF));
+check('první snímek nepředstírá pohyb',
+  txt(rozF.radky[2]).includes('první snímek'),JSON.stringify(rozF));
+await pg.evaluate(()=>zavriRozpad());
+await pg.waitForTimeout(150);
 
 console.log('\n== 17. převody mezi peněženkami (#11) ==');
 await klik('.tab:text-is("Přehled")'); await pg.waitForTimeout(300);

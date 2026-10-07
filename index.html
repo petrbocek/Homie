@@ -85,6 +85,11 @@
   .rok-table td.plan{color:var(--muted);border-left:1px solid var(--border);}
   .rok-table th.plan{border-left:1px solid var(--border);}
   .rok-table tr.rozbalitelna td.kat{cursor:pointer;}
+  /* Názvy fondů jsou dlouhé („Amundi ONLINE Platforma – dluhopisové fondy"). */
+  #fondy-table td.kat,#fondy-table th.kat{min-width:270px;max-width:270px;
+    overflow:hidden;text-overflow:ellipsis;}
+  #fondy-table tr.rozbalitelna{cursor:pointer;}
+  #fondy-table tr.rozbalitelna:hover td.kat{color:var(--accent);}
   .rok-table tr.rozbalitelna:hover td.kat{color:var(--accent);}
   .rok-table tr.podkat td{color:var(--muted);font-size:10px;}
   .rok-table tr.podkat td.kat{padding-left:26px;}
@@ -104,6 +109,7 @@
     .rok-table .badge{display:none;}
     /* Ve Spoření nese první sloupec i značku „odhad", takže potřebuje o kus víc. */
     #sporeni-table td.kat,#sporeni-table th.kat{min-width:134px;max-width:134px;}
+    #fondy-table td.kat,#fondy-table th.kat{min-width:150px;max-width:150px;}
     .rok-table th,.rok-table td{padding:7px 7px;}
   }
 
@@ -592,6 +598,28 @@
       v sheetu drží bokem; její výše se v čase měnila (70 000 → 10 000 → 50 000 Kč).
     </div>
 
+    <div id="fondy-blok" style="display:none">
+      <div class="section-title" style="margin-bottom:10px">Výkonnost fondů</div>
+      <div class="rok-wrap">
+        <table class="rok-table" id="fondy-table"></table>
+      </div>
+      <div class="rok-pozn">
+        Rozpad sloupce <strong>Investice</strong> — klikni na číslo ve snímku a uvidíš,
+        který fond v tom měsíci kolik držel; klikni na řádek fondu a uvidíš jeho historii.
+        <strong>Vložené částky nejsou nikde zapsané</strong>, v sheetu jsou jen měsíční stavy,
+        takže se dopočítávají jako měsíční vklad × počet sledovaných měsíců. U fondů bez
+        pravidelného vkladu je to přesné, u ostatních odhad — a zisk s ním. Výnos p.a. je
+        zisk proti průměrnému zůstatku, přepočtený na rok: fond, který se celou dobu plnil
+        z nuly, by proti poslední hodnotě vycházel nesmyslně. Měsíc, ve kterém se portfolio
+        přeskládalo (3/2026), se do výkonnosti nepočítá — přesun mezi fondy od výnosu
+        odlišit nejde. <strong class="projekce">půjčka</strong> není investice:
+        BocBank jsou vybrané úspory půjčené sám sobě, roste splácením, ne trhem.
+        Řádek <em>fondy celkem</em> sčítá hodnotu jen za fondy, které se drží — bez
+        půjčky a bez fondů označených <strong>⚠</strong>, u nichž je poslední
+        stav už jen historie. Zisk se sčítá i za ně, vydělaly ho.
+      </div>
+    </div>
+
     <div id="sporeni-empty" class="empty" style="display:none">
       <span class="emoji">🏦</span>Žádné snímky
     </div>
@@ -857,6 +885,7 @@ let cY=new Date().getFullYear(), cM=new Date().getMonth();
 let rY=new Date().getFullYear();        // rok v záložce Rok, nezávislý na měsíci
 const rozbalene=new Set();              // hlavní kategorie rozkliknuté na podkategorie
 let zaznamy=[], penezenky=[], osnova=[], odecty=[], cenik=[], sporeni=[];
+let fondy=[], fondyStavy=[];
 let editingZaznamId=null, editingPenezenkaId=null, selectedColor=COLORS[0];
 let session=null;
 const SESS_KEY='homie_session';
@@ -1918,6 +1947,12 @@ function sporeniRadky(){
   }
   return out;
 }
+// Má snímek rozpad po fondech? Fondy jsou vedené až od 4/2024, starší snímky
+// a projekce nesou jen součet.
+function maFondy(datum){
+  const m=datum.slice(0,7);
+  return fondyStavy.some(s=>s.datum.slice(0,7)===m);
+}
 // Měsíc o `o` dál, ve tvaru YYYY-MM.
 function mesicPosun(datum,o){
   const r=+datum.slice(0,4), m=+datum.slice(5,7)-1+o;
@@ -1955,6 +1990,192 @@ function sporeniGraf(radky){
     +`</svg>`;
 }
 
+// --- FONDY ---
+// `fondy_stavy` drží hodnotu každého fondu k prvnímu dni měsíce. Součet za
+// měsíc se rovná sloupci „investice" ze snímku — platí to ve všech měsících,
+// které fondy pokrývají, a proto je rozpad pod kliknutím úplný, ne přibližný.
+function fondStavy(fondId){
+  return fondyStavy.filter(s=>s.fond_id===fondId)
+    .sort((a,b)=>a.datum.localeCompare(b.datum));
+}
+function fondName(fondId){
+  const f=fondy.find(x=>x.id===fondId);
+  return f?f.nazev:('fond #'+fondId);
+}
+// Měsíce, ve kterých se portfolio přeskládalo: některý fond v nich vznikl nebo
+// skončil, takže peníze tekly mezi fondy. Změnu hodnoty v takovém měsíci nejde
+// rozdělit na přesun a výnos, a tak se do výkonnosti nepočítá žádnému fondu.
+// Není to odhad podle velikosti skoku — vychází to z toho, kde řada začíná a
+// končí, takže se to nerozsype, až přijde další restrukturalizace.
+function presunoveMesice(){
+  const m=new Set();
+  for(const f of fondy){
+    const st=fondStavy(f.id);
+    if(!st.length)continue;
+    m.add(st[0].datum.slice(0,7));
+    m.add(mesicPosun(st[st.length-1].datum,1));
+  }
+  return m;
+}
+// Výkonnost jednoho fondu. Vklady nikde zapsané nejsou — v sheetu jsou jen
+// měsíční stavy — takže se dopočítávají jako `mesicni_vklad` × počet měsíců.
+// U fondů s nulovým vkladem je to přesné, u ostatních odhad; v appce to pod
+// tabulkou stojí, ať se to nečte jako naměřený údaj.
+function fondVykon(f,presuny){
+  const st=fondStavy(f.id);
+  const zaklad={fond:f,st,prvni:st.length?st[0].datum:null,
+    posledni:st.length?st[st.length-1].datum:null,
+    hodnota:st.length?Number(st[st.length-1].hodnota):null,
+    mesicu:0,vlozeno:0,zisk:null,vykon:null,presunu:0};
+  if(st.length<2)return zaklad;
+  let zisk=0,vlozeno=0,mesicu=0,soucetZakladu=0,presunu=0;
+  for(let i=1;i<st.length;i++){
+    const krok=mesicuMezi(st[i-1].datum.slice(0,7),st[i].datum.slice(0,7));
+    if(presuny.has(st[i].datum.slice(0,7))){presunu++;continue;}
+    const vkl=Number(f.mesicni_vklad)*krok;
+    zisk+=Number(st[i].hodnota)-Number(st[i-1].hodnota)-vkl;
+    vlozeno+=vkl;mesicu+=krok;soucetZakladu+=Number(st[i-1].hodnota)*krok;
+  }
+  // Procenta z průměrného zůstatku a přepočtená na rok. „Zisk / poslední
+  // hodnota" by u fondu, který se celou dobu plnil z nuly, ukazovala nesmysl.
+  const prumer=mesicu?soucetZakladu/mesicu:0;
+  return {...zaklad,mesicu,vlozeno,zisk,presunu,prumer,
+    vykon:(mesicu&&prumer>0)?zisk/prumer*12/mesicu:null};
+}
+// Fondy i s dopočtem, v pořadí ze sheetu. Fond bez jediného stavu se
+// nevypisuje — nebylo by u něj co ukázat.
+function fondyVykon(){
+  const presuny=presunoveMesice();
+  return fondy.filter(f=>fondStavy(f.id).length)
+    .sort((a,b)=>(a.poradi-b.poradi)||(a.id-b.id))
+    .map(f=>fondVykon(f,presuny));
+}
+
+function fondyTabulka(){
+  const radky=fondyVykon();
+  if(!radky.length)return '';
+  const posledniMesic=fondyStavy.map(s=>s.datum.slice(0,7)).sort().pop();
+  const c=n=>n==null?'—':Math.round(n).toLocaleString('cs-CZ');
+  const pct=n=>n==null?'—':(n>=0?'+':'−')+Math.abs(n*100).toFixed(1).replace('.',',')+' %';
+  // Zisk a procenta stojí v řádku vedle sebe, takže musí mít stejné mínus.
+  // `toLocaleString` vrací spojovník, zbytek appky sází typografické −.
+  const zn=n=>fmtZnM(n).replace('-','\u2212');
+  // Součet jen za fondy — půjčka sem nepatří, jde o jiný druh peněz.
+  const fin=radky.filter(r=>r.fond.druh==='fond');
+  // Hodnota a vklad jen za fondy, které se ještě drží: hodnota skončeného
+  // fondu je poslední známý stav, ne peníze v portfoliu, a v součtu by lhala.
+  // Zisk se naopak sčítá za všechny — vydělaly ho, i když už nejsou.
+  const drzene=fin.filter(r=>r.posledni.slice(0,7)===posledniMesic);
+  const soucet={
+    hodnota:drzene.reduce((a,r)=>a+(r.hodnota||0),0),
+    vklad:drzene.reduce((a,r)=>a+Number(r.fond.mesicni_vklad),0),
+    vlozeno:fin.reduce((a,r)=>a+r.vlozeno,0),
+    zisk:fin.reduce((a,r)=>a+(r.zisk||0),0)};
+  return `<thead><tr><th class="kat">Fond</th><th class="right">vklad/měs</th>
+      <th class="right">hodnota</th><th class="right plan">vloženo</th>
+      <th class="right">zisk</th><th class="right">výnos p.a.</th>
+      <th class="right plan">sledováno</th></tr></thead><tbody>`
+    + radky.map(r=>{
+      const pujcka=r.fond.druh==='pujcka';
+      const skoncil=r.posledni&&r.posledni.slice(0,7)<posledniMesic;
+      return `<tr class="rozbalitelna" onclick="fondRozpad(${r.fond.id})">`
+        + `<td class="kat" title="${esc(r.fond.nazev)}">${esc(r.fond.nazev)}`
+        + (pujcka?' <span class="projekce">půjčka</span>':'')
+        + (skoncil?` <span class="mezera" title="poslední stav je ${esc(r.posledni)} — fond už v portfoliu není">⚠</span>`:'')
+        + `</td>`
+        + `<td class="hodnota">${Number(r.fond.mesicni_vklad)?c(r.fond.mesicni_vklad):'—'}</td>`
+        + `<td class="hodnota">${c(r.hodnota)}</td>`
+        + `<td class="hodnota plan">${r.vlozeno?c(r.vlozeno):'—'}</td>`
+        // U půjčky sám sobě není výnos trhu, ale splácení — procenta by lhala.
+        + (pujcka
+          ? `<td class="hodnota diff-none" colspan="2">splácím sám sobě</td>`
+          : `<td class="hodnota ${r.zisk==null?'diff-none':(r.zisk>=0?'diff-ok':'diff-over')}">`
+            + `${r.zisk==null?'—':zn(r.zisk)}</td>`
+            + `<td class="hodnota ${r.vykon==null?'diff-none':(r.vykon>=0?'diff-ok':'diff-over')}">`
+            + `${pct(r.vykon)}</td>`)
+        + `<td class="hodnota plan">${r.mesicu?r.mesicu+' m':'—'}</td></tr>`;
+    }).join('')
+    + `<tr class="soucet"><td class="kat" title="jen fondy, které se drží — bez půjčky a bez skončených">fondy celkem</td>`
+    + `<td class="hodnota">${c(soucet.vklad)}</td>`
+    + `<td class="hodnota">${c(soucet.hodnota)}</td>`
+    + `<td class="hodnota plan">${c(soucet.vlozeno)}</td>`
+    + `<td class="hodnota ${soucet.zisk>=0?'diff-ok':'diff-over'}">${zn(soucet.zisk)}</td>`
+    + `<td class="hodnota diff-none">—</td><td class="hodnota plan">—</td></tr>`
+    + '</tbody>';
+}
+
+// Rozpad investic za jeden snímek — který fond kolik drží a o kolik se proti
+// předchozímu měsíci pohnul.
+function investiceRozpad(datum){
+  const m=datum.slice(0,7);
+  const radky=fondyStavy.filter(s=>s.datum.slice(0,7)===m)
+    .map(s=>{
+      // Předchozí snímek fondu, ne nutně předchozí měsíc: ve snímcích chybí
+      // prosinec 2022 a tam by se pohyb jinak tiše nezobrazil vůbec.
+      const p=fondStavy(s.fond_id).filter(x=>x.datum.slice(0,7)<m).pop();
+      const f=fondy.find(x=>x.id===s.fond_id);
+      return {nazev:fondName(s.fond_id),poradi:f?f.poradi:999,
+        hodnota:Number(s.hodnota),zmena:p?Number(s.hodnota)-Number(p.hodnota):null,
+        krok:p?mesicuMezi(p.datum.slice(0,7),m):0,
+        druh:f?f.druh:'fond'};
+    })
+    .sort((a,b)=>b.hodnota-a.hodnota);
+  if(!radky.length)return;
+  const soucet=radky.reduce((a,r)=>a+r.hodnota,0);
+  document.getElementById('rozpad-titulek').textContent='Investice';
+  document.getElementById('rozpad-podtitulek').textContent=
+    `snímek ${datum} · ${radky.length===1?'1 fond':(radky.length<5?radky.length+' fondy':radky.length+' fondů')}`;
+  const sc=document.getElementById('rozpad-soucet');
+  sc.textContent=fmt(soucet);
+  sc.style.color='var(--green)';
+  document.getElementById('rozpad-telo').innerHTML=radky.map(r=>
+    `<div class="rozpad-radek">`
+    + `<div class="rozpad-popis"><div class="rozpad-kde">${esc(r.nazev)}</div>`
+    +   (r.zmena==null?'':`<div class="rozpad-meta" style="color:${r.zmena>=0?'var(--green)':'var(--red)'}">`
+          +`${fmtZn(r.zmena)} ${r.krok===1?'za měsíc':'za '+r.krok+' měsíce'}</div>`)
+    + `</div>`
+    + `<div class="rozpad-castka">${fmt(r.hodnota)}</div></div>`).join('');
+  document.getElementById('rozpad').classList.add('open');
+}
+
+// Historie jednoho fondu: co měsíc hodnota, pohyb a kolik z pohybu je vklad.
+function fondRozpad(fondId){
+  const f=fondy.find(x=>x.id===fondId);if(!f)return;
+  const st=fondStavy(fondId);if(!st.length)return;
+  const presuny=presunoveMesice();
+  const v=fondVykon(f,presuny);
+  document.getElementById('rozpad-titulek').textContent=f.nazev;
+  document.getElementById('rozpad-podtitulek').textContent=
+    [Number(f.mesicni_vklad)?'vklad '+fmt(f.mesicni_vklad)+'/měs':'bez měsíčního vkladu',
+     `${st.length} snímků`,
+     f.druh==='pujcka'?'půjčka sám sobě':(v.zisk==null?null:'zisk '+fmtZn(v.zisk))]
+    .filter(Boolean).join(' · ');
+  const sc=document.getElementById('rozpad-soucet');
+  sc.textContent=fmt(v.hodnota);
+  sc.style.color='var(--green)';
+  document.getElementById('rozpad-telo').innerHTML=st.slice().reverse().map((s,i,a)=>{
+    const p=a[i+1];
+    const presun=presuny.has(s.datum.slice(0,7))&&p;
+    const krok=p?mesicuMezi(p.datum.slice(0,7),s.datum.slice(0,7)):0;
+    const zmena=p?Number(s.hodnota)-Number(p.hodnota):null;
+    const vkl=Number(f.mesicni_vklad)*krok;
+    const vynos=(zmena==null||presun)?null:zmena-vkl;
+    const meta=presun
+      ? 'přeskládání portfolia — pohyb není výnos'
+      : [zmena==null?'první snímek':null,
+         vkl?'z toho vklad '+fmt(vkl):null,
+         vynos==null?null:'výnos '+fmtZn(vynos)].filter(Boolean).join(' · ');
+    return `<div class="rozpad-radek">`
+      + `<div class="rozpad-datum">${s.datum.slice(0,7)}</div>`
+      + `<div class="rozpad-popis"><div class="rozpad-kde">${fmt(s.hodnota)}</div>`
+      +   (meta?`<div class="rozpad-meta">${esc(meta)}</div>`:'')
+      + `</div>`
+      + `<div class="rozpad-castka" style="color:${zmena==null?'var(--muted)':(zmena>=0?'var(--green)':'var(--red)')}">`
+      +   `${zmena==null?'—':fmtZn(zmena)}</div></div>`;
+  }).join('');
+  document.getElementById('rozpad').classList.add('open');
+}
+
 function renderSporeni(){
   const empty=document.getElementById('sporeni-empty');
   const karty=document.getElementById('sporeni-karty');
@@ -1987,6 +2208,11 @@ function renderSporeni(){
 
   document.getElementById('sporeni-graf').innerHTML=sporeniGraf(radky);
 
+  const blok=document.getElementById('fondy-blok');
+  const fondyHtml=fondyTabulka();
+  blok.style.display=fondyHtml?'':'none';
+  document.getElementById('fondy-table').innerHTML=fondyHtml;
+
   const c=n=>n==null?'—':Math.round(n).toLocaleString('cs-CZ');
   document.getElementById('sporeni-table').innerHTML=
     `<thead><tr><th class="kat">Snímek</th><th class="right">Penzijko</th>
@@ -1999,7 +2225,12 @@ function renderSporeni(){
       + (r.projekce?' <span class="projekce">odhad</span>':'')
       + (r.mezera?` <span class="mezera" title="předchozí snímek není o měsíc dřív — změna je za delší období">\u26a0</span>`:'')
       + `</td>`
-      + `<td class="hodnota">${c(r.penzijko)}</td><td class="hodnota">${c(r.investice)}</td>`
+      + `<td class="hodnota">${c(r.penzijko)}</td>`
+      // Klikat jde jen tam, kde rozpad po fondech existuje — u starších
+      // snímků a u projekce se investice na fondy rozepsat nedají.
+      + (maFondy(r.datum)
+        ? `<td class="hodnota klik" onclick="investiceRozpad('${r.datum}')" title="Rozepsat na jednotlivé fondy">${c(r.investice)}</td>`
+        : `<td class="hodnota">${c(r.investice)}</td>`)
       + `<td class="hodnota">${c(r.aktiva)}</td>`
       + `<td class="hodnota plan">${c(r.garant)}</td><td class="hodnota plan">${c(r.hypoteka)}</td>`
       + `<td class="hodnota plan">${c(r.pujcky)}</td><td class="hodnota">${c(r.zavazky)}</td>`
@@ -2629,12 +2860,15 @@ async function init(){
     penezenky=w||[];osnova=o||[];
     // záznamů je přes 22 tisíc, takže stránkovaně a s rozstřelem podle id
     zaznamy=await apiAll('zaznamy','select=*&order=datum.desc,id.desc','záznamy');
-    const [od,ce,sp]=await Promise.all([
+    const [od,ce,sp,fo,fs]=await Promise.all([
       apiAll('energie_odecty','select=*&order=datum.asc,zdroj_radek.asc'),
       api('energie_cenik','GET',null,'select=*&order=platnost_od.asc'),
-      apiAll('sporeni','select=*&order=datum.asc')
+      apiAll('sporeni','select=*&order=datum.asc'),
+      api('fondy','GET',null,'select=*&order=poradi.asc,id.asc'),
+      apiAll('fondy_stavy','select=*&order=datum.asc')
     ]);
     odecty=(od||[]).slice().sort(poradiOdectu);cenik=ce||[];sporeni=sp||[];
+    fondy=fo||[];fondyStavy=fs||[];
     document.getElementById('loading').style.display='none';
     document.getElementById('z-datum').value=dnes();
     document.getElementById('pr-datum').value=dnes();
