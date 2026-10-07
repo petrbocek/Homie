@@ -1668,17 +1668,18 @@ const dlgy=await pg.evaluate(()=>[...document.querySelectorAll('.dlg-pozadi')].m
   nadpis:!!d.querySelector('.dlg-hlava .form-title'),
   krizek:!!d.querySelector('.dlg-x'),
   otevreny:d.classList.contains('open')})));
-check('v appce je šest zadávacích dialogů',dlgy.length===6,JSON.stringify(dlgy.map(x=>x.id)));
+check('v appce je sedm zadávacích dialogů',dlgy.length===7,JSON.stringify(dlgy.map(x=>x.id)));
 check('každý má nadpis i křížek',dlgy.every(x=>x.nadpis&&x.krizek),JSON.stringify(dlgy));
 check('žádný nezůstal otevřený',dlgy.every(x=>!x.otevreny),JSON.stringify(dlgy));
 const sirotci=await pg.evaluate(()=>
   [...document.querySelectorAll('.form-title')].filter(t=>!t.closest('.dlg-hlava')).length);
 check('žádný formulář nezůstal mimo dialog',sirotci===0,String(sirotci));
-for(const [zal,tl] of [['Energie',2],['Peněženky',2],['Osnova',1],['Záznamy',1]]){
+for(const [zal,tl] of [['Energie',2],['Peněženky',2],['Osnova',1],['Záznamy',1],['Spoření',1]]){
   await pg.click(`.tab:text-is("${zal}")`); await pg.waitForTimeout(250);
   const n=await pg.evaluate(z=>document.querySelectorAll(
     '#view-'+z+' .list-head .btn').length,
-    {'Energie':'energie','Peněženky':'penezenky','Osnova':'osnova','Záznamy':'zaznamy'}[zal]);
+    {'Energie':'energie','Peněženky':'penezenky','Osnova':'osnova','Záznamy':'zaznamy',
+     'Spoření':'sporeni'}[zal]);
   check(`záložka ${zal} má ${tl} tlačítko/a pro zápis`,n===tl,String(n));
 }
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
@@ -1758,6 +1759,124 @@ check('nabídka se přepočítá podle měsíce',
   ||(await volbyPen()).some(o=>o.v==='zadna'));
 await klik('header .month-nav button:last-child'); await pg.waitForTimeout(500);
 await vyber('#z-filtr-penezenka','vse'); await pg.waitForTimeout(200);
+
+console.log('\n== 27. zápis měsíčního snímku ==');
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
+await klik('.tab:text-is("Spoření")'); await pg.waitForTimeout(300);
+calls.length=0;
+await klik('#view-sporeni .list-head .btn'); await pg.waitForTimeout(250);
+check('tlačítko dialog snímku otevře',await pg.isVisible('#dlg-sporeni'));
+// Poslední skutečný snímek je 2021-04 (2021-05 je projekce), takže na řadě je
+// 2021-05. Nabídnout dnešek by u rozepsané historie udělalo díru.
+check('nabídne se měsíc po posledním skutečném snímku',
+  (await hodnota('#sn-mesic'))==='2021-05',await hodnota('#sn-mesic'));
+const polFond=await pg.evaluate(()=>[...document.querySelectorAll('#sn-fondy input')]
+  .map(i=>({id:i.id,ph:i.placeholder,v:i.value})));
+// „Stary fond" skončil v 2021-02 a v 2021-05 stav nemá — ve formuláři nemá co
+// dělat. „Fond bez stavu" je naopak aktivní a nabídnout se musí, jinak by do
+// nově založeného fondu nešlo zapsat první hodnotu.
+check('skončený fond se nenabízí, nový ano',
+  polFond.length===4&&!polFond.some(f=>f.id==='sn-f-2')
+  &&polFond.some(f=>f.id==='sn-f-5'),JSON.stringify(polFond));
+// Opsaná hodnota z minula vypadá jako skutečnost; patří do nápovědy, ne do pole.
+check('minulý stav je jen nápověda, ne předvyplněná hodnota',
+  polFond.every(f=>f.v===''),JSON.stringify(polFond));
+check('nápověda ukazuje stav z předchozího měsíce',
+  txt(polFond.find(f=>f.id==='sn-f-1').ph)==='minule 310 000',JSON.stringify(polFond));
+
+check('bez fondů se investice zadávají ručně',
+  !(await pg.evaluate(()=>document.getElementById('sn-investice').readOnly)));
+await fill('#sn-f-1','320000');
+await fill('#sn-f-3','150000');
+await pg.waitForTimeout(150);
+const inv=await pg.evaluate(()=>({v:document.getElementById('sn-investice').value,
+  ro:document.getElementById('sn-investice').readOnly,
+  pozn:document.getElementById('sn-investice-pozn').textContent}));
+// Dvakrát totéž číslo se nepíše — jinak by rozpad přestal sedět na sloupec.
+check('investice se sečtou z fondů (470 000)',inv.v==='470000',JSON.stringify(inv));
+check('sečtené investice nejdou přepsat ručně',inv.ro,JSON.stringify(inv));
+check('je vidět, z kolika fondů se součet skládá',
+  /2 z 4 fond/.test(inv.pozn),JSON.stringify(inv));
+
+await fill('#sn-penzijko','140000');
+await fill('#sn-hypoteka','1960000');
+await fill('#sn-pujcky','80000');
+await fill('#sn-akarta','2000');
+await fill('#sn-ucet','38000');
+await fill('#sn-rezerva','20000');
+await klik('#btn-sporeni'); await pg.waitForTimeout(700);
+
+// Na 2021-05 je v datech projekce. Skutečný snímek ji nahradí (PATCH), ne
+// přidá vedle — jinak by měsíc měl dva řádky a změna by vyšla nula. Odmítnout
+// zápis taky nejde: dopředu je rozepsaných odhadů víc a na řadě je vždycky
+// měsíc, pro který odhad existuje.
+const postSn=calls.filter(c=>/sporeni/.test(c.url)&&(c.method==='POST'||c.method==='PATCH')).pop();
+check('skutečný snímek nahradí odhad za ten měsíc',
+  postSn&&postSn.method==='PATCH',calls.map(c=>c.method+' '+c.url).join(' | '));
+const snTelo=JSON.parse(postSn.body);
+check('snímek se zapíše k prvnímu dni měsíce',snTelo.datum==='2021-05-01',postSn.body);
+check('nahrazený odhad přestane být odhadem',snTelo.projekce===false,postSn.body);
+// Dluh nikdo nepíše s mínusem, ale čisté jmění = aktiva + závazky, takže
+// v datech musí být záporný. Kdyby se uložil kladně, jmění by vyskočilo.
+check('závazky se ukládají záporně',
+  snTelo.hypoteka===-1960000&&snTelo.pujcky===-80000&&snTelo.garant===0,postSn.body);
+check('investice jdou do sloupce uniqua, amundi zůstává nula',
+  snTelo.uniqua===470000&&snTelo.amundi===0,postSn.body);
+
+const postFo=calls.filter(c=>c.method==='POST'&&c.url.includes('fondy_stavy')).pop();
+check('stavy fondů se zapíšou jedním dotazem',!!postFo,
+  calls.map(c=>c.method+' '+c.url).join(' | '));
+// Bez merge-duplicates by druhý zápis téhož měsíce spadl na unikátu.
+check('stavy fondů jdou upsertem',
+  (postFo.prefer||'').includes('resolution=merge-duplicates'),String(postFo.prefer));
+const telaFo=JSON.parse(postFo.body);
+check('zapíšou se jen vyplněné fondy',telaFo.length===2,postFo.body);
+check('prázdný fond se nezapíše jako nula',
+  !telaFo.some(x=>x.fond_id===4),postFo.body);
+check('stav fondu nese měsíc snímku',
+  telaFo.every(x=>x.datum==='2021-05-01'),postFo.body);
+
+check('po zápisu zůstává dialog otevřený',await pg.isVisible('#dlg-sporeni'));
+check('pole se vyprázdní pro další měsíc',(await hodnota('#sn-penzijko'))==='');
+check('nabídne se další měsíc',(await hodnota('#sn-mesic'))==='2021-06',
+  await hodnota('#sn-mesic'));
+await pg.evaluate(()=>zavriDlg('dlg-sporeni'));
+await pg.waitForTimeout(200);
+
+// Snímek za tentýž měsíc podruhé by vyrobil dva řádky a změna by vyšla nula.
+await klik('#view-sporeni .list-head .btn'); await pg.waitForTimeout(250);
+await pg.fill('#sn-mesic','2021-04');
+await pg.waitForTimeout(150);
+calls.length=0;
+await klik('#btn-sporeni'); await pg.waitForTimeout(400);
+check('duplicitní měsíc se odmítne',
+  !calls.some(c=>c.method==='POST'&&c.url.includes('sporeni')),
+  calls.map(c=>c.method+' '+c.url).join(' | '));
+await pg.evaluate(()=>zavriDlg('dlg-sporeni'));
+await pg.waitForTimeout(200);
+
+// Úprava existujícího snímku: dluhy se musí nabídnout kladně, jinak by se
+// každým uložením otočilo znaménko a jmění by skákalo.
+await klik('#sporeni-table tbody tr:nth-child(2) .edit-btn'); await pg.waitForTimeout(300);
+const ed=await pg.evaluate(()=>({mesic:document.getElementById('sn-mesic').value,
+  hyp:document.getElementById('sn-hypoteka').value,
+  inv:document.getElementById('sn-investice').value,
+  f1:(document.getElementById('sn-f-1')||{}).value,
+  nadpis:document.getElementById('form-sporeni-title').textContent}));
+check('✎ otevře snímek k úpravě',ed.nadpis==='Upravit snímek'&&ed.mesic==='2021-04',
+  JSON.stringify(ed));
+check('dluh se nabídne kladně',ed.hyp==='1980000',JSON.stringify(ed));
+check('stavy fondů se do formuláře načtou',Number(ed.f1)===310000,JSON.stringify(ed));
+check('investice odpovídají součtu fondů',ed.inv==='540000',JSON.stringify(ed));
+calls.length=0;
+await fill('#sn-hypoteka','1975000');
+await klik('#btn-sporeni'); await pg.waitForTimeout(700);
+const patchSn=calls.filter(c=>c.method==='PATCH'&&c.url.includes('sporeni')).pop();
+check('úprava jde PATCHem, ne novým řádkem',!!patchSn,
+  calls.map(c=>c.method+' '+c.url).join(' | '));
+check('upravený dluh se zase uloží záporně',
+  JSON.parse(patchSn.body).hypoteka===-1975000,patchSn.body);
+check('uložená úprava dialog zavře',!(await pg.isVisible('#dlg-sporeni')));
 
 console.log('\n== chyby v konzoli ==');
 // 400 = záměrně špatné heslo v testu 2

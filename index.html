@@ -108,7 +108,7 @@
     .rok-table td.kat,.rok-table th.kat{min-width:104px;max-width:104px;overflow:hidden;text-overflow:ellipsis;}
     .rok-table .badge{display:none;}
     /* Ve Spoření nese první sloupec i značku „odhad", takže potřebuje o kus víc. */
-    #sporeni-table td.kat,#sporeni-table th.kat{min-width:134px;max-width:134px;}
+    #sporeni-table td.kat,#sporeni-table th.kat{min-width:190px;max-width:190px;}
     #fondy-table td.kat,#fondy-table th.kat{min-width:150px;max-width:150px;}
     .rok-table th,.rok-table td{padding:7px 7px;}
   }
@@ -273,6 +273,14 @@
     padding:2px 8px;border-radius:6px;line-height:1;}
   .dlg-x:hover{color:var(--text);background:var(--surface2);}
   .dlg-telo{overflow-y:auto;padding:16px 18px;}
+  /* Dialog snímku má tři různé druhy polí (fondy, majetek, závazky) a bez
+     předělu se to čte jako jeden dlouhý sloupec čísel. */
+  .dlg-sekce{font-size:10px;text-transform:uppercase;letter-spacing:0.08em;color:var(--muted);
+    border-top:1px solid var(--border);margin:18px 0 12px;padding-top:12px;}
+  .dlg-sekce:first-child{border-top:none;margin-top:0;padding-top:0;}
+  .dlg-sekce span{text-transform:none;letter-spacing:0;opacity:0.75;}
+  .sn-vklad{text-transform:none;letter-spacing:0;color:var(--accent4);margin-left:6px;}
+  #sn-investice[readonly]{color:var(--muted);cursor:not-allowed;}
   .klik{cursor:pointer;text-decoration:underline;text-decoration-style:dotted;
     text-underline-offset:3px;text-decoration-color:var(--muted);}
   .klik:hover{color:var(--accent2);}
@@ -585,7 +593,10 @@
       <div class="cara-legenda"><span>skutečnost</span><span class="proj">projekce</span></div>
     </div>
 
-    <div class="section-title" style="margin-bottom:10px">Měsíční snímky</div>
+    <div class="list-head" style="margin-bottom:10px">
+      <div class="section-title">Měsíční snímky</div>
+      <button class="btn uzky" onclick="novySnimek()">+ Zapsat snímek</button>
+    </div>
     <div class="rok-wrap">
       <table class="rok-table" id="sporeni-table"></table>
     </div>
@@ -617,6 +628,54 @@
         Řádek <em>fondy celkem</em> sčítá hodnotu jen za fondy, které se drží — bez
         půjčky a bez fondů označených <strong>⚠</strong>, u nichž je poslední
         stav už jen historie. Zisk se sčítá i za ně, vydělaly ho.
+      </div>
+    </div>
+
+    <!-- zadávací dialog -->
+    <div class="dlg-pozadi" id="dlg-sporeni" onclick="if(event.target===this)zavriDlg('dlg-sporeni')">
+      <div class="dlg-box" role="dialog" aria-modal="true" aria-labelledby="form-sporeni-title">
+        <div class="dlg-hlava">
+          <div class="form-title" id="form-sporeni-title">Nový snímek</div>
+          <button class="dlg-x" onclick="zavriDlg('dlg-sporeni')" title="Zavřít" aria-label="Zavřít">✕</button>
+        </div>
+        <div class="dlg-telo">
+        <div class="field"><label>Měsíc</label>
+          <input id="sn-mesic" type="month" onchange="zmenaMesiceSnimku()">
+          <div class="rok-pozn" style="margin-top:4px">stav k prvnímu dni měsíce</div></div>
+
+        <div class="dlg-sekce">Fondy</div>
+        <div id="sn-fondy"></div>
+        <div class="field"><label>Investice celkem</label>
+          <input id="sn-investice" type="number" step="0.01">
+          <div class="rok-pozn" style="margin-top:4px" id="sn-investice-pozn"></div></div>
+
+        <div class="dlg-sekce">Ostatní majetek</div>
+        <div class="field"><label>Penzijko</label><input id="sn-penzijko" type="number" step="0.01"></div>
+        <div class="field"><label>Áčkarta</label><input id="sn-akarta" type="number" step="0.01" placeholder="nepovinné"></div>
+        <div class="field"><label>Účet</label><input id="sn-ucet" type="number" step="0.01" placeholder="nepovinné"></div>
+        <div class="field"><label>Rezerva</label><input id="sn-rezerva" type="number" step="0.01" placeholder="nepovinné"></div>
+
+        <div class="dlg-sekce">Závazky <span>zadávej kladně, appka je odečte</span></div>
+        <div class="field"><label>Hypotéka</label><input id="sn-hypoteka" type="number" step="0.01" placeholder="zbývá splatit"></div>
+        <div class="field"><label>Půjčky</label><input id="sn-pujcky" type="number" step="0.01" placeholder="zbývá splatit"></div>
+        <div class="field"><label>Garant</label><input id="sn-garant" type="number" step="0.01" placeholder="zbývá splatit"></div>
+
+        <div class="field">
+          <label style="display:flex;align-items:center;gap:8px;text-transform:none;letter-spacing:0;font-size:11px">
+            <input type="checkbox" id="sn-projekce" style="width:auto;margin:0"> Jen odhad (projekce do budoucna)</label>
+        </div>
+        <div class="field"><label>Poznámka</label><input id="sn-poznamka" type="text" placeholder="nepovinné"></div>
+        <button class="btn" id="btn-sporeni" onclick="saveSporeni()">+ Zapsat snímek</button>
+        <button class="btn secondary" id="btn-cancel-sporeni" onclick="zavriDlg('dlg-sporeni')" style="display:none;margin-top:6px">Zrušit úpravy</button>
+        <div class="rok-pozn" style="margin-top:10px">
+          <strong>Investice se sčítají z fondů</strong>, jakmile je vyplněný aspoň jeden —
+          dvakrát se stejné číslo nepíše a rozpad pak sedí na sloupec. U starých snímků,
+          kde fondy vedené nejsou, se součet zapíše ručně. Hodnota u fondu, kterou
+          nenajdeš, <strong>patří nechat prázdná</strong>: opsaný stav z minula vypadá
+          jako skutečnost a výkonnost z něj pak počítá nulový měsíc. Minulý stav je
+          proto jen v šedé nápovědě, ne předvyplněný.
+        </div>
+        </div>
       </div>
     </div>
 
@@ -2224,6 +2283,11 @@ function renderSporeni(){
       `<tr><td class="kat">${esc(r.datum)}`
       + (r.projekce?' <span class="projekce">odhad</span>':'')
       + (r.mezera?` <span class="mezera" title="předchozí snímek není o měsíc dřív — změna je za delší období">\u26a0</span>`:'')
+      // Tlačítka patří do prvního sloupce: ten drží při scrollování na místě,
+      // v posledním by byla u široké tabulky za okrajem obrazovky.
+      + `<span style="white-space:nowrap;margin-left:6px">`
+      +   `<button class="edit-btn" onclick="editSporeni(${r.id})" title="Upravit">✎</button>`
+      +   `<button class="del-btn" onclick="delSporeni(${r.id})" title="Smazat">✕</button></span>`
       + `</td>`
       + `<td class="hodnota">${c(r.penzijko)}</td>`
       // Klikat jde jen tam, kde rozpad po fondech existuje — u starších
@@ -2240,6 +2304,189 @@ function renderSporeni(){
       + `<td class="hodnota plan">${c(r.akarta)}</td><td class="hodnota plan">${c(r.ucet)}</td>`
       + `<td class="hodnota">${c(r.cashflow)}</td></tr>`).join('')
     + '</tbody>';
+}
+
+// --- SNÍMKY SPOŘENÍ: zápis a úpravy ---
+let editingSporeniId=null;
+
+// Pole na jednotlivé fondy se staví podle `fondy`, ne natvrdo — až přibude
+// desátý, objeví se ve formuláři sám. Skončený fond se nabídne jen u měsíce,
+// kde stav opravdu má: jinak by ve formuláři napořád zabíral místo, ale
+// u starého snímku by zase nešel opravit.
+function sporeniFondyPole(mesic){
+  const box=document.getElementById('sn-fondy');
+  const predchozi=mesic?mesicPosun(mesic+'-01',-1):null;
+  const mam=new Set(mesic?fondyStavy.filter(s=>s.datum.slice(0,7)===mesic).map(s=>s.fond_id):[]);
+  const vyber=fondy.filter(f=>f.aktivni||mam.has(f.id))
+    .sort((a,b)=>(a.poradi-b.poradi)||(a.id-b.id));
+  box.innerHTML=vyber.length?vyber.map(f=>{
+    const p=predchozi&&fondyStavy.find(x=>x.fond_id===f.id&&x.datum.slice(0,7)===predchozi);
+    return `<div class="field"><label>${esc(f.nazev)}`
+      + (Number(f.mesicni_vklad)?`<span class="sn-vklad">vklad ${esc(fmt(f.mesicni_vklad))}</span>`:'')
+      + `</label><input id="sn-f-${f.id}" type="number" step="0.01" oninput="prepocetInvestic()"`
+      // Minulý stav jen jako nápověda, ne předvyplněný: opsaná hodnota vypadá
+      // jako skutečnost a výkonnost by z ní počítala měsíc s nulovým výnosem.
+      + ` placeholder="${p?'minule '+Math.round(p.hodnota).toLocaleString('cs-CZ'):'nezadáno'}"></div>`;
+  }).join(''):'<div class="rok-pozn">Žádné fondy — investice se zapíšou jedním číslem.</div>';
+}
+
+// Jakmile je vyplněný aspoň jeden fond, je součet jejich věc a ručně se do něj
+// nesahá — jinak by rozpad přestal sedět na sloupec Investice.
+function prepocetInvestic(){
+  const pole=[...document.querySelectorAll('#sn-fondy input')];
+  const vyplnene=pole.filter(i=>i.value!=='');
+  const inp=document.getElementById('sn-investice');
+  inp.readOnly=vyplnene.length>0;
+  if(vyplnene.length)inp.value=vyplnene.reduce((a,i)=>a+Number(i.value),0);
+  document.getElementById('sn-investice-pozn').textContent=vyplnene.length
+    ? `součet ${vyplnene.length} z ${pole.length} fondů`
+    : (pole.length?'zatím nic z fondů — nebo zapiš celkovou částku ručně':'zapiš celkovou částku');
+}
+
+function zmenaMesiceSnimku(){
+  const hodnoty={};
+  for(const i of document.querySelectorAll('#sn-fondy input'))if(i.value!=='')hodnoty[i.id]=i.value;
+  sporeniFondyPole(document.getElementById('sn-mesic').value);
+  for(const k in hodnoty){const e=document.getElementById(k);if(e)e.value=hodnoty[k];}
+  prepocetInvestic();
+}
+
+// První měsíc, za který snímek ještě není. Zapisuje se měsíc po měsíci, takže
+// nabídnout rovnou dnešek by u rozepsané historie udělalo díru.
+function dalsiMesicSnimku(){
+  const skut=sporeni.filter(s=>!s.projekce).map(s=>s.datum.slice(0,7)).sort();
+  return skut.length?mesicPosun(skut[skut.length-1]+'-01',1):dnes().slice(0,7);
+}
+
+function novySnimek(){
+  cancelEditSporeni();
+  otevriDlg('dlg-sporeni','sn-mesic');
+}
+
+function sporeniForm(){
+  const c=i=>document.getElementById(i);
+  const n=i=>c(i).value===''?null:parseFloat(c(i).value);
+  // Závazky se v datech drží záporně (čisté jmění = aktiva + závazky), ale
+  // dluh nikdo nepíše s mínusem. Formulář bere kladné číslo a otočí ho.
+  const dluh=i=>{const v=n(i);return v==null?0:-Math.abs(v);};
+  return {datum:c('sn-mesic').value?c('sn-mesic').value+'-01':'',
+    penzijko:n('sn-penzijko')??0,
+    uniqua:n('sn-investice')??0, amundi:0,
+    garant:dluh('sn-garant'),hypoteka:dluh('sn-hypoteka'),pujcky:dluh('sn-pujcky'),
+    akarta:n('sn-akarta'),ucet:n('sn-ucet'),rezerva:n('sn-rezerva'),
+    projekce:c('sn-projekce').checked,
+    poznamka:c('sn-poznamka').value.trim()||null};
+}
+
+// Stavy fondů za měsíc: vyplněné se zapíšou (upsert přes unikát fond_id+datum),
+// vymazané se smažou. Bez toho mazání by po opravě překlepu zůstal v rozpadu
+// starý řádek a jeho součet by přestal sedět na sloupec Investice.
+async function ulozStavyFondu(datum,stavy){
+  const psat=stavy.filter(s=>s.hodnota!=null)
+    .map(s=>({fond_id:s.fond_id,datum,hodnota:s.hodnota}));
+  const mazat=fondyStavy.filter(s=>s.datum===datum&&!psat.some(p=>p.fond_id===s.fond_id));
+  if(psat.length){
+    const res=await api('fondy_stavy','POST',psat,'',
+      'return=representation,resolution=merge-duplicates');
+    fondyStavy=fondyStavy.filter(s=>!(s.datum===datum&&psat.some(p=>p.fond_id===s.fond_id)));
+    fondyStavy.push(...(res||[]));
+  }
+  for(const s of mazat){
+    await api('fondy_stavy','DELETE',null,`id=eq.${s.id}`);
+    fondyStavy=fondyStavy.filter(x=>x.id!==s.id);
+  }
+}
+
+async function saveSporeni(){
+  const r=sporeniForm();
+  if(!r.datum){toast('Vyber měsíc',true);return;}
+  const kolize=sporeni.find(x=>x.datum===r.datum&&x.id!==editingSporeniId);
+  // Projekce je placeholder: skutečný snímek za ten měsíc ji nahradí. Odmítnout
+  // zápis by znamenalo odhad nejdřív ručně smazat, a dopředu jich je rozepsaných
+  // víc — na řadě je vždycky měsíc, pro který odhad existuje.
+  const prepisOdhad=!!kolize&&kolize.projekce&&!r.projekce;
+  if(kolize&&!prepisOdhad){
+    toast(`Snímek za ${r.datum.slice(0,7)} už je zapsaný — uprav ten`,true);return;}
+  const stavy=[...document.querySelectorAll('#sn-fondy input')]
+    .map(i=>({fond_id:+i.id.replace('sn-f-',''),hodnota:i.value===''?null:parseFloat(i.value)}));
+  const bylaEditace=!!editingSporeniId;
+  const cilId=editingSporeniId||(prepisOdhad?kolize.id:null);
+  setBtn('btn-sporeni',true);syncSt('syncing');
+  try{
+    if(cilId){
+      await api('sporeni','PATCH',r,`id=eq.${cilId}`);
+      const i=sporeni.findIndex(x=>x.id===cilId);
+      if(i>=0)sporeni[i]={...sporeni[i],...r};
+    }else{
+      const res=await api('sporeni','POST',r);
+      sporeni.push(res[0]);
+    }
+    await ulozStavyFondu(r.datum,stavy);
+    // Změna i graf se počítají z pořadí, takže po zápisu doprostřed musí jít seřadit.
+    sporeni.sort((a,b)=>a.datum.localeCompare(b.datum));
+    toast(bylaEditace?'Snímek upraven ✓'
+      :(prepisOdhad?`Odhad za ${r.datum.slice(0,7)} nahrazen skutečností ✓`:'Snímek zapsán ✓'));
+    syncSt('ok');
+    if(bylaEditace)zavriDlg('dlg-sporeni'); else cancelEditSporeni();
+    renderSporeni();
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');
+    setBtn('btn-sporeni',false,editingSporeniId?'Uložit změny':'+ Zapsat snímek');}
+}
+
+function editSporeni(id){
+  const sn=sporeni.find(x=>x.id===id);if(!sn)return;
+  editingSporeniId=id;
+  const c=i=>document.getElementById(i);
+  c('sn-mesic').value=sn.datum.slice(0,7);
+  sporeniFondyPole(sn.datum.slice(0,7));
+  for(const st of fondyStavy.filter(x=>x.datum===sn.datum)){
+    const f=c('sn-f-'+st.fond_id);if(f)f.value=st.hodnota;
+  }
+  c('sn-penzijko').value=sn.penzijko;
+  c('sn-investice').value=Number(sn.uniqua)+Number(sn.amundi);
+  // Dluhy jsou v datech záporné, ve formuláři se zadávají kladně.
+  const d=v=>Number(v)?Math.abs(Number(v)):'';
+  c('sn-garant').value=d(sn.garant);c('sn-hypoteka').value=d(sn.hypoteka);
+  c('sn-pujcky').value=d(sn.pujcky);
+  c('sn-akarta').value=sn.akarta==null?'':sn.akarta;
+  c('sn-ucet').value=sn.ucet==null?'':sn.ucet;
+  c('sn-rezerva').value=sn.rezerva==null?'':sn.rezerva;
+  c('sn-projekce').checked=!!sn.projekce;
+  c('sn-poznamka').value=sn.poznamka||'';
+  prepocetInvestic();
+  c('form-sporeni-title').textContent='Upravit snímek';
+  setBtn('btn-sporeni',false,'Uložit změny');
+  c('btn-cancel-sporeni').style.display='block';
+  otevriDlg('dlg-sporeni','sn-penzijko');
+}
+
+function cancelEditSporeni(){
+  editingSporeniId=null;
+  ['sn-penzijko','sn-investice','sn-garant','sn-hypoteka','sn-pujcky',
+   'sn-akarta','sn-ucet','sn-rezerva','sn-poznamka']
+    .forEach(i=>document.getElementById(i).value='');
+  document.getElementById('sn-projekce').checked=false;
+  document.getElementById('sn-mesic').value=dalsiMesicSnimku();
+  zmenaMesiceSnimku();
+  document.getElementById('form-sporeni-title').textContent='Nový snímek';
+  setBtn('btn-sporeni',false,'+ Zapsat snímek');
+  document.getElementById('btn-cancel-sporeni').style.display='none';
+}
+
+async function delSporeni(id){
+  const sn=sporeni.find(x=>x.id===id);if(!sn)return;
+  const stavy=fondyStavy.filter(x=>x.datum===sn.datum);
+  if(!confirm(`Smazat snímek ${sn.datum}?`
+    +(stavy.length?` Smažou se i stavy ${stavy.length} fondů za ten měsíc.`:'')))return;
+  syncSt('syncing');
+  try{
+    for(const st of stavy)await api('fondy_stavy','DELETE',null,`id=eq.${st.id}`);
+    fondyStavy=fondyStavy.filter(x=>x.datum!==sn.datum);
+    await api('sporeni','DELETE',null,`id=eq.${id}`);
+    sporeni=sporeni.filter(x=>x.id!==id);
+    if(editingSporeniId===id)zavriDlg('dlg-sporeni');
+    toast('Snímek smazán');syncSt('ok');renderSporeni();
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
 }
 
 // --- ODEČTY ENERGIÍ: zápis a úpravy ---
@@ -2320,6 +2567,7 @@ const DLG_ZRUS={
   'dlg-osnova':()=>cancelEditOsnova(),
   'dlg-odecet':()=>cancelEditOdecet(),
   'dlg-cenik':()=>cancelEditCenik(),
+  'dlg-sporeni':()=>cancelEditSporeni(),
 };
 
 function otevriDlg(id,poleId){
