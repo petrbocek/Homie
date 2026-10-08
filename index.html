@@ -184,14 +184,6 @@
   .wallet-meta{font-size:11px;color:var(--muted);font-family:'DM Mono',monospace;margin-top:2px;}
   .wallet-balance-val{font-size:18px;font-weight:800;font-family:'DM Mono',monospace;}
 
-  .plan-section{margin-bottom:18px;}
-  .plan-section-title{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-family:'DM Mono',monospace;padding:10px 16px;border-bottom:1px solid var(--border);}
-  .plan-row{display:flex;align-items:center;gap:12px;padding:10px 16px;border-bottom:1px solid var(--border);}
-  .plan-row:last-child{border-bottom:none;}
-  .plan-row-label{flex:1;font-size:13px;}
-  .plan-row-actual{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);width:90px;text-align:right;flex-shrink:0;}
-  .plan-row-amount{font-family:'DM Mono',monospace;font-size:12px;width:110px;text-align:right;flex-shrink:0;}
-  .plan-group-sum{font-family:'DM Mono',monospace;text-transform:none;letter-spacing:0;}
   .list-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
   .list-head .section-title{margin-bottom:0;flex:1;min-width:0;}
   .filtr{width:auto;padding:6px 10px;font-size:11px;}
@@ -313,7 +305,6 @@
     .logo-dlouhy{display:none;} .logo-kratky{display:inline;}
     .sync-indicator span{display:none;}
     .summary-grid{grid-template-columns:1fr 1fr;}
-    .plan-row{flex-wrap:wrap;} .plan-row-actual{width:auto;}
   }
   @media(max-width:480px){.summary-grid{grid-template-columns:1fr;}}
 </style>
@@ -377,7 +368,6 @@
   <div class="tab" onclick="showTab('osnova')">Osnova</div>
   <div class="tab" onclick="showTab('energie')">Energie</div>
   <div class="tab" onclick="showTab('sporeni')">Spoření</div>
-  <div class="tab" onclick="showTab('plan')">Plán</div>
 </div>
 
 <main>
@@ -921,20 +911,6 @@
   </div>
 
 
-  <!-- PLÁN -->
-  <div class="view" id="view-plan">
-    <div class="list-head">
-      <div class="section-title">Plán pro — <span id="plan-mesic-label"></span></div>
-      <button class="btn" style="width:auto;padding:8px 24px" onclick="novaPlanovanaPolozka()">+ Plánovaná položka</button>
-    </div>
-
-    <div class="summary-grid" id="plan-souhrn"></div>
-    <div id="plan-skupiny"></div>
-    <div id="plan-empty" class="empty" style="display:none">
-      <span class="emoji">📅</span>Pro tento měsíc není naplánováno nic
-    </div>
-  </div>
-
 </main>
 
 <div class="toast" id="toast"></div>
@@ -1284,14 +1260,13 @@ function changeMonth(d){
 }
 function showTab(id){
   // pořadí musí odpovídat pořadí .tab v markupu – showTab je páruje podle indexu
-  const tabs=['prehled','rok','zaznamy','penezenky','osnova','energie','sporeni','plan'];
+  const tabs=['prehled','rok','zaznamy','penezenky','osnova','energie','sporeni'];
   document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===id));
   document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
   document.getElementById('view-'+id).classList.add('active');
   // Rok potřebuje víc šířky než zbytek appky, viz main.sirsi.
   document.querySelector('main').classList.toggle('sirsi',id==='rok');
   if(id==='prehled')renderRoky(true);
-  if(id==='plan')renderPlan();
   if(id==='rok')renderRok(true);
   if(id==='energie')renderEnergie();
   if(id==='sporeni')renderSporeni();
@@ -1357,8 +1332,7 @@ function render(){
   document.getElementById('monthLabel').textContent=label;
   document.getElementById('records-month').textContent=label;
   document.getElementById('plan-month-label').textContent=label;
-  document.getElementById('plan-mesic-label').textContent=label;
-  renderPrehled();renderRoky();renderRok();renderZaznamy();renderPenezenky();renderZustatky();renderOsnova();renderEnergie();renderSporeni();renderPlan();
+  renderPrehled();renderRoky();renderRok();renderZaznamy();renderPenezenky();renderZustatky();renderOsnova();renderEnergie();renderSporeni();
 }
 
 function renderPrehled(){
@@ -2880,65 +2854,6 @@ function renderOsnova(){
   updateOsnovaForm();
 }
 
-function planRadek(z){
-  const inc=z.typ==='prijem';
-  const pozn=z.poznamka?` <span style="color:var(--muted);font-size:11px">${esc(z.poznamka)}</span>`:'';
-  return`<div class="plan-row">
-    <div class="plan-row-label"><span class="mono" style="color:var(--muted);font-size:11px">${esc(z.datum)}</span> ${esc(z.kde||'—')}${pozn}</div>
-    <div class="plan-row-amount ${inc?'amount-positive':'amount-negative'}">${fmtZn(inc?Number(z.castka):-Number(z.castka))}</div>
-    <div style="white-space:nowrap;flex-shrink:0">
-      <button class="edit-btn" onclick="editZaznam(${z.id})" title="Upravit">✎</button>
-      <button class="del-btn" onclick="delZaznam(${z.id})" title="Smazat">✕</button>
-    </div>
-  </div>`;
-}
-
-function renderPlan(){
-  const mp=mPlan();
-  const empty=document.getElementById('plan-empty');
-  const souhrn=document.getElementById('plan-souhrn');
-  const skupiny=document.getElementById('plan-skupiny');
-  if(!mp.length){souhrn.innerHTML='';skupiny.innerHTML='';empty.style.display='block';return;}
-  empty.style.display='none';
-
-  const prijmy=mp.filter(z=>z.typ==='prijem'), vydaje=mp.filter(z=>z.typ==='vydaj');
-  const sPrijmy=prijmy.reduce((s,z)=>s+Number(z.castka),0);
-  const sVydaje=vydaje.reduce((s,z)=>s+Number(z.castka),0);
-  const saldo=sPrijmy-sVydaje;
-  souhrn.innerHTML=`
-    <div class="card info"><div class="card-label">Plánované příjmy</div><div class="card-value">${fmt(sPrijmy)}</div><div class="card-sub">${polozek(prijmy.length)}</div></div>
-    <div class="card danger"><div class="card-label">Plánované výdaje</div><div class="card-value">${fmt(sVydaje)}</div><div class="card-sub">${polozek(vydaje.length)}</div></div>
-    <div class="card ${saldo>=0?'accent':'warn'}"><div class="card-label">Plánované saldo</div><div class="card-value" style="color:${saldo>=0?'var(--green)':'var(--red)'}">${fmt(saldo)}</div><div class="card-sub">příjmy − výdaje</div></div>`;
-
-  const skupina=(nadpis,rows)=>{
-    const sum=rows.reduce((s,z)=>s+(z.typ==='prijem'?1:-1)*Number(z.castka),0);
-    return`<div class="table-wrap plan-section">
-      <div class="plan-section-title" style="display:flex;justify-content:space-between;align-items:center">
-        <span>${nadpis}</span><span class="plan-group-sum">${fmtZn(sum)}</span>
-      </div>
-      ${rows.slice().sort((a,b)=>a.datum.localeCompare(b.datum)).map(planRadek).join('')}
-    </div>`;
-  };
-
-  const pouzite=new Set();
-  let html=catTop().map(top=>{
-    const catIds=[top.id,...catSub(top.id).map(s=>s.id)];
-    const rows=mp.filter(z=>catIds.includes(z.kategorie_id));
-    rows.forEach(z=>pouzite.add(z.id));
-    return rows.length?skupina(esc(top.nazev),rows):'';
-  }).join('');
-  const zbytek=mp.filter(z=>!pouzite.has(z.id));
-  if(zbytek.length)html+=skupina('Bez kategorie',zbytek);
-  skupiny.innerHTML=html;
-}
-
-function novaPlanovanaPolozka(){
-  cancelEditZaznam();
-  document.getElementById('z-polozka').value='plan';
-  showTab('zaznamy');
-  otevriDlg('dlg-zaznam','z-castka');
-}
-
 // --- ZÁZNAMY CRUD ---
 async function saveZaznam(){
   const castka=parseFloat(document.getElementById('z-castka').value);
@@ -3173,7 +3088,7 @@ async function delOsnova(id){
     await api('osnova','DELETE',null,`id=eq.${id}`);
     osnova=osnova.filter(o=>o.id!==id);
     if(editingOsnovaId===id)zavriDlg('dlg-osnova');
-    toast('Odstraněno');syncSt('ok');renderOsnova();updateCategorySelect();renderPlan();
+    toast('Odstraněno');syncSt('ok');renderOsnova();updateCategorySelect();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
 }
 

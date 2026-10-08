@@ -386,33 +386,48 @@ check('poslán PATCH, ne POST',!!patch&&!calls.some(c=>c.method==='POST'));
 check('PATCH míří na id=eq.1',!!patch&&patch.url.includes('id=eq.1'));
 check('formulář se resetoval',(await pg.textContent('#form-penezenka-title'))==='Přidat peněženku');
 
-console.log('\n== 8. záložka Plán ==');
-await klik('.tab:text-is("Plán")'); await pg.waitForTimeout(400);
-const souhrn=txt(await pg.textContent('#plan-souhrn'));
-check('souhrn: příjmy 88 000',souhrn.includes('88 000'),souhrn);
-check('souhrn: výdaje 8 300',souhrn.includes('8 300'));
-check('souhrn: saldo 79 700',souhrn.includes('79 700'));
-const sk=txt(await pg.textContent('#plan-skupiny'));
-check('skupiny podle kategorií + Bez kategorie',sk.includes('Mzda')&&sk.includes('pití')&&sk.includes('Bez kategorie'),sk);
-check('žádné staré plan-inputy',(await pg.locator('.plan-input').count())===0);
-check('každá plánovaná položka má edit',(await pg.locator('#plan-skupiny .edit-btn').count())===3);
-
-console.log('\n== 9. založení plánované položky ==');
-await klik('button:has-text("+ Plánovaná položka")'); await pg.waitForTimeout(400);
-check('přepnuto na Záznamy',await pg.isVisible('#view-zaznamy'));
-check('typ položky předvolen na plán',(await hodnota('#z-polozka'))==='plan');
+console.log('\n== 8. založení plánované položky ==');
+// Záložka Plán byla zrušená: plán je vidět v Přehledu (součty a tabulka proti
+// skutečnosti) i v Záznamech pod filtrem, tak se zapisuje přímo tam.
+await klik('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
+await klik('#view-zaznamy .list-head .btn'); await pg.waitForTimeout(300);
+await vyber('#z-polozka','plan');
 await fill('#z-castka','1234'); await fill('#z-datum',d(28)); await fill('#z-kde','Test');
 calls.length=0;
 await klik('#btn-zaznam'); await pg.waitForTimeout(500);
 const post=calls.find(c=>c.method==='POST');
 check('POST posílá typ_polozky=plan',!!post&&JSON.parse(post.body).typ_polozky==='plan',post&&post.body);
+await pg.evaluate(()=>zavriDlg('dlg-zaznam'));
+await pg.waitForTimeout(200);
 
-console.log('\n== 10. editace plánované položky si drží typ ==');
-await klik('.tab:text-is("Plán")'); await pg.waitForTimeout(300);
-await klik('#plan-skupiny .edit-btn'); await pg.waitForTimeout(400);
-check('formulář má plán',(await hodnota('#z-polozka'))==='plan');
+console.log('\n== 9. plán v Záznamech: filtr a editace ==');
+await vyber('#z-filtr','plan'); await pg.waitForTimeout(300);
+const planRadky=await pg.evaluate(()=>[...document.querySelectorAll('#zaznamy-table tr')]
+  .map(tr=>tr.textContent.replace(/\s+/g,' ').trim()));
+// Plánované položky z fixture (Mzda, pití, bez kategorie) + právě zapsaná.
+check('filtr ukáže jen plánované položky',
+  planRadky.length===4&&planRadky.every(r=>/plán/.test(r)),JSON.stringify(planRadky));
+check('mezi nimi je i nově zapsaná',planRadky.some(r=>/Test/.test(r)),JSON.stringify(planRadky));
+await klik('#zaznamy-table .edit-btn'); await pg.waitForTimeout(400);
+check('editace plánované položky si drží typ',(await hodnota('#z-polozka'))==='plan');
 await klik('#btn-cancel-zaznam'); await pg.waitForTimeout(200);
 check('po zrušení zpět na skutečnost',(await hodnota('#z-polozka'))==='skutecnost');
+await pg.evaluate(()=>zavriDlg('dlg-zaznam'));
+await vyber('#z-filtr','vse'); await pg.waitForTimeout(200);
+
+console.log('\n== 10. zrušená záložka Plán po sobě nic nenechala ==');
+const zbytky=await pg.evaluate(()=>({
+  zalozka:[...document.querySelectorAll('.tab')].map(t=>t.textContent.trim()),
+  view:!!document.getElementById('view-plan'),
+  funkce:['renderPlan','planRadek','novaPlanovanaPolozka'].filter(f=>typeof window[f]==='function'),
+  // Osiřelý .view by se při showTab neschoval a prosvítal by pod jinou záložkou.
+  viewy:[...document.querySelectorAll('.view')].map(v=>v.id)}));
+check('záložka Plán je pryč',!zbytky.zalozka.includes('Plán'),JSON.stringify(zbytky.zalozka));
+check('zůstalo sedm záložek',zbytky.zalozka.length===7,JSON.stringify(zbytky.zalozka));
+// showTab páruje .tab a .view podle pořadí — osiřelý view by posunul všechno za ním.
+check('počet viewů sedí na počet záložek',zbytky.viewy.length===7,JSON.stringify(zbytky.viewy));
+check('view-plan v markupu není',!zbytky.view);
+check('funkce Plánu jsou pryč',zbytky.funkce.length===0,JSON.stringify(zbytky.funkce));
 
 console.log('\n== 11. odhlášení a obnova session ==');
 await klik('.signout-btn'); await pg.waitForTimeout(400);
@@ -1364,7 +1379,7 @@ await klik('#view-rok .month-nav button:last-child'); await pg.waitForTimeout(40
 console.log('\n== 21. nic nepřetéká do strany (mobil) ==');
 // Hlavička se na telefon nevešla a posouvala do strany celou stránku, ne jen
 // sebe — tabulky i grafy mají vlastní posuvník, takže ven nic lézt nemá.
-const ZALOZKY=['Přehled','Rok','Záznamy','Peněženky','Osnova','Energie','Spoření','Plán'];
+const ZALOZKY=['Přehled','Rok','Záznamy','Peněženky','Osnova','Energie','Spoření'];
 for(const sirka of [320,390,1440,1920]){
   await pg.setViewportSize({width:sirka,height:800}); await pg.waitForTimeout(250);
   const pretekaji=[];
