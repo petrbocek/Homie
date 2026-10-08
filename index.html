@@ -469,6 +469,19 @@
       vyrobit: měsíc zůstane bez spotřeby a <strong class="vymena">⚠</strong>, a další
       skutečný odečet se počítá proti poslednímu zapsanému stavu — jeho hodnota je
       slitá z víc měsíců, takže je označený stejně.
+      <br><br>
+      <strong>Zaplaceno</strong> se nebere z ceníku, ale ze skutečných výdajů v osnově —
+      <strong>Zálohy → Elektrina</strong> a <strong>Vodne</strong>. Předpis záloh se mění
+      a u vody žádný není, platí se čtvrtletně podle faktury; ze záznamů to vyjde samo.
+      Měsíc bez platby je proto skutečná nula, ne chyba. Do ledna 2026 ale platby ležely
+      na společné kategorii Zálohy vedle telefonů a internetu, rozdělit je zpětně nejde,
+      a tak u starších měsíců zůstává <strong>—</strong>.
+      <br><br>
+      <strong>Kumulativně</strong> je přeplatek (kladně) nebo nedoplatek (záporně) od
+      začátku zúčtovacího období. Vyúčtování je <strong>k 30. 9.</strong>, takže
+      k 1. 10. se vynuluje a počítá se znovu — řádek, kde to začíná, nese
+      <strong class="vymena">↺</strong>. Když je v období měsíc, co se srovnat nedá,
+      řekne to karta nahoře: součet pak není celé vyúčtování.
     </div>
 
     <div class="list-head" style="margin-bottom:10px">
@@ -479,8 +492,10 @@
       <table class="rok-table" id="energie-cenik"></table>
     </div>
     <div class="rok-pozn">
-      Cena vody a výše záloh nejsou v sheetu rozlišené podle období — jsou převzaté
-      z jediné buňky a platí pro celou historii stejně.
+      Jen sazby — zálohy tu nejsou schválně. Berou se ze skutečně zaplacených výdajů
+      v osnově, takže se předpis nemusí opisovat na dvou místech. Cena vody není
+      v sheetu rozlišená podle období: je převzatá z jediné buňky a platí pro celou
+      historii stejně.
     </div>
 
     <div class="list-head" style="margin-bottom:10px">
@@ -557,8 +572,6 @@
         <div class="field"><label>NT (Kč/kWh)</label><input id="ce-nt" type="number" step="0.0001"></div>
         <div class="field"><label>Měsíční fix (Kč)</label><input id="ce-fix" type="number" step="0.01" placeholder="jistič a stálé platby"></div>
         <div class="field"><label>Voda (Kč/m³)</label><input id="ce-voda" type="number" step="0.01"></div>
-        <div class="field"><label>Záloha elektřina (Kč)</label><input id="ce-zal-el" type="number" step="0.01"></div>
-        <div class="field"><label>Záloha voda (Kč)</label><input id="ce-zal-voda" type="number" step="0.01"></div>
         <div class="field"><label>Poznámka</label><input id="ce-poznamka" type="text" placeholder="nepovinné"></div>
         <button class="btn" id="btn-cenik" onclick="saveCenik()">+ Přidat období</button>
         <button class="btn secondary" id="btn-cancel-cenik" onclick="zavriDlg('dlg-cenik')" style="display:none;margin-top:6px">Zrušit úpravy</button>
@@ -1785,8 +1798,51 @@ function odectySeSpotrebou(){
   return out;
 }
 
+// Kde appka hledá zaplacené energie: v osnově pod Zálohami. Podle názvu, ne
+// podle natvrdo zapsaného id — osnovu si jde přeskládat a id by pak tiše
+// ukazovalo na cizí kategorii. Když se kategorie nenajde, tabulka to přizná
+// místo toho, aby počítala nulu.
+function katEnergie(){
+  const bez=x=>String(x||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase();
+  const zalohy=osnova.find(o=>!o.parent_id&&bez(o.nazev).startsWith('zaloh'));
+  // Pod Zálohami je i Internet, SIPO nebo Dřevo, takže celý strom se sečíst
+  // nedá — berou se jen tyhle dvě kategorie.
+  const kde=zalohy?catSub(zalohy.id):osnova;
+  const najdi=re=>{const k=kde.find(o=>re.test(bez(o.nazev)));return k?k.id:null;};
+  return {el:najdi(/^elektr/),voda:najdi(/^vod/)};
+}
+
+// Co se za energie v kterém měsíci opravdu zaplatilo. Záloha se nedefinuje
+// v ceníku: předpis se mění a u vody žádná není, platí se čtvrtletně podle
+// faktury. Před prvním takovým záznamem se nedopočítává nic — do 2026 ležely
+// platby na společné kategorii Zálohy vedle telefonů a internetu a zpětně je
+// rozdělit nejde.
+function energiePlatby(){
+  const k=katEnergie();
+  const ids=[k.el,k.voda].filter(x=>x!=null);
+  const mapa=new Map();
+  let od=null;
+  if(!ids.length)return {mapa,od,kat:k};
+  for(const z of zaznamy){
+    if(jePlan(z)||jePrevod(z)||z.typ!=='vydaj')continue;
+    if(!ids.includes(z.kategorie_id))continue;
+    const m=z.datum.slice(0,7);
+    mapa.set(m,(mapa.get(m)||0)+Number(z.castka));
+    if(od===null||m<od)od=m;
+  }
+  return {mapa,od,kat:k};
+}
+
+// Zúčtovací období elektřiny: vyúčtování je k 30. 9., takže tím dnem se
+// přeplatek i nedoplatek vynuluje a kumulace začíná znovu od 1. 10.
+function obdobiOd(mesic){
+  const r=+mesic.slice(0,4), m=+mesic.slice(5,7);
+  return m>=10?r:r-1;
+}
+function obdobiPopis(od){return `1. 10. ${od} – 30. 9. ${od+1}`;}
+
 // Měsíční vyúčtování: spotřeba za měsíc × sazba platná k poslednímu odečtu
-// v tom měsíci, proti zaplacené záloze.
+// v tom měsíci, proti tomu, co se za energie v měsíci opravdu zaplatilo.
 function energieMesice(){
   const mapa=new Map();
   for(const o of odectySeSpotrebou()){
@@ -1808,21 +1864,39 @@ function energieMesice(){
     if(o.sp_t1!==null||o.sp_t2!==null){m.elZnama=true;m.t1+=o.sp_t1||0;m.t2+=o.sp_t2||0;}
     if(o.datum>m.posledni)m.posledni=o.datum;
   }
-  return [...mapa.values()].map(m=>{
+  const platby=energiePlatby();
+  const radky=[...mapa.values()].map(m=>{
     const c=sazbaK(m.posledni);
     const voda=m.vodaZnama?m.voda:null, t1=m.elZnama?m.t1:null, t2=m.elZnama?m.t2:null;
     const el=(c&&m.elZnama)?m.t1*Number(c.vt)+m.t2*Number(c.nt)+Number(c.mesicni_fix):null;
     const vo=(c&&c.voda!=null&&m.vodaZnama)?m.voda*Number(c.voda):null;
-    const zal=c?Number(c.zaloha_elektrina||0)+Number(c.zaloha_voda||0):null;
+    // Měsíc před první zapsanou platbou nemá zaplaceno nula, ale neznámo.
+    // Od té doby je prázdný měsíc skutečná nula — u vody se platí čtvrtletně,
+    // takže většina měsíců bez platby je v pořádku.
+    const zapl=(platby.od&&m.mesic>=platby.od)?(platby.mapa.get(m.mesic)||0):null;
     const naklad=(el==null&&vo==null)?null:(el||0)+(vo||0);
-    // Dokud není celý náklad, nemá smysl ho srovnávat se zálohou — rozdíl by
-    // vyšel jako přeplatek jen proto, že chybí odečet.
+    // Dokud není celý náklad, nemá smysl ho srovnávat se zaplaceným — rozdíl
+    // by vyšel jako přeplatek jen proto, že chybí odečet.
     const cely=el!=null&&vo!=null;
-    return {...m,voda,t1,t2,sazba:c,naklad_el:el,naklad_voda:vo,naklad,zaloha:zal,
+    return {...m,voda,t1,t2,sazba:c,naklad_el:el,naklad_voda:vo,naklad,zaplaceno:zapl,
             // Měsíc, kde se jedno z měřidel neodečetlo vůbec, je taky neúplný.
             chybi:m.chybi||!m.vodaZnama||!m.elZnama,
-            rozdil:(!cely||zal==null)?null:zal-naklad};
+            rozdil:(!cely||zapl==null)?null:zapl-naklad};
   }).sort((a,b)=>a.mesic.localeCompare(b.mesic));
+
+  // Kumulace uvnitř zúčtovacího období. Měsíc, který se srovnat nedá, ji
+  // nepřeruší — jen se celé období označí za neúplné, aby se součet nečetl
+  // jako hotové vyúčtování.
+  let obd=null,kum=0,dira=false,znamo=false;
+  for(const m of radky){
+    const o=obdobiOd(m.mesic);
+    if(o!==obd){obd=o;kum=0;dira=false;znamo=false;}
+    m.obdobi=o;
+    if(m.rozdil==null)dira=true; else {kum+=m.rozdil;znamo=true;}
+    m.kumul=znamo?kum:null;
+    m.kumulNeuplna=dira;
+  }
+  return radky;
 }
 
 // Spotřeba elektřiny po měsících, poslední tři roky vedle sebe. Roky se berou
@@ -1845,6 +1919,31 @@ function energieRoky3(){
     })});
   }
   return {roky,data};
+}
+
+// Stav běžícího zúčtovacího období, ne klouzavých dvanáct měsíců: k 30. 9.
+// se vyúčtuje a vynuluje, takže součet přes ten předěl by míchal dvě období.
+function kartaObdobi(mesice){
+  if(!mesice.length)return '';
+  const posl=mesice[mesice.length-1];
+  const vObdobi=mesice.filter(m=>m.obdobi===posl.obdobi);
+  const stav=posl.kumul;
+  // Konkrétní počet, ne jen „neúplné": když v období chybí platby za tři
+  // měsíce, je součet o jejich náklad vedle a je lepší vědět o kolik měsíců jde.
+  const chybi=vObdobi.filter(m=>m.rozdil==null).length;
+  if(stav==null)return `
+    <div class="card info"><div class="card-label">Zúčtovací období</div>
+      <div class="card-value" style="font-size:18px">${esc(obdobiPopis(posl.obdobi))}</div>
+      <div class="card-sub">zatím není co srovnat — chybí zaplacené částky</div></div>`;
+  const kladny=stav>=0;
+  return `
+    <div class="card ${kladny?'accent':'danger'}">
+      <div class="card-label">Zúčtovací období</div>
+      <div class="card-value" style="color:${kladny?'var(--green)':'var(--red)'}">${fmt(Math.abs(stav))}</div>
+      <div class="card-sub">${kladny?'přeplatek':'nedoplatek'} · ${esc(obdobiPopis(posl.obdobi))}`
+      + ` · ${vObdobi.length} ${vObdobi.length===1?'měsíc':(vObdobi.length<5?'měsíce':'měsíců')}`
+      + (chybi?` ⚠ bez ${chybi} ${chybi===1?'měsíce':(chybi<5?'měsíců':'měsíců')}`:'')
+      + `</div></div>`;
 }
 
 function renderEnergie(){
@@ -1877,11 +1976,7 @@ function renderEnergie(){
     <div class="card info"><div class="card-label">Voda za 12 měsíců</div>
       <div class="card-value">${cis(sum(rok,'voda'))} m³</div>
       <div class="card-sub">${rok.length} ${rok.length===1?'měsíc':(rok.length<5?'měsíce':'měsíců')}</div></div>
-    <div class="card ${sum(rok.filter(m=>m.rozdil!=null),'rozdil')>=0?'accent':'danger'}">
-      <div class="card-label">Zálohy − náklad za 12 měsíců</div>
-      <div class="card-value" style="color:${sum(rok.filter(m=>m.rozdil!=null),'rozdil')>=0?'var(--green)':'var(--red)'}">
-        ${fmt(Math.abs(sum(rok.filter(m=>m.rozdil!=null),'rozdil')))}</div>
-      <div class="card-sub">${sum(rok.filter(m=>m.rozdil!=null),'rozdil')>=0?'přeplatek':'nedoplatek'}</div></div>`;
+    ${kartaObdobi(mesice)}`;
 
   const g3=energieRoky3();
   const max3=Math.max(...g3.data.flatMap(d=>d.hodnoty.map(h=>h?h.kwh:0)),1);
@@ -1903,15 +1998,23 @@ function renderEnergie(){
   document.getElementById('energie-mesice').innerHTML=
     `<thead><tr><th class="kat">Měsíc</th><th class="right">voda m³</th><th class="right">VT kWh</th>
       <th class="right">NT kWh</th><th class="right plan">náklad el.</th><th class="right plan">náklad voda</th>
-      <th class="right">celkem</th><th class="right plan">záloha</th><th class="right">rozdíl</th></tr></thead><tbody>`
+      <th class="right">celkem</th><th class="right plan">zaplaceno</th><th class="right">rozdíl</th>
+      <th class="right">kumulativně</th></tr></thead><tbody>`
     + mesice.slice().reverse().slice(0,36).map(m=>
       `<tr><td class="kat">${m.mesic}${m.chybi?' <span class="vymena" title="spotřeba za měsíc není úplná ani srovnatelná — chybí odečet, slila se do ní doba, kdy se neodečítalo, nebo v měsíci začalo nové měřidlo">\u26a0</span>':''}</td>`
       + bunka(cisN(m.voda)) + bunka(cisN(m.t1)) + bunka(cisN(m.t2))
       + bunka(m.naklad_el==null?null:cis(m.naklad_el),'plan')
       + bunka(m.naklad_voda==null?null:cis(m.naklad_voda),'plan')
       + bunka(m.naklad==null?null:cis(m.naklad))
-      + bunka(m.zaloha==null?null:cis(m.zaloha),'plan')
-      + `<td class="hodnota ${m.rozdil==null?'':(m.rozdil>=0?'diff-ok':'diff-over')}">${m.rozdil==null?'—':cis(m.rozdil)}</td></tr>`
+      + bunka(m.zaplaceno==null?null:cis(m.zaplaceno),'plan')
+      + `<td class="hodnota ${m.rozdil==null?'':(m.rozdil>=0?'diff-ok':'diff-over')}">${m.rozdil==null?'—':cis(m.rozdil)}</td>`
+      // Kumulace se k 1. 10. vynuluje, tak ať je ten předěl na řádku vidět.
+      + `<td class="hodnota ${m.kumul==null?'':(m.kumul>=0?'diff-ok':'diff-over')}"`
+      +   ` title="zúčtovací období ${esc(obdobiPopis(m.obdobi))}${
+            m.kumulNeuplna?' — v období chybí měsíc, který nejde srovnat, takže to není celé vyúčtování':''}">`
+      +   `${m.kumul==null?'—':cis(m.kumul)}`
+      +   (m.mesic.slice(5)==='10'?' <span class="vymena" title="začátek zúčtovacího období — k 30. 9. se vyúčtovalo a kumulace jde od nuly">\u21ba</span>':'')
+      +   `</td></tr>`
     ).join('')
     + '</tbody>';
 
@@ -1946,8 +2049,8 @@ function renderEnergie(){
 
   document.getElementById('energie-cenik').innerHTML=
     `<thead><tr><th class="kat">Platnost od</th><th class="kat">do</th><th class="right">VT Kč/kWh</th>
-      <th class="right">NT Kč/kWh</th><th class="right">měsíční fix</th><th class="right">voda Kč/m³</th>
-      <th class="right plan">záloha el.</th><th class="right plan">záloha voda</th></tr></thead><tbody>`
+      <th class="right">NT Kč/kWh</th><th class="right">měsíční fix</th>
+      <th class="right">voda Kč/m³</th></tr></thead><tbody>`
     + cenik.slice().reverse().map(c=>
       `<tr><td class="kat" style="min-width:160px">${esc(c.platnost_od)}`
       + `<span style="white-space:nowrap;margin-left:6px">`
@@ -1955,9 +2058,8 @@ function renderEnergie(){
       +   `<button class="del-btn" onclick="delCenik(${c.id})" title="Smazat">✕</button></span></td>`
       + `<td class="kat">${esc(c.platnost_do||'—')}</td>`
       + `<td class="hodnota">${esc(c.vt)}</td><td class="hodnota">${esc(c.nt)}</td>`
-      + `<td class="hodnota">${cis(c.mesicni_fix)}</td><td class="hodnota">${c.voda==null?'—':cis(c.voda)}</td>`
-      + `<td class="hodnota plan">${c.zaloha_elektrina==null?'—':cis(c.zaloha_elektrina)}</td>`
-      + `<td class="hodnota plan">${c.zaloha_voda==null?'—':cis(c.zaloha_voda)}</td></tr>`).join('')
+      + `<td class="hodnota">${cis(c.mesicni_fix)}</td>`
+      + `<td class="hodnota">${c.voda==null?'—':cis(c.voda)}</td></tr>`).join('')
     + '</tbody>';
 }
 
@@ -2692,7 +2794,6 @@ function cenikForm(){
   const n=i=>c(i).value===''?null:parseFloat(c(i).value);
   return {platnost_od:c('ce-od').value,platnost_do:c('ce-do').value||null,
     vt:n('ce-vt'),nt:n('ce-nt'),mesicni_fix:n('ce-fix')??0,voda:n('ce-voda'),
-    zaloha_elektrina:n('ce-zal-el'),zaloha_voda:n('ce-zal-voda'),
     poznamka:c('ce-poznamka').value.trim()||null};
 }
 // Dvě období nesmí pokrývat totéž datum: sazbaK() bere první odpovídající,
@@ -2739,8 +2840,6 @@ function editCenik(id){
   e('ce-vt').value=c.vt; e('ce-nt').value=c.nt;
   e('ce-fix').value=c.mesicni_fix==null?'':c.mesicni_fix;
   e('ce-voda').value=c.voda==null?'':c.voda;
-  e('ce-zal-el').value=c.zaloha_elektrina==null?'':c.zaloha_elektrina;
-  e('ce-zal-voda').value=c.zaloha_voda==null?'':c.zaloha_voda;
   e('ce-poznamka').value=c.poznamka||'';
   e('form-cenik-title').textContent='Upravit období';
   setBtn('btn-cenik',false,'Uložit změny');
@@ -2749,7 +2848,7 @@ function editCenik(id){
 }
 function cancelEditCenik(){
   editingCenikId=null;
-  ['ce-od','ce-do','ce-vt','ce-nt','ce-fix','ce-voda','ce-zal-el','ce-zal-voda','ce-poznamka']
+  ['ce-od','ce-do','ce-vt','ce-nt','ce-fix','ce-voda','ce-poznamka']
     .forEach(i=>document.getElementById(i).value='');
   document.getElementById('form-cenik-title').textContent='Nové období ceníku';
   setBtn('btn-cenik',false,'+ Přidat období');

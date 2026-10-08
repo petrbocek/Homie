@@ -30,6 +30,12 @@ const DB={
     // u příjmu i u výdaje; v datech schválně nemá záznam, ať nerozhodí
     // součty v Přehledu a v matici Rok.
     {id:7,nazev:'Sporeni',parent_id:null,typ:'obe',kod:'7',poradi:3},
+    // Odtud bere Energie zaplacené částky. Internet je pod Zálohami taky,
+    // ale do energií nepatří — kdyby se sčítal celý strom, bylo by to vidět.
+    {id:20,nazev:'Zalohy',parent_id:null,typ:'vydaj',kod:'20',poradi:4},
+    {id:21,nazev:'Elektrina',parent_id:20,typ:null,kod:'20.1',poradi:0},
+    {id:22,nazev:'Vodne',parent_id:20,typ:null,kod:'20.2',poradi:1},
+    {id:23,nazev:'Internet',parent_id:20,typ:null,kod:'20.3',poradi:2},
   ],
   penezenky:[{id:1,nazev:'Ucet <img src=x onerror=alert(2)>',pocatecni_zustatek:'10000.00',
               barva:'red;background:url(javascript:alert(3))'},
@@ -58,6 +64,27 @@ const DB={
      kde:'Kreditka',poznamka:'splátka',penezenka_id:1,prevod_skupina:'u-test'},
     {id:301,datum:d(7),castka:'2000.00',typ:'prijem',typ_polozky:'skutecnost',kategorie_id:10,
      kde:'Ucet',poznamka:'splátka',penezenka_id:2,prevod_skupina:'u-test'},
+    // Zaplacené energie. Datumy jsou fixní jako odečty, ne podle aktuálního
+    // měsíce, a bez peněženky — jinak by rozhodily zůstatky i oddíly počítané
+    // po měsíci. Elektřina měsíčně, voda jen jednou za čtvrtletí: prázdný
+    // měsíc u vody je skutečná nula, ne chybějící údaj. Internet je pod
+    // Zálohami taky a do energií se počítat nesmí.
+    {id:400,datum:'2026-01-15',castka:'2000.00',typ:'vydaj',typ_polozky:'skutecnost',
+     kategorie_id:21,kde:'Elektrina',poznamka:null,penezenka_id:null},
+    {id:401,datum:'2026-02-15',castka:'2000.00',typ:'vydaj',typ_polozky:'skutecnost',
+     kategorie_id:21,kde:'Elektrina',poznamka:null,penezenka_id:null},
+    {id:402,datum:'2026-02-20',castka:'900.00',typ:'vydaj',typ_polozky:'skutecnost',
+     kategorie_id:22,kde:'Vodarny',poznamka:'čtvrtletní faktura',penezenka_id:null},
+    {id:403,datum:'2026-02-21',castka:'500.00',typ:'vydaj',typ_polozky:'skutecnost',
+     kategorie_id:23,kde:'Internet',poznamka:null,penezenka_id:null},
+    {id:404,datum:'2026-03-15',castka:'2000.00',typ:'vydaj',typ_polozky:'skutecnost',
+     kategorie_id:21,kde:'Elektrina',poznamka:null,penezenka_id:null},
+    {id:405,datum:'2026-04-15',castka:'2000.00',typ:'vydaj',typ_polozky:'skutecnost',
+     kategorie_id:21,kde:'Elektrina',poznamka:null,penezenka_id:null},
+    {id:406,datum:'2026-05-15',castka:'2000.00',typ:'vydaj',typ_polozky:'skutecnost',
+     kategorie_id:21,kde:'Elektrina',poznamka:null,penezenka_id:null},
+    {id:407,datum:'2026-06-15',castka:'2000.00',typ:'vydaj',typ_polozky:'skutecnost',
+     kategorie_id:21,kde:'Elektrina',poznamka:null,penezenka_id:null},
   ],
   // Odečty měřidel (#9). Datumy jsou schválně fixní — záložka Energie se
   // neváže na aktuální měsíc, bere posledních N odečtů. Třetí řádek je výměna
@@ -501,8 +528,9 @@ await klik('.tab:text-is("Rok")'); await pg.waitForTimeout(400);
 check('pohled Rok je vidět',await pg.isVisible('#view-rok'));
 check('hlavička má 12 měsíců',(await pg.locator('#rok-table th.mesic').count())===12);
 const rRadky=pg.locator('#rok-table tbody tr');
-// kategorie bez jediného čísla za rok se nevypisuje; tady mají data všechny tři
-check('3 kategorie + součet',(await rRadky.count())===4,String(await rRadky.count()));
+// Kategorie bez jediného čísla za rok se nevypisuje; data mají Mzda, Jídlo,
+// Ostatni a Zálohy (zaplacené energie).
+check('4 kategorie + součet',(await rRadky.count())===5,String(await rRadky.count()));
 const rTxt=async sel=>txt(await pg.locator(sel).textContent());
 const mzda=await rTxt('#rok-table tbody tr:nth-child(1)');
 check('Mzda: plán 88 000 a skutečnost 90 000',mzda.includes('88 000')&&mzda.includes('90 000'),mzda);
@@ -523,7 +551,7 @@ check('žádný <script> z názvu',(await pg.locator('#view-rok script').count()
 
 await klik('#rok-table tbody tr:nth-child(1) td.kat'); await pg.waitForTimeout(300);
 check('rozklik ukáže podkategorii',(await rTxt('#rok-table')).includes('Peta'));
-check('po rozkliku je o řádek víc',(await rRadky.count())===5,String(await rRadky.count()));
+check('po rozkliku je o řádek víc',(await rRadky.count())===6,String(await rRadky.count()));
 await klik('#rok-table tbody tr:nth-child(1) td.kat'); await pg.waitForTimeout(300);
 check('druhý klik zabalí',!(await rTxt('#rok-table')).includes('Peta'));
 
@@ -557,9 +585,11 @@ const mesicniSoucet=await pg.evaluate(()=>{
 check('součet 12 měsíců = roční sloupec',
   mesicniSoucet.plan===sou.Rok.plan&&mesicniSoucet.skut===sou.Rok.skut,
   JSON.stringify({mesicni:mesicniSoucet,rok:sou.Rok}));
-// plán 88 000 − 5 000 − 3 300 − 1 000, skutečnost 90 000 − 1 200 − 800 − 4 000
-check('roční čísla sedí na data (78 700 / 87 000)',
-  sou.Rok.plan===78700&&sou.Rok.skut===87000,JSON.stringify(sou.Rok));
+// plán 88 000 − 5 000 − 3 300 − 1 000 = 78 700
+// skutečnost 90 000 − 1 200 − 800 − 4 000 − 13 400 (zaplacené energie
+// a internet pod Zálohami) = 73 600
+check('roční čísla sedí na data (78 700 / 73 600)',
+  sou.Rok.plan===78700&&sou.Rok.skut===73600,JSON.stringify(sou.Rok));
 
 const letos=await pg.textContent('#rok-label');
 await klik('#view-rok .month-nav button:first-child'); await pg.waitForTimeout(400);
@@ -584,16 +614,21 @@ const en=await pg.evaluate(()=>{
 });
 // 2026-02: voda 110−100=10 m³, VT 1050−1000=50, NT 5200−5000=200 kWh
 // náklad el. 50×6 + 200×3 + 100 fix = 1 000, voda 10×90 = 900, celkem 1 900
-// záloha 2 000 + 500 = 2 500 → přeplatek 600
+// zaplaceno 2 000 (elektřina) + 900 (čtvrtletní voda) = 2 900 → přeplatek 1 000.
+// Internet 500 Kč je pod Zálohami taky, ale do energií nepatří — kdyby se
+// sčítal celý strom, vyšlo by 3 400.
 check('spotřeba je rozdíl proti předchozímu odečtu (10 / 50 / 200)',
   en['2026-02'] && en['2026-02'][1]==='10' && en['2026-02'][2]==='50' && en['2026-02'][3]==='200',
   JSON.stringify(en['2026-02']));
 check('náklad sazbou platnou k odečtu (1 000 / 900 / 1 900)',
   en['2026-02'] && en['2026-02'][4]==='1 000' && en['2026-02'][5]==='900' && en['2026-02'][6]==='1 900',
   JSON.stringify(en['2026-02']));
-check('rozdíl proti zálohám (2 500 − 1 900 = 600)',
-  en['2026-02'] && en['2026-02'][7]==='2 500' && en['2026-02'][8]==='600',
-  JSON.stringify(en['2026-02']));
+check('zaplaceno se bere z osnovy, ne z ceníku (2 900)',
+  en['2026-02'] && en['2026-02'][7]==='2 900',JSON.stringify(en['2026-02']));
+check('sourozenec pod Zálohami se nepřičítá (ne 3 400)',
+  en['2026-02'] && en['2026-02'][7]!=='3 400',JSON.stringify(en['2026-02']));
+check('rozdíl proti zaplacenému (2 900 − 1 900 = 1 000)',
+  en['2026-02'] && en['2026-02'][8]==='1 000',JSON.stringify(en['2026-02']));
 // Výměna vodoměru: 5 − 110 = −105 m³ je nesmysl, ten řádek se nesmí započítat.
 check('měsíc s výměnou měřidla je označený',
   en['2026-03'] && /\u26a0/.test(en['2026-03'][0]),JSON.stringify(en['2026-03']));
@@ -978,6 +1013,92 @@ check('nový vodoměr se počítá od nuly (6 m³)',
 check('následující měsíc je úplný, bez ⚠',cerven2&&!cerven2.vymena,JSON.stringify(cerven2));
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
+console.log('\n== 15g. zaplaceno z osnovy a zúčtovací období ==');
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
+await klik('.tab:text-is("Energie")'); await pg.waitForTimeout(400);
+const enP=await pg.evaluate(()=>{
+  const r={};
+  for(const m of energieMesice())r[m.mesic]=m;
+  return r;
+});
+// Ceník zálohy nedefinuje, bere se zaplacené z osnovy: 2 000 elektřina
+// + 900 čtvrtletní voda. Internet 500 Kč je pod Zálohami taky a nepatří tam.
+check('zaplaceno je součet obou energií (2 900)',enP['2026-02'].zaplaceno===2900,
+  JSON.stringify(enP['2026-02']));
+// Voda se platí čtvrtletně, takže měsíc bez její faktury je skutečná nula,
+// ne chybějící údaj — jinak by se rozdíl přestal počítat ve třech měsících ze čtyř.
+check('měsíc bez faktury za vodu je nula, ne neznámo',enP['2026-04'].zaplaceno===2000,
+  JSON.stringify(enP['2026-04']));
+check('rozdíl se počítá i tam (2 000 − 1 630 = 370)',enP['2026-04'].rozdil===370,
+  JSON.stringify(enP['2026-04']));
+// Měsíc, kde chybí jedno z měřidel, se srovnat nedá ani když se zaplatilo.
+check('neúplný měsíc rozdíl nepředstírá',
+  enP['2026-03'].zaplaceno===2000&&enP['2026-03'].rozdil===null,JSON.stringify(enP['2026-03']));
+check('kumulace vynechaný měsíc přeskočí, ne vynuluje',
+  enP['2026-04'].kumul===1370,JSON.stringify(enP['2026-04']));
+check('období s nesrovnatelným měsícem je označené za neúplné',
+  enP['2026-04'].kumulNeuplna===true,JSON.stringify(enP['2026-04']));
+
+// Před první zapsanou platbou se nedopočítává nula: do 2026 ležely platby na
+// společné kategorii Zálohy vedle telefonů a internetu.
+const predPlatbou=await pg.evaluate(()=>{
+  const puv=zaznamy.slice();
+  zaznamy=zaznamy.filter(z=>z.datum!=='2026-01-15');
+  const m={};
+  for(const x of energieMesice())m[x.mesic]=x;
+  zaznamy=puv;
+  return {leden:m['2026-01'].zaplaceno,unor:m['2026-02'].zaplaceno};
+});
+check('měsíc před první platbou má neznámo, ne nulu',predPlatbou.leden===null,
+  JSON.stringify(predPlatbou));
+check('od první platby dál se počítá',predPlatbou.unor===2900,JSON.stringify(predPlatbou));
+
+// Vyúčtování je k 30. 9., takže k 1. 10. kumulace začíná od nuly. Bez resetu
+// by se nedoplatek táhl přes vyúčtování dál a období by se slila.
+const obd=await pg.evaluate(()=>{
+  const puvO=odecty.slice(), puvZ=zaznamy.slice();
+  const od=(id,datum,voda,t1,t2)=>({id,datum,voda,t1,t2,vymena_vodomer:false,
+    vymena_elektromer:false,poznamka:null,zdroj_radek:id});
+  odecty=odecty.concat([od(9001,'2026-09-30','20','1200','5800'),
+                        od(9002,'2026-10-31','25','1250','5900')]).sort(poradiOdectu);
+  const pl=(id,datum)=>({id,datum,castka:'2000.00',typ:'vydaj',typ_polozky:'skutecnost',
+    kategorie_id:21,kde:'Elektrina',poznamka:null,penezenka_id:null});
+  zaznamy=zaznamy.concat([pl(9003,'2026-09-10'),pl(9004,'2026-10-10')]);
+  const m={};
+  for(const x of energieMesice())m[x.mesic]=x;
+  odecty=puvO;zaznamy=puvZ;
+  return {zari:m['2026-09'],rijen:m['2026-10']};
+});
+check('září patří do končícího období',obd.zari.obdobi===2025,JSON.stringify(obd.zari));
+check('říjen už do nového',obd.rijen.obdobi===2026,JSON.stringify(obd.rijen));
+// Tohle je ta podstata: nedoplatek ze září se do října nepřenese.
+check('kumulace se k 1. 10. vynuluje',obd.rijen.kumul===obd.rijen.rozdil,
+  JSON.stringify({rijen:obd.rijen.kumul,rozdil:obd.rijen.rozdil,zari:obd.zari.kumul}));
+check('v září se ještě kumulovalo přes víc měsíců',obd.zari.kumul>obd.rijen.kumul,
+  JSON.stringify({zari:obd.zari.kumul,rijen:obd.rijen.kumul}));
+check('nové období už není označené za neúplné',obd.rijen.kumulNeuplna===false,
+  JSON.stringify(obd.rijen));
+
+// Ceník drží jen sazby — záloha se z něj přestěhovala do osnovy.
+const ceHlav=await pg.evaluate(()=>[...document.querySelectorAll('#energie-cenik thead th')]
+  .map(th=>th.textContent.trim()));
+check('ceník už zálohy nenabízí',!ceHlav.some(h=>/zálo/i.test(h)),JSON.stringify(ceHlav));
+check('pole zálohy ve formuláři ceníku nejsou',
+  (await pg.locator('#ce-zal-el, #ce-zal-voda').count())===0);
+const mesHlav=await pg.evaluate(()=>[...document.querySelectorAll('#energie-mesice thead th')]
+  .map(th=>th.textContent.trim()));
+check('tabulka měsíců má zaplaceno a kumulativně',
+  mesHlav.includes('zaplaceno')&&mesHlav.includes('kumulativně')&&!mesHlav.includes('záloha'),
+  JSON.stringify(mesHlav));
+// Řádek, kde období začíná, to musí říct — jinak vypadá skok v kumulaci jako chyba.
+const rijenZnacka=await pg.evaluate(()=>{
+  const r=[...document.querySelectorAll('#energie-mesice tbody tr')]
+    .find(tr=>tr.children[0].textContent.trim().startsWith('2026-01'));
+  return r?r.children[9].innerHTML:null;
+});
+check('leden není začátek období, značku nemá',rijenZnacka!==null&&!/↺/.test(rijenZnacka),
+  String(rijenZnacka));
+
 console.log('\n== 16. spoření: čisté jmění, změna, projekce (#10) ==');
 await klik('.tab:text-is("Spoření")'); await pg.waitForTimeout(300);
 check('záložka Spoření je vidět',await pg.isVisible('#view-sporeni'));
@@ -1315,12 +1436,13 @@ const ro=await pg.evaluate(()=>[...document.querySelectorAll('#roky-chart .bar-c
 // Mock má data jen v letošním a příštím měsíci téhož roku, takže sloupec je jeden.
 check('sloupec za každý rok s daty',ro.length===1,JSON.stringify(ro));
 check('dva bary na rok — příjmy a výdaje',ro[0]&&ro[0].bary===2,JSON.stringify(ro));
-// Příjmy 90 000, výdaje 1 200 + 800 + 4 000 (jiný měsíc téhož roku) = 6 000.
+// Příjmy 93 000, výdaje 1 200 + 800 + 4 000 (jiný měsíc téhož roku)
+// + 13 400 zaplacených energií a internetu = 19 400.
 // Převod (2 000 ven i dovnitř) se nepočítá, plán taky ne.
-check('saldo je příjmy − výdaje bez plánu a převodů (+87k)',
-  ro[0]&&ro[0].saldo==='+87k',JSON.stringify(ro));
+check('saldo je příjmy − výdaje bez plánu a převodů (+74k)',
+  ro[0]&&ro[0].saldo==='+74k',JSON.stringify(ro));
 check('popisek nese obě čísla',
-  ro[0]&&/93 000/.test(ro[0].popis)&&/6 000/.test(ro[0].popis),ro[0]&&ro[0].popis);
+  ro[0]&&/93 000/.test(ro[0].popis)&&/19 400/.test(ro[0].popis),ro[0]&&ro[0].popis);
 // Letošek ještě neskončil, takže se s hotovými roky srovnávat nedá.
 check('běžící rok je označený jako neúplný',ro[0]&&ro[0].neuplny,JSON.stringify(ro));
 check('neúplný rok nese značku v popisku',ro[0]&&/\u26a0/.test(ro[0].rok),JSON.stringify(ro));
