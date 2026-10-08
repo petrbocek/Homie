@@ -1819,6 +1819,22 @@ check('splátka je zelená, ne červená',/green/.test(barvy[0]),JSON.stringify(
 // „+0 Kč" vypadá jako pohyb, který se nekonal.
 check('nulový pohyb se řekne slovy',
   /beze změny/.test(rozP.radky[1])&&!/0 Kč za/.test(rozP.radky[1]),JSON.stringify(rozP));
+// Než vzniklo auto (3/2025), byla v rozpadu jen konsolidace. Jedna položka
+// musí projít stejně jako dvě, a skloňování se nesmí utrhnout na „1 půjčky".
+const jedna=await pg.evaluate(()=>{
+  const puv=JSON.parse(JSON.stringify(zavazkyStavy));
+  zavazkyStavy=zavazkyStavy.filter(s=>!(s.datum==='2021-04-01'&&s.zavazek_id===2));
+  pujckyRozpad('2021-04-01');
+  const o={podtitulek:document.getElementById('rozpad-podtitulek').textContent,
+    soucet:document.getElementById('rozpad-soucet').textContent,
+    radku:document.querySelectorAll('#rozpad-telo .rozpad-radek').length};
+  zavazkyStavy=puv;
+  return o;
+});
+check('jediná půjčka se vypíše sama',jedna.radku===1&&txt(jedna.soucet)==='60 000 Kč',
+  JSON.stringify(jedna));
+check('skloňování sedí i na jednu půjčku',/· 1 půjčka$/.test(jedna.podtitulek),
+  JSON.stringify(jedna));
 await pg.evaluate(()=>zavriRozpad());
 await pg.waitForTimeout(150);
 
