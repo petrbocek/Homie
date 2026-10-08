@@ -120,3 +120,17 @@ model, ne skript, takže tudy musí data projít výstupem modelu — ~500 řád
 volání. Je to pomalé a drahé a má smysl jen tehdy, když není po ruce klíč pro
 REST: skript v kontejneru se bez `service_role` klíče (nebo hesla k DB) nemá
 čím přihlásit, i když je `*.supabase.co` ze sítě dosažitelné.
+
+## `zalohy-prerazeni-zpet.sql`
+
+Zpětný krok k přeřazení záloh za elektřinu a vodu (8. 10. 2026). Platby za obě
+ležely od roku 2016 na společné kategorii **Zalohy** vedle internetu, SIPO,
+telefonů a plynu; karta Energie je potřebuje zvlášť, aby šlo srovnat zaplacené
+s nákladem. Rozpoznaly se podle poznámky a dodavatele a přesunuly do
+podkategorií **Elektrina** (120 záznamů) a **Vodne** (38 záznamů).
+
+Součty se tím nikde neposunuly — obě jsou děti kategorie Zalohy, takže rozpad
+po hlavních kategoriích v Přehledu i v Roku zůstal stejný.
+
+Skript vyjmenovává přesně těch 158 id, takže vrátí jen to, co se tehdy
+přesunulo, a nesáhne na záznamy, které v podkategoriích byly už předtím.
