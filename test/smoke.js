@@ -2125,6 +2125,98 @@ check('upravený dluh se zase uloží záporně',
   JSON.parse(patchSn.body).hypoteka===-1975000,patchSn.body);
 check('uložená úprava dialog zavře',!(await pg.isVisible('#dlg-sporeni')));
 
+console.log('\n== 28. stránkování dlouhých tabulek ==');
+await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
+await klik('.tab:text-is("Spoření")'); await pg.waitForTimeout(300);
+// Mock má čtyři snímky, takže ovládání nemá co nabídnout — a nesmí se ukázat.
+check('pod krátkou tabulkou se ovládání neukáže',
+  (await pg.textContent('#sporeni-table-strany')).trim()==='',
+  await pg.textContent('#sporeni-table-strany'));
+
+// Reálně je snímků přes sedmdesát. Doplním je jen pro tuhle sekci a pak vrátím.
+const strankyStav=async()=>pg.evaluate(()=>({
+  radku:document.querySelectorAll('#sporeni-table tbody tr').length,
+  prvni:(document.querySelector('#sporeni-table tbody tr td.kat')||{}).textContent.slice(0,10),
+  posledni:[...document.querySelectorAll('#sporeni-table tbody tr td.kat')].pop().textContent.slice(0,10),
+  ovladani:document.getElementById('sporeni-table-strany').textContent.replace(/\s+/g,' ').trim(),
+  tlacitka:[...document.querySelectorAll('#sporeni-table-strany .btn')].map(b=>b.disabled)}));
+await pg.evaluate(()=>{
+  window.__puvSporeni=sporeni.slice();
+  const r=[];
+  // 30 měsíců od 2024-01 do 2026-06, od nejstaršího
+  for(let i=0;i<30;i++){
+    const m=1+i, rok=2024+Math.floor((m-1)/12), mes=((m-1)%12)+1;
+    r.push({id:5000+i,datum:`${rok}-${String(mes).padStart(2,'0')}-01`,
+      penzijko:'100000',uniqua:'200000',amundi:'0',hypoteka:'-1000000',pujcky:'-50000',
+      akarta:null,ucet:null,rezerva:null,projekce:false,poznamka:null});
+  }
+  sporeni=r; renderSporeni();
+});
+await pg.waitForTimeout(250);
+const s1=await strankyStav();
+// Řádky jdou od nejnovějšího, takže první stránka je posledních 12 měsíců.
+check('první stránka má 12 řádků',s1.radku===12,JSON.stringify(s1));
+check('první stránka začíná nejnovějším snímkem',s1.prvni==='2026-06-01',JSON.stringify(s1));
+check('a končí o dvanáct měsíců zpět',s1.posledni==='2025-07-01',JSON.stringify(s1));
+check('ovládání hlásí rozsah i počet',/1–12 z 30/.test(s1.ovladani),s1.ovladani);
+check('na první stránce nejde zpátky',s1.tlacitka[0]===true&&s1.tlacitka[1]===false,
+  JSON.stringify(s1.tlacitka));
+
+await pg.click('#sporeni-table-strany .btn:last-child'); await pg.waitForTimeout(250);
+const s2=await strankyStav();
+check('druhá stránka navazuje',s2.prvni==='2025-06-01'&&s2.radku===12,JSON.stringify(s2));
+check('ovládání ukazuje druhou stránku',/13–24 z 30 · strana 2\/3/.test(s2.ovladani),s2.ovladani);
+check('teď jde i zpátky',s2.tlacitka[0]===false,JSON.stringify(s2.tlacitka));
+
+await pg.click('#sporeni-table-strany .btn:last-child'); await pg.waitForTimeout(250);
+const s3=await strankyStav();
+// 30 řádků na stránky po 12 → poslední stránka má jen 6.
+check('poslední stránka má zbytek',s3.radku===6&&s3.prvni==='2024-06-01',JSON.stringify(s3));
+check('na poslední stránce nejde dál',s3.tlacitka[1]===true,JSON.stringify(s3.tlacitka));
+
+await pg.click('#sporeni-table-strany .btn:first-child'); await pg.waitForTimeout(250);
+check('tlačítko novější se vrací',(await strankyStav()).prvni==='2025-06-01');
+
+// Když řádků ubude, uložená stránka může být za koncem — nesmí zůstat prázdno.
+await pg.evaluate(()=>{sporeni=sporeni.slice(-5);renderSporeni();});
+await pg.waitForTimeout(250);
+const s4=await strankyStav();
+check('po úbytku řádků se stránka srovná',s4.radku===5,JSON.stringify(s4));
+await pg.evaluate(()=>{sporeni=window.__puvSporeni;renderSporeni();});
+await pg.waitForTimeout(200);
+
+console.log('\n== 29. graf vývoje v rozpadu fondu ==');
+await pg.evaluate(()=>fondRozpad(1));
+await pg.waitForTimeout(250);
+const gf=await pg.evaluate(()=>{
+  const sv=document.querySelector('#rozpad-telo .rozpad-graf svg');
+  return sv?{cary:sv.querySelectorAll('polyline').length,
+             tecky:sv.querySelectorAll('circle').length,
+             predely:sv.querySelectorAll('line[stroke-dasharray]').length,
+             popisky:[...sv.querySelectorAll('text')].map(t=>t.textContent),
+             pozn:(document.querySelector('.rozpad-graf-pozn')||{}).textContent||''}:null;
+});
+check('v rozpadu fondu je graf',!!gf,'žádné svg');
+// Fond má tři snímky a 2021-04 je přesunový, takže se čára přeruší:
+// úsek 2021-01→02 jako čára a osamocený bod 2021-04 jako tečka.
+check('čára se v přesunovém měsíci přeruší',gf&&gf.cary===1&&gf.tecky===1,JSON.stringify(gf));
+check('předěl je vyznačený čárkovaně',gf&&gf.predely===1,JSON.stringify(gf));
+check('graf má popisky krajních hodnot i měsíců',
+  gf&&gf.popisky.length===4&&gf.popisky.some(t=>/2021-01/.test(t))
+  &&gf.popisky.some(t=>/2021-04/.test(t)),JSON.stringify(gf&&gf.popisky));
+check('u přerušené čáry je vysvětlení',/přeskládání portfolia/.test(gf&&gf.pozn),gf&&gf.pozn);
+check('pod grafem zůstává seznam měsíců',
+  (await pg.locator('#rozpad-telo .rozpad-radek').count())===3);
+
+// Fond s jediným snímkem nemá co kreslit.
+await pg.evaluate(()=>{zavriRozpad();fondRozpad(3);});
+await pg.waitForTimeout(250);
+check('jediný snímek graf nekreslí',
+  (await pg.locator('#rozpad-telo .rozpad-graf').count())===0);
+check('ale rozpad se otevře',await pg.isVisible('#rozpad'));
+await pg.evaluate(()=>zavriRozpad());
+await pg.waitForTimeout(150);
+
 console.log('\n== chyby v konzoli ==');
 // 400 = záměrně špatné heslo v testu 2
 const real=errors.filter(e=>!e.includes('net::ERR_')&&!e.includes('fonts.googleapis')

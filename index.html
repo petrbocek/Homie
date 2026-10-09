@@ -96,6 +96,13 @@
   .rok-table tr.soucet td{border-top:2px solid var(--border);font-weight:700;background:var(--surface);}
   .rok-sipka{display:inline-block;width:12px;color:var(--muted);font-size:9px;}
   .rok-pozn{font-size:10px;color:var(--muted);margin-top:-14px;margin-bottom:24px;}
+  .strankovani{display:flex;align-items:center;justify-content:center;gap:14px;
+    margin-top:-14px;margin-bottom:20px;font-size:11px;color:var(--muted);
+    font-family:'DM Mono',monospace;}
+  .strankovani .btn{margin-top:0;}
+  .strankovani .btn:disabled{opacity:0.35;cursor:default;}
+  .strankovani span{white-space:nowrap;}
+  .strankovani i{font-style:normal;}
   .badge-pravidelna{background:rgba(96,200,240,0.15);color:var(--accent2);}
   /* Značka převodu. Ne .badge — ten se v tabulkách na mobilu schovává. */
   .prevod{color:var(--accent4);cursor:help;font-family:'DM Mono',monospace;font-weight:700;}
@@ -109,6 +116,8 @@
     /* Ve Spoření nese první sloupec i značku „odhad", takže potřebuje o kus víc. */
     #sporeni-table td.kat,#sporeni-table th.kat{min-width:190px;max-width:190px;}
     #fondy-table td.kat,#fondy-table th.kat{min-width:150px;max-width:150px;}
+    .strankovani .jen-sirsi{display:none;}
+    .strankovani{gap:8px;}
     .rok-table th,.rok-table td{padding:7px 7px;}
   }
 
@@ -121,6 +130,9 @@
   /* Vývoj čistého jmění. Je celou historii záporné, takže sloupcový graf od
      nuly by nic neukázal — tohle je spojnice škálovaná na rozsah dat. */
   .cara{width:100%;height:180px;display:block;}
+  .cara-fond{width:100%;height:132px;display:block;}
+  .rozpad-graf{padding:10px 18px 12px;border-bottom:1px solid var(--border);}
+  .rozpad-graf-pozn{font-size:10px;color:var(--muted);margin-top:6px;}
   .cara-legenda{display:flex;gap:16px;font-size:10px;color:var(--muted);
     font-family:'DM Mono',monospace;margin-top:10px;}
   .cara-legenda span::before{content:'';display:inline-block;width:14px;height:0;
@@ -454,6 +466,7 @@
     <div class="rok-wrap">
       <table class="rok-table" id="energie-mesice"></table>
     </div>
+    <div id="energie-mesice-strany"></div>
     <div class="rok-pozn">
       Spotřeba je rozdíl proti předchozímu odečtu. Odečet, kterým začíná nové měřidlo
       (nebo celá historie), se nemá od čeho odečíst — starý stav v okamžiku výměny nikdo
@@ -503,6 +516,7 @@
     <div class="rok-wrap">
       <table class="rok-table" id="energie-odecty"></table>
     </div>
+    <div id="energie-odecty-strany"></div>
     <div class="rok-pozn">
       Od nejnovějšího. Spotřeba je rozdíl proti předchozímu odečtu; u řádku, kterým
       začíná nové měřidlo, se nepočítá. Částka je ta spotřeba vynásobená sazbou platnou
@@ -601,6 +615,7 @@
     <div class="rok-wrap">
       <table class="rok-table" id="sporeni-table"></table>
     </div>
+    <div id="sporeni-table-strany"></div>
     <div class="rok-pozn">
       Jiný pohled než deník: ten sleduje <strong>tok</strong> peněz, tohle je
       <strong>stav</strong> majetku a závazků k prvnímu dni měsíce. Čisté jmění je součet
@@ -1904,6 +1919,49 @@ function energieRoky3(){
   return {roky,data};
 }
 
+// --- STRÁNKOVÁNÍ DLOUHÝCH TABULEK ---
+// Snímků i odečtů je přes deset let a celá historie na jedné obrazovce se
+// nedá číst. Řádky chodí od nejnovějšího, takže první stránka je posledních
+// dvanáct měsíců a starší se dolistují.
+const NA_STRANU=12;
+const strany={};        // id tabulky -> číslo stránky, 0 = nejnovější
+
+function strankuj(id,radky){
+  const stran=Math.max(1,Math.ceil(radky.length/NA_STRANU));
+  // Po smazání řádků může být uložená stránka za koncem — ať se nekouká do prázdna.
+  const s=Math.min(strany[id]||0,stran-1);
+  strany[id]=s;
+  return {vysek:radky.slice(s*NA_STRANU,(s+1)*NA_STRANU),
+          strana:s,stran,celkem:radky.length};
+}
+
+function strankovani(id,info){
+  if(info.celkem<=NA_STRANU)return '';
+  const od=info.strana*NA_STRANU+1;
+  const do_=Math.min(info.celkem,(info.strana+1)*NA_STRANU);
+  const tl=(kam,text,vyp)=>`<button class="btn uzky secondary" ${vyp?'disabled':''}`
+    +` onclick="naStranu('${id}',${kam})">${text}</button>`;
+  return `<div class="strankovani">`
+    + tl(info.strana-1,'← novější',info.strana===0)
+    + `<span>${od}–${do_} z ${info.celkem}`
+    + (info.stran>1?`<i class="jen-sirsi"> · strana ${info.strana+1}/${info.stran}</i>`:'')
+    + `</span>`
+    + tl(info.strana+1,'starší →',info.strana>=info.stran-1)
+    + `</div>`;
+}
+
+// Překreslení se volí podle tabulky až při kliknutí — funkce jsou definované níž.
+function naStranu(id,s){
+  strany[id]=Math.max(0,s);
+  const kam={'sporeni-table':renderSporeni,'energie-mesice':renderEnergie,
+             'energie-odecty':renderEnergie}[id];
+  if(kam)kam();
+  // Po přelistování patří tabulka do zorného pole, jinak člověk kouká na místo,
+  // kde dřív byla jiná data.
+  const t=document.getElementById(id);
+  if(t)t.closest('.rok-wrap').scrollIntoView({block:'nearest'});
+}
+
 // Stav běžícího zúčtovacího období, ne klouzavých dvanáct měsíců: k 30. 9.
 // se vyúčtuje a vynuluje, takže součet přes ten předěl by míchal dvě období.
 function kartaObdobi(mesice){
@@ -1978,12 +2036,14 @@ function renderEnergie(){
   }).join('');
 
   const bunka=(v,cls)=>`<td class="hodnota ${cls||''}">${v==null?'—':v}</td>`;
+  // Dřív se tvrdě uřízlo 36 měsíců a starší se nedaly zobrazit vůbec.
+  const strM=strankuj('energie-mesice',mesice.slice().reverse());
   document.getElementById('energie-mesice').innerHTML=
     `<thead><tr><th class="kat">Měsíc</th><th class="right">voda m³</th><th class="right">VT kWh</th>
       <th class="right">NT kWh</th><th class="right plan">náklad el.</th><th class="right plan">náklad voda</th>
       <th class="right">celkem</th><th class="right plan">zaplaceno</th><th class="right">rozdíl</th>
       <th class="right">kumulativně</th></tr></thead><tbody>`
-    + mesice.slice().reverse().slice(0,36).map(m=>
+    + strM.vysek.map(m=>
       `<tr><td class="kat">${m.mesic}${m.chybi?' <span class="vymena" title="spotřeba za měsíc není úplná ani srovnatelná — chybí odečet, slila se do ní doba, kdy se neodečítalo, nebo v měsíci začalo nové měřidlo">\u26a0</span>':''}</td>`
       + bunka(cisN(m.voda)) + bunka(cisN(m.t1)) + bunka(cisN(m.t2))
       + bunka(m.naklad_el==null?null:cis(m.naklad_el),'plan')
@@ -2000,19 +2060,21 @@ function renderEnergie(){
       +   `</td></tr>`
     ).join('')
     + '</tbody>';
+  document.getElementById('energie-mesice-strany').innerHTML=strankovani('energie-mesice',strM);
 
   const vym=(a,b)=>a||b?' <span class="vymena" title="tímhle odečtem začíná nové měřidlo">\u26a0</span>':'';
   // Odkud se spotřeba měří. Po vynechaném odečtu to není předchozí řádek a
   // hodnota pak není za měsíc — to je potřeba vidět, ne hádat.
   const odKdy=d=>d?` title="spotřeba od ${esc(d)}"`:'';
   const slito=p=>p?' <span class="vymena" title="slito z víc měsíců — mezitím se neodečítalo">\u26a0</span>':'';
+  const strO=strankuj('energie-odecty',odectySeSpotrebou().slice().reverse());
   document.getElementById('energie-odecty').innerHTML=
     `<thead><tr><th class="kat">Datum</th><th class="right">voda m³</th><th class="right">VT kWh</th>
       <th class="right">NT kWh</th><th class="right plan">sp. voda</th>
       <th class="right plan">sp. VT</th><th class="right plan">sp. NT</th>
       <th class="right">Kč voda</th><th class="right">Kč elektřina</th><th class="right">Kč celkem</th>
       <th class="kat">poznámka</th></tr></thead><tbody>`
-    + odectySeSpotrebou().slice().reverse().map(o=>
+    + strO.vysek.map(o=>
       `<tr><td class="kat" style="min-width:185px">${esc(o.datum)}`
       + `${vym(o.vymena_vodomer,o.vymena_elektromer)}`
       + `<span style="white-space:nowrap;margin-left:6px">`
@@ -2029,6 +2091,7 @@ function renderEnergie(){
       + `<td class="kat" style="font-weight:400">${esc(o.poznamka||'')}</td></tr>`
     ).join('')
     + '</tbody>';
+  document.getElementById('energie-odecty-strany').innerHTML=strankovani('energie-odecty',strO);
 
   document.getElementById('energie-cenik').innerHTML=
     `<thead><tr><th class="kat">Platnost od</th><th class="kat">do</th><th class="right">VT Kč/kWh</th>
@@ -2293,6 +2356,43 @@ function rozpadPolozek(titulek,datum,radky,barva,klesaniJeDobre){
   document.getElementById('rozpad').classList.add('open');
 }
 
+// Vývoj hodnoty fondu. Čára se v přesunovém měsíci přeruší a předěl dostane
+// svislou čárkovanou značku: pád z 363 857 na 701 není pohyb trhu a spojitá
+// čára by ho tak četla. Úsek o jediném bodu se kreslí jako tečka, jinak by
+// po restrukturalizaci nebylo vidět nic.
+function fondGraf(st,presuny){
+  if(st.length<2)return '';
+  const W=680,H=132,OL=10,OP=10,OH=16,OD=18;
+  const h=st.map(x=>Number(x.hodnota));
+  const min=Math.min(...h), max=Math.max(...h), rozpeti=(max-min)||1;
+  const x=i=>OL+i*(W-OL-OP)/(st.length-1);
+  const y=v=>OH+(max-v)/rozpeti*(H-OH-OD);
+  const useky=[]; let u=[]; const predely=[];
+  st.forEach((p,i)=>{
+    if(i>0&&presuny.has(p.datum.slice(0,7))){useky.push(u);u=[];predely.push(i);}
+    u.push(i);
+  });
+  useky.push(u);
+  const popis=(i,kam)=>`<text x="${x(i).toFixed(1)}" y="${kam}" fill="var(--muted)"`
+    +` font-size="9" font-family="DM Mono,monospace" text-anchor="${i?'end':'start'}">`
+    +`${esc(st[i].datum.slice(0,7))}</text>`;
+  return `<svg class="cara-fond" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"`
+    +` aria-label="Vývoj hodnoty od ${esc(st[0].datum.slice(0,7))} do ${esc(st[st.length-1].datum.slice(0,7))}">`
+    + predely.map(i=>`<line x1="${((x(i-1)+x(i))/2).toFixed(1)}" y1="${OH}"`
+        +` x2="${((x(i-1)+x(i))/2).toFixed(1)}" y2="${H-OD}" stroke="var(--accent4)"`
+        +` stroke-width="1" stroke-dasharray="3 3"/>`).join('')
+    + useky.map(u=>u.length<2
+        ? (u.length?`<circle cx="${x(u[0]).toFixed(1)}" cy="${y(h[u[0]]).toFixed(1)}" r="2.5" fill="var(--accent)"/>`:'')
+        : `<polyline fill="none" stroke="var(--accent)" stroke-width="2" points="${
+            u.map(i=>`${x(i).toFixed(1)},${y(h[i]).toFixed(1)}`).join(' ')}"/>`).join('')
+    +`<text x="${OL}" y="10" fill="var(--muted)" font-size="9" font-family="DM Mono,monospace">`
+    +`${esc(fmt(max))}</text>`
+    +`<text x="${OL}" y="${H-OD-3}" fill="var(--muted)" font-size="9" font-family="DM Mono,monospace">`
+    +`${esc(fmt(min))}</text>`
+    + popis(0,H-2) + popis(st.length-1,H-2)
+    +`</svg>`;
+}
+
 // Historie jednoho fondu: co měsíc hodnota, pohyb a kolik z pohybu je vklad.
 function fondRozpad(fondId){
   const f=fondy.find(x=>x.id===fondId);if(!f)return;
@@ -2308,7 +2408,13 @@ function fondRozpad(fondId){
   const sc=document.getElementById('rozpad-soucet');
   sc.textContent=fmt(v.hodnota);
   sc.style.color='var(--green)';
-  document.getElementById('rozpad-telo').innerHTML=st.slice().reverse().map((s,i,a)=>{
+  const graf=fondGraf(st,presuny);
+  document.getElementById('rozpad-telo').innerHTML=
+    (graf?`<div class="rozpad-graf">${graf}`
+      +(presuny.has(st[0].datum.slice(0,7))||st.some((x,i)=>i&&presuny.has(x.datum.slice(0,7)))
+        ? `<div class="rozpad-graf-pozn">čárkovaně je přeskládání portfolia — čára se tam přerušuje, protože ten skok není výnos</div>`:'')
+      +`</div>`:'')
+    + st.slice().reverse().map((s,i,a)=>{
     const p=a[i+1];
     const presun=presuny.has(s.datum.slice(0,7))&&p;
     const krok=p?mesicuMezi(p.datum.slice(0,7),s.datum.slice(0,7)):0;
@@ -2369,13 +2475,14 @@ function renderSporeni(){
   document.getElementById('fondy-table').innerHTML=fondyHtml;
 
   const c=n=>n==null?'—':Math.round(n).toLocaleString('cs-CZ');
+  const strS=strankuj('sporeni-table',radky.slice().reverse());
   document.getElementById('sporeni-table').innerHTML=
     `<thead><tr><th class="kat">Snímek</th><th class="right">Penzijko</th>
       <th class="right">Investice</th><th class="right">aktiva</th>
       <th class="right plan">Hypotéka</th><th class="right plan">Půjčky</th><th class="right">závazky</th>
       <th class="right">čisté jmění</th><th class="right">změna</th><th class="right plan">Áčkarta</th>
       <th class="right plan">Účet</th><th class="right">cashflow</th></tr></thead><tbody>`
-    + radky.slice().reverse().map(r=>
+    + strS.vysek.map(r=>
       `<tr><td class="kat">${esc(r.datum)}`
       + (r.projekce?' <span class="projekce">odhad</span>':'')
       + (r.mezera?` <span class="mezera" title="předchozí snímek není o měsíc dřív — změna je za delší období">\u26a0</span>`:'')
@@ -2403,6 +2510,7 @@ function renderSporeni(){
       + `<td class="hodnota plan">${c(r.akarta)}</td><td class="hodnota plan">${c(r.ucet)}</td>`
       + `<td class="hodnota">${c(r.cashflow)}</td></tr>`).join('')
     + '</tbody>';
+  document.getElementById('sporeni-table-strany').innerHTML=strankovani('sporeni-table',strS);
 }
 
 // --- SNÍMKY SPOŘENÍ: zápis a úpravy ---
