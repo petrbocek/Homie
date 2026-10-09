@@ -9,6 +9,10 @@
 --   dávka 2   (499) podle obchodu:  Amundi/Conseq/Trigea/XTB u Spoření,
 --                                   lékárna vs. drogerie, Colliery vs. Spotify
 --                                   u členství, plat od zaměstnavatele
+--   dávka 3  (1 089) podle zadání:  zbytek Ostatních do Ostatní (kromě
+--                                   Kreditky = převody), Colliery do Restaurací,
+--                                   jídelna a MŠ do Obědů, Toyota je tankování,
+--                                   konsolidace je půjčka na bazén
 --
 -- Pravidlo bylo: poznámka musí odpovídat právě jedné podkategorii daného
 -- rodiče. Kde seděly dvě („Nakup a obed", „havarijni a povinne"), zůstal
@@ -66,3 +70,21 @@ with p2(rodic,pole,vzor,cil) as (values
   group by z.id, c.parent_id
 )
 update zaznamy z set kategorie_id=p.rodic from zpet2 p where p.id=z.id;
+
+-- dávka 3: rozřazeno podle toho, co k jednotlivým skupinám řekl majitel
+with p3(rodic,pole,vzor,cil) as (values
+  (12,'poznamka','^(?!.*kreditk).*$',50),
+  (11,'kde','colliery',44),
+  (11,'kde','jidelna|jídelna|mš |ms petrvald|mateřsk|matersk',46),
+  (8,'poznamka','toyota',27),
+  (14,'poznamka','konsolidac',56)
+), zpet3 as (
+  select z.id, c.parent_id rodic
+  from zaznamy z
+  join osnova c on c.id=z.kategorie_id and c.parent_id is not null
+  join p3 r on r.rodic=c.parent_id and r.cil=c.id
+    and (case r.pole when 'kde' then coalesce(z.kde,'') else coalesce(z.poznamka,'') end) ~* r.vzor
+  where z.datum between '2024-01-01' and '2025-12-31'
+  group by z.id, c.parent_id
+)
+update zaznamy z set kategorie_id=p.rodic from zpet3 p where p.id=z.id;

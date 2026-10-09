@@ -150,8 +150,8 @@ ztratily a jinak by je nebylo z čeho vzít.
 
 Zpětný krok k zařazení záznamů do podkategorií (9. 10. 2026, roky 2024–2025).
 Záznamy ležely na nadřazených kategoriích; co to bylo, pojmenovává poznámka
-a u části i obchod ve sloupci „kde". Ve dvou dávkách se jich 2 353 přeřadilo
-(1 854 podle poznámky, 499 podle obchodu). Skript nese tatáž pravidla použitá
+a u části i obchod ve sloupci „kde". Ve třech dávkách se jich 3 442 přeřadilo
+(1 854 podle poznámky, 499 podle obchodu, 1 089 podle zadání majitele). Skript nese tatáž pravidla použitá
 obráceně.
 
 Zařadily se jen záznamy, jejichž poznámka odpovídá právě jedné podkategorii.
