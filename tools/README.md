@@ -149,8 +149,9 @@ ztratily a jinak by je nebylo z čeho vzít.
 ## `podkategorie-2024-2025-zpet.sql`
 
 Zpětný krok k zařazení záznamů do podkategorií (9. 10. 2026, roky 2024–2025).
-Záznamy ležely na nadřazených kategoriích a poznámka u nich pojmenovává, co to
-bylo; podle ní se 1 854 z nich přeřadilo. Skript nese tatáž pravidla použitá
+Záznamy ležely na nadřazených kategoriích; co to bylo, pojmenovává poznámka
+a u části i obchod ve sloupci „kde". Ve dvou dávkách se jich 2 353 přeřadilo
+(1 854 podle poznámky, 499 podle obchodu). Skript nese tatáž pravidla použitá
 obráceně.
 
 Zařadily se jen záznamy, jejichž poznámka odpovídá právě jedné podkategorii.

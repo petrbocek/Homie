@@ -1,8 +1,14 @@
 -- ZPĚTNÝ KROK k zařazení záznamů do podkategorií (9. 10. 2026, roky 2024–2025).
 --
--- Záznamy ležely na nadřazených kategoriích a poznámka u nich pojmenovává,
--- co to bylo. Podle ní se 1 854 z nich přeřadilo do podkategorií. Pravidla
--- níž jsou tatáž, jen použitá obráceně — vrátí přesně tu množinu zpátky.
+-- Záznamy ležely na nadřazených kategoriích; co to bylo, pojmenovává poznámka
+-- a u části i obchod ve sloupci „kde". Ve dvou dávkách se jich 2 353 přeřadilo
+-- do podkategorií. Pravidla níž jsou tatáž, jen použitá obráceně — vrátí
+-- přesně tu množinu zpátky.
+--
+--   dávka 1 (1 854) podle poznámky: Nakup, Obed, Jizdenky, Urazovka, Internet…
+--   dávka 2   (499) podle obchodu:  Amundi/Conseq/Trigea/XTB u Spoření,
+--                                   lékárna vs. drogerie, Colliery vs. Spotify
+--                                   u členství, plat od zaměstnavatele
 --
 -- Pravidlo bylo: poznámka musí odpovídat právě jedné podkategorii daného
 -- rodiče. Kde seděly dvě („Nakup a obed", „havarijni a povinne"), zůstal
@@ -39,3 +45,24 @@ with pravidla(rodic,vzor,cil) as (values
   group by z.id, c.parent_id
 )
 update zaznamy z set kategorie_id=p.rodic from zpet p where p.id=z.id;
+
+-- dávka 2: rozřazeno podle obchodu ve sloupci „kde" (a u členství podle obojího)
+with p2(rodic,pole,vzor,cil) as (values
+  (9,'kde','xtb',31),(9,'kde','amundi',32),(9,'kde','trigea',33),(9,'kde','conseq',34),
+  (5,'kde','benu|lekarn|lékárn',19),
+  (5,'kde','^dm|drogerie|rossmann|teta|albert|lidl|kaufland|dealz|action|globus|penny|tesco|billa',18),
+  (12,'oboji','clenstv.*(colliery|fitpark)|(colliery|fitpark).*clenstv',48),
+  (12,'oboji','clenstv.*(spotify|google|youtube)|(spotify|google|youtube).*clenstv',49),
+  (1,'poznamka','^plat',2)
+), zpet2 as (
+  select z.id, c.parent_id rodic
+  from zaznamy z
+  join osnova c on c.id=z.kategorie_id and c.parent_id is not null
+  join p2 r on r.rodic=c.parent_id and r.cil=c.id
+    and (case r.pole when 'kde' then coalesce(z.kde,'')
+                     when 'poznamka' then coalesce(z.poznamka,'')
+                     else coalesce(z.poznamka,'')||' | '||coalesce(z.kde,'') end) ~* r.vzor
+  where z.datum between '2024-01-01' and '2025-12-31'
+  group by z.id, c.parent_id
+)
+update zaznamy z set kategorie_id=p.rodic from zpet2 p where p.id=z.id;
