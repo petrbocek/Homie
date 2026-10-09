@@ -134,3 +134,14 @@ po hlavních kategoriích v Přehledu i v Roku zůstal stejný.
 
 Skript vyjmenovává přesně těch 158 id, takže vrátí jen to, co se tehdy
 přesunulo, a nesáhne na záznamy, které v podkategoriích byly už předtím.
+
+## `uniqa-slouceni-zpet.sql`
+
+Zpětný krok ke sloučení dvou řad Uniqa Generace X (9. 10. 2026). V sheetu
+byly dvě, obě patřící témuž fondu — vyšší byla stav před výběrem v 3/2026,
+nižší to, co po něm zůstalo —, ale importovaly se jako dva fondy. Sloučení
+je sečetlo po měsících do jednoho.
+
+Součty se tím nikde neposunuly, součet fondů se dál rovná sloupci Investice.
+Skript nese původních 23 hodnot nižší řady, protože ty se sloučením z databáze
+ztratily a jinak by je nebylo z čeho vzít.
