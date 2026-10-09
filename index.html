@@ -97,7 +97,6 @@
   .rok-sipka{display:inline-block;width:12px;color:var(--muted);font-size:9px;}
   .rok-pozn{font-size:10px;color:var(--muted);margin-top:-14px;margin-bottom:24px;}
   .badge-pravidelna{background:rgba(96,200,240,0.15);color:var(--accent2);}
-  .badge-obe{background:rgba(240,168,96,0.15);color:var(--accent4);}
   /* Značka převodu. Ne .badge — ten se v tabulkách na mobilu schovává. */
   .prevod{color:var(--accent4);cursor:help;font-family:'DM Mono',monospace;font-weight:700;}
   .rok-table td.rozdil{font-family:'DM Mono',monospace;text-align:right;opacity:0.85;}
@@ -165,8 +164,6 @@
   .cat-item.sub{margin-left:22px;font-size:12px;}
   .cat-item-name{flex:1;}
   .badge{padding:2px 8px;border-radius:4px;font-size:9px;font-family:'DM Mono',monospace;font-weight:600;letter-spacing:0.5px;}
-  .badge-vydaj{background:rgba(248,113,113,0.15);color:var(--red);}
-  .badge-prijem{background:rgba(74,222,128,0.15);color:var(--green);}
   .badge-plan{background:rgba(96,200,240,0.15);color:var(--accent2);}
 
   .color-swatches{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;}
@@ -903,17 +900,6 @@
           </select></div>
         <div class="field"><label>Název</label>
           <input id="o-nazev" type="text" placeholder="název kategorie"></div>
-        <div class="field" id="o-typ-field"><label>Typ</label>
-          <select id="o-typ">
-            <option value="vydaj">Výdaj</option>
-            <option value="prijem">Příjem</option>
-            <option value="obe">Příjem i výdaj</option>
-          </select>
-          <div class="rok-pozn" style="margin-top:6px">
-            Typ rozhoduje, kdy se kategorie nabídne při zápisu záznamu.
-            <strong>Příjem i výdaj</strong> je pro kategorie, kam patří obojí —
-            třeba Spoření (vklad i výběr) nebo Půjčka (splátka i čerpání).
-          </div></div>
         <div class="field" id="o-parent-field" style="display:none"><label>Nadřazená kategorie</label>
           <select id="o-parent"><option value="">— vybrat —</option></select></div>
         <button class="btn" id="btn-osnova" onclick="saveOsnova()">+ Přidat</button>
@@ -1137,19 +1123,12 @@ function catName(id){
   if(c.parent_id){const p=osnova.find(o=>o.id==c.parent_id);return p?`${p.nazev} › ${c.nazev}`:c.nazev;}
   return c.nazev;
 }
-// Odznak typu kategorie. Je na čtyřech místech (Přehled, Rok, Osnova, Plán),
-// tak ať se třetí hodnota nemusí dopisovat čtyřikrát.
-const TYPY={prijem:{cls:'badge-prijem',popis:'příjem'},
-            vydaj: {cls:'badge-vydaj', popis:'výdaj'},
-            obe:   {cls:'badge-obe',   popis:'příjem i výdaj'}};
-function katOdznak(typ){
-  const t=TYPY[typ]||TYPY.vydaj;
-  return `<span class="badge ${t.cls}">${t.popis}</span>`;
-}
-// Kategorie s typem `obe` se nabízí u příjmu i u výdaje — jsou to ty, kam
-// doopravdy patří obojí (Spoření: vklad i výběr, Půjčka: splátka i čerpání).
-function buildCatOptions(typFilter=null){
-  const tops=catTop().filter(t=>!typFilter||t.typ===typFilter||t.typ==='obe');
+// Všechny kategorie u příjmu i u výdaje. Kategorie mívaly typ, který rozhodoval,
+// kdy se nabídnou, jenže vratka nebo doplatek může přijít kdekoli — u energií,
+// u pojištění, u nákupu —, takže by stejně všude muselo být „obojí" a filtr by
+// jen překážel.
+function buildCatOptions(){
+  const tops=catTop();
   if(!tops.length)return'<option value="">— nejprve přidejte osnovu —</option>';
   return tops.map(top=>{
     const subs=catSub(top.id);
@@ -1286,8 +1265,12 @@ function showTab(id){
   if(id==='sporeni')renderSporeni();
 }
 function updateCategorySelect(){
-  const typ=document.getElementById('z-typ').value;
-  document.getElementById('z-kategorie').innerHTML='<option value="">— vybrat —</option>'+buildCatOptions(typ);
+  const sel=document.getElementById('z-kategorie');
+  // Nabídka na typu záznamu nezávisí, takže se po přepnutí příjem/výdaj nesmí
+  // ztratit už vybraná kategorie.
+  const puvodni=sel.value;
+  sel.innerHTML='<option value="">— vybrat —</option>'+buildCatOptions();
+  if([...sel.options].some(o=>o.value===puvodni))sel.value=puvodni;
 }
 // Dvojice „kde|hlavní kategorie“, u kterých už nějaký záznam jako pravidelný
 // označený je. Slouží k navržení u nového záznamu, ať označení nezůstane jen
@@ -1327,10 +1310,9 @@ function updateWalletSelect(navicId){
 }
 function updateOsnovaForm(){
   const uroven=document.getElementById('o-uroven').value;
-  document.getElementById('o-typ-field').style.display=uroven==='top'?'block':'none';
   document.getElementById('o-parent-field').style.display=uroven==='sub'?'block':'none';
   if(uroven==='sub'){
-    document.getElementById('o-parent').innerHTML='<option value="">— vybrat —</option>'+catTop().map(t=>`<option value="${t.id}">${esc(t.nazev)} (${(TYPY[t.typ]||TYPY.vydaj).popis})</option>`).join('');
+    document.getElementById('o-parent').innerHTML='<option value="">— vybrat —</option>'+catTop().map(t=>`<option value="${t.id}">${esc(t.nazev)}</option>`).join('');
   }
 }
 function selectColor(c){
@@ -1416,7 +1398,7 @@ function renderPrehled(){
     const bunka=(txt,rows,plan)=>rows.length
       ? `<td class="right mono klik" onclick="rozpad(${top.id},${plan})" title="Rozepsat na jednotlivé záznamy">${txt}</td>`
       : `<td class="right mono">${txt}</td>`;
-    return`<tr><td>${katOdznak(top.typ)} ${esc(top.nazev)}</td>`
+    return`<tr><td>${esc(top.nazev)}</td>`
       + bunka(planned!==null?fmt(planned):'—',planRows,1)
       + bunka(fmt(actual),aktRows,0)
       + `<td class="right mono ${cls}">${diff}</td></tr>`;
@@ -1594,7 +1576,7 @@ function rokRadky(tops,bucket,bunky){
     const otevreno=rozbalene.has(top.id);
     const sipka=subs.length?`<span class="rok-sipka">${otevreno?'▾':'▸'}</span>`:'<span class="rok-sipka"></span>';
     const klik=subs.length?` class="rozbalitelna" onclick="toggleKat(${top.id})"`:'';
-    let html=`<tr${klik}><td class="kat">${sipka}${katOdznak(top.typ)} ${esc(top.nazev)}</td>${bunky(r)}</tr>`;
+    let html=`<tr${klik}><td class="kat">${sipka}${esc(top.nazev)}</td>${bunky(r)}</tr>`;
     if(otevreno)html+=subs.map(s=>`<tr class="podkat"><td class="kat">↳ ${esc(s.nazev)}</td>${bunky(bucket.get(s.id))}</tr>`).join('');
     return html;
   }).join('');
@@ -2947,7 +2929,7 @@ function renderOsnova(){
     const sub=subs.map(s=>`<div class="cat-item sub"><div class="cat-item-name">↳ ${esc(s.nazev)}</div>`
       +`<button class="edit-btn" onclick="editOsnova(${s.id})" title="Upravit">✎</button>`
       +`<button class="del-btn" onclick="delOsnova(${s.id})">✕</button></div>`).join('');
-    return`<div class="cat-item top">${katOdznak(top.typ)}<div class="cat-item-name">${esc(top.nazev)}</div>`
+    return`<div class="cat-item top"><div class="cat-item-name">${esc(top.nazev)}</div>`
       +`<button class="edit-btn" onclick="editOsnova(${top.id})" title="Upravit">✎</button>`
       +`<button class="del-btn" onclick="delOsnova(${top.id})">✕</button></div>${sub}`;
   }).join('');
@@ -3131,7 +3113,6 @@ function editOsnova(id){
   updateOsnovaForm();
   document.getElementById('o-nazev').value=o.nazev;
   if(o.parent_id)document.getElementById('o-parent').value=o.parent_id;
-  else document.getElementById('o-typ').value=o.typ||'vydaj';
   document.getElementById('form-osnova-title').textContent='Upravit kategorii';
   setBtn('btn-osnova',false,'Uložit změny');
   document.getElementById('btn-cancel-osnova').style.display='block';
@@ -3153,12 +3134,12 @@ async function saveOsnova(){
   const uroven=document.getElementById('o-uroven').value;
   let row;
   if(uroven==='top'){
-    row={nazev,typ:document.getElementById('o-typ').value,parent_id:null};
+    row={nazev,parent_id:null};
   }else{
     const parent_id=parseInt(document.getElementById('o-parent').value);
     if(!parent_id){toast('Vyberte nadřazenou kategorii',true);return;}
     if(parent_id===editingOsnovaId){toast('Kategorie nemůže být sama sobě nadřazená',true);return;}
-    row={nazev,parent_id,typ:null};
+    row={nazev,parent_id};
   }
   setBtn('btn-osnova',true);syncSt('syncing');
   try{
@@ -3168,7 +3149,7 @@ async function saveOsnova(){
       if(i>=0)osnova[i]={...osnova[i],...row};
       toast('Kategorie upravena ✓');syncSt('ok');
       zavriDlg('dlg-osnova');
-      // Typ kategorie mění, co se kde počítá a nabízí — překreslit všechno.
+      // Přejmenovaná kategorie se objevuje v maticích i v nabídkách — překreslit všechno.
       render();updateCategorySelect();
     }else{
       const res=await api('osnova','POST',row);

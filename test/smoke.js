@@ -1369,17 +1369,16 @@ check('záporná částka neprojde',
   !calls.some(c=>c.method==='POST'),calls.map(c=>c.method+' '+c.url).join(' | '));
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 
-console.log('\n== 18. typ kategorie: příjem / výdaj / obojí ==');
+console.log('\n== 18. osnova bez omezení na příjem/výdaj ==');
 await klik('.tab:text-is("Osnova")'); await pg.waitForTimeout(300);
-const volbyTyp=await pg.evaluate(()=>[...document.querySelectorAll('#o-typ option')]
-  .map(o=>[o.value,o.textContent.trim()]));
-check('typ nabízí tři možnosti včetně obojího',
-  JSON.stringify(volbyTyp)===JSON.stringify([['vydaj','Výdaj'],['prijem','Příjem'],['obe','Příjem i výdaj']]),
-  JSON.stringify(volbyTyp));
+// Kategorie mívaly typ, který rozhodoval, kdy se nabídnou. Vratka nebo doplatek
+// ale může přijít kdekoli, takže by všude muselo stát „obojí" a filtr by jen
+// překážel — pole i odznaky jsou pryč.
+check('ve formuláři osnovy už typ není',(await pg.locator('#o-typ').count())===0);
 const strom=txt(await pg.textContent('#cat-tree'));
-check('obojí má v osnově vlastní odznak',strom.includes('příjem i výdaj'),strom);
+check('v osnově nezůstaly odznaky typu',
+  !/příjem|výdaj/i.test(strom),strom);
 
-// Jádro věci: kategorie s typem „obojí" se musí nabídnout u obou směrů.
 await klik('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
 const nabidka=async typ=>{
   await vyber('#z-typ',typ); await pg.waitForTimeout(200);
@@ -1387,36 +1386,44 @@ const nabidka=async typ=>{
     .map(o=>o.label||o.textContent.trim()));
 };
 const uVydaje=await nabidka('vydaj'), uPrijmu=await nabidka('prijem');
-check('obojí se nabízí u výdaje',uVydaje.includes('Sporeni'),JSON.stringify(uVydaje));
-check('obojí se nabízí i u příjmu',uPrijmu.includes('Sporeni'),JSON.stringify(uPrijmu));
-// A čistě výdajová kategorie se u příjmu nabízet pořád nesmí.
-check('výdajová kategorie zůstává jen u výdaje',
-  uVydaje.includes('Ostatni')&&!uPrijmu.includes('Ostatni'),
-  JSON.stringify({uVydaje,uPrijmu}));
-check('příjmová kategorie zůstává jen u příjmu',
-  uPrijmu.some(x=>x.includes('Mzda'))&&!uVydaje.some(x=>x.includes('Mzda')),
-  JSON.stringify({uVydaje,uPrijmu}));
+// Jádro věci: nabídka je u obou směrů stejná.
+check('nabídka kategorií je u příjmu i výdaje stejná',
+  JSON.stringify(uVydaje)===JSON.stringify(uPrijmu),JSON.stringify({uVydaje,uPrijmu}));
+check('dřív jen výdajová kategorie je i u příjmu',uPrijmu.includes('Ostatni'),
+  JSON.stringify(uPrijmu));
+check('dřív jen příjmová kategorie je i u výdaje',uVydaje.some(x=>x.includes('Mzda')),
+  JSON.stringify(uVydaje));
+check('podkategorie se nabízejí taky',uPrijmu.includes('Elektrina'),JSON.stringify(uPrijmu));
 
-// Bez editace by typ šlo nastavit jen při zakládání a všechny kategorie
-// už existují — nová volba by byla k ničemu.
+// Přepnutí příjem/výdaj nesmí shodit už vybranou kategorii — dřív se nabídka
+// přestavěla a výběr zmizel, teď se měnit nemá co.
+await vyber('#z-typ','vydaj'); await pg.waitForTimeout(150);
+const katId=await pg.evaluate(()=>{
+  const o=[...document.querySelectorAll('#z-kategorie option')].find(x=>x.textContent.includes('Albert'));
+  return o?o.value:null;
+});
+await vyber('#z-kategorie',katId); await pg.waitForTimeout(150);
+await vyber('#z-typ','prijem'); await pg.waitForTimeout(200);
+check('vybraná kategorie přežije přepnutí typu',
+  (await hodnota('#z-kategorie'))===katId,
+  await hodnota('#z-kategorie'));
+
+// Úprava kategorie musí dál fungovat, jen bez typu.
 await klik('.tab:text-is("Osnova")'); await pg.waitForTimeout(300);
 calls.length=0;
 await klik('#cat-tree .cat-item.top:has-text("Ostatni") .edit-btn'); await pg.waitForTimeout(300);
 check('úprava předvyplní název',(await hodnota('#o-nazev'))==='Ostatni');
-check('úprava předvyplní typ',(await hodnota('#o-typ'))==='vydaj');
 check('úroveň se při úpravě nedá přepnout',await pg.isDisabled('#o-uroven'));
-await vyber('#o-typ','obe');
+await fill('#o-nazev','Ostatni jinak');
 await klik('#btn-osnova'); await pg.waitForTimeout(500);
 const patchO=calls.find(c=>c.method==='PATCH'&&c.url.includes('/rest/v1/osnova'));
-check('uložení pošle PATCH s novým typem',
-  patchO&&JSON.parse(patchO.body).typ==='obe',patchO?patchO.body:'žádný PATCH');
+check('uložení pošle PATCH s názvem',
+  patchO&&JSON.parse(patchO.body).nazev==='Ostatni jinak',patchO?patchO.body:'žádný PATCH');
+check('PATCH už typ neposílá',patchO&&!('typ' in JSON.parse(patchO.body)),
+  patchO?patchO.body:'');
 check('po uložení se formulář vrátí do režimu přidání',
   (await hodnota('#o-nazev'))===''&&!(await pg.isDisabled('#o-uroven')));
-await klik('.tab:text-is("Záznamy")'); await pg.waitForTimeout(300);
-check('změna typu se hned projeví v nabídce',
-  (await nabidka('prijem')).includes('Ostatni'));
 
-await klik('.tab:text-is("Osnova")'); await pg.waitForTimeout(300);
 await klik('#cat-tree .cat-item.top:has-text("Mzda") .edit-btn'); await pg.waitForTimeout(300);
 calls.length=0;
 await klik('#btn-cancel-osnova'); await pg.waitForTimeout(300);
