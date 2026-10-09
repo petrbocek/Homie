@@ -145,3 +145,14 @@ je sečetlo po měsících do jednoho.
 Součty se tím nikde neposunuly, součet fondů se dál rovná sloupci Investice.
 Skript nese původních 23 hodnot nižší řady, protože ty se sloučením z databáze
 ztratily a jinak by je nebylo z čeho vzít.
+
+## `podkategorie-2024-2025-zpet.sql`
+
+Zpětný krok k zařazení záznamů do podkategorií (9. 10. 2026, roky 2024–2025).
+Záznamy ležely na nadřazených kategoriích a poznámka u nich pojmenovává, co to
+bylo; podle ní se 1 854 z nich přeřadilo. Skript nese tatáž pravidla použitá
+obráceně.
+
+Zařadily se jen záznamy, jejichž poznámka odpovídá právě jedné podkategorii.
+Kde seděly dvě („Nakup a obed", „havarijni a povinne"), záznam zůstal na
+rodiči — jednu částku na dvě rozdělit nejde. Součty se nikde neposunuly.
