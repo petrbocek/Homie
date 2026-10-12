@@ -157,3 +157,21 @@ obráceně.
 Zařadily se jen záznamy, jejichž poznámka odpovídá právě jedné podkategorii.
 Kde seděly dvě („Nakup a obed", „havarijni a povinne"), záznam zůstal na
 rodiči — jednu částku na dvě rozdělit nejde. Součty se nikde neposunuly.
+
+## `rozpocet-2027.py` / `rozpocet-2027.md`
+
+Rozpočet na rok 2027 postavený jako můstek od skutečnosti za 10/2025–9/2026
+(12. 10. 2026). Markdown je hotový podklad k rozhodnutí, skript ho přepočítá:
+
+```
+python3 tools/rozpocet-2027.py
+```
+
+Čísla jsou ve skriptu zadrátovaná, jak byla v Supabase ten den, aby šel rozpočet
+ověřit i bez přístupu k databázi a aby byla vidět každá jmenovitá úprava.
+**Do tabulky `plan` se nic nezapsalo** — viz `tools/otevrene-body.md`.
+
+## `otevrene-body.md`
+
+Co čeká na rozhodnutí, na co se nesmí sahat a co je potřeba zapsat, až to přijde.
+Není to kód, je to paměť mezi sezeními — číst na začátku práce s deníkem.
