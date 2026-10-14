@@ -1828,7 +1828,8 @@ const dlgy=await pg.evaluate(()=>[...document.querySelectorAll('.dlg-pozadi')].m
   nadpis:!!d.querySelector('.dlg-hlava .form-title'),
   krizek:!!d.querySelector('.dlg-x'),
   otevreny:d.classList.contains('open')})));
-check('v appce je sedm zadávacích dialogů',dlgy.length===7,JSON.stringify(dlgy.map(x=>x.id)));
+// Osmý je průvodce plánem na rok.
+check('v appce je osm dialogů',dlgy.length===8,JSON.stringify(dlgy.map(x=>x.id)));
 check('každý má nadpis i křížek',dlgy.every(x=>x.nadpis&&x.krizek),JSON.stringify(dlgy));
 check('žádný nezůstal otevřený',dlgy.every(x=>!x.otevreny),JSON.stringify(dlgy));
 const sirotci=await pg.evaluate(()=>
@@ -2216,6 +2217,102 @@ check('jediný snímek graf nekreslí',
 check('ale rozpad se otevře',await pg.isVisible('#rozpad'));
 await pg.evaluate(()=>zavriRozpad());
 await pg.waitForTimeout(150);
+
+console.log('\n== průvodce plánem na další rok ==');
+// Vlastní data, ať výsledek nezávisí na dnešním datu ani na zbytku sady:
+// základní období je „posledních 12 uzavřených měsíců" od skutečného dneška.
+const pvPuvodni=await pg.evaluate(()=>JSON.stringify(zaznamy));
+const pvCil=new Date().getFullYear()+1;
+await pg.evaluate(cil=>{
+  try{localStorage.removeItem('homie_pruvodce_'+cil);}catch(e){}
+  const ob=pvObdobi('posl12');
+  const mes=[];let y=+ob.od.slice(0,4),m=+ob.od.slice(5,7);
+  for(let i=0;i<12;i++){mes.push(`${y}-${String(m).padStart(2,'0')}`);if(++m>12){m=1;y++;}}
+  const z=[];let id=7000;
+  const p=(o)=>z.push({id:id++,typ_polozky:'skutecnost',kde:null,poznamka:null,penezenka_id:1,prevod_skupina:null,...o});
+  // mzda: 9× 30 000, poslední tři měsíce 40 000 → základ 390 000, 3m×4 = 480 000
+  mes.forEach((k,i)=>p({datum:k+'-10',castka:i<9?'30000':'40000',typ:'prijem',kategorie_id:11}));
+  // nákupy každý měsíc 1 000
+  mes.forEach(k=>p({datum:k+'-05',castka:'1000',typ:'vydaj',kategorie_id:91}));
+  // ostatní: jednorázových 30 000 + 2 000 ve dvou měsících
+  p({datum:mes[3]+'-20',castka:'30000',typ:'vydaj',kategorie_id:10,kde:'Kuchyň'});
+  p({datum:mes[5]+'-20',castka:'2000',typ:'vydaj',kategorie_id:10});
+  // pseudo-příjem a převod — do základu nesmí
+  p({datum:mes[6]+'-01',castka:'10000',typ:'prijem',kategorie_id:10,poznamka:'prevod z Unicreditu'});
+  p({datum:mes[6]+'-02',castka:'5000',typ:'vydaj',kategorie_id:10,prevod_skupina:'u-pv'});
+  // stávající plán na cílový rok — musí se nahradit, ne přičíst
+  p({datum:cil+'-03-15',castka:'777',typ:'vydaj',kategorie_id:91,typ_polozky:'plan'});
+  zaznamy=z;render();showTab('rok');
+},pvCil);
+await klik('#btn-pruvodce'); await pg.waitForTimeout(200);
+check('průvodce se otevře',await pg.isVisible('#dlg-pruvodce'));
+check('titulek nese příští rok',(await pg.textContent('#pv-titulek')).includes(String(pvCil)));
+const pvK1=txt(await pg.textContent('#pv-telo'));
+check('základ příjmů bez pseudo-příjmu (390 000)',pvK1.includes('390 000'),pvK1);
+check('základ výdajů bez převodu (44 000)',pvK1.includes('44 000'),pvK1);
+check('pseudo-příjem je vyjmenovaný',/1\s*položka, 10 000/.test(pvK1),pvK1);
+check('stávající plán je hlášený',pvK1.includes('už je plán'),pvK1);
+await pg.click('#pv-dal'); await pg.waitForTimeout(150);
+check('bez souhlasu s nahrazením dál nepustí',(await pg.textContent('#pv-kroky .ted')).includes('Základ'));
+await pg.check('#pv-nahradit'); await pg.click('#pv-dal'); await pg.waitForTimeout(150);
+check('krok 2 Položky',(await pg.textContent('#pv-kroky .ted')).includes('Položky'));
+
+const pvRadek=n=>`#pv-telo tr:has(td.kat:has-text("${n}"))`;
+await pg.click(pvRadek('Peta')+' button:text-is("3m")'); await pg.waitForTimeout(150);
+check('3m dá poslední tři měsíce ×4',
+  (await pg.inputValue(pvRadek('Peta')+' input.castka'))==='480000');
+await pg.fill(pvRadek('Albert')+' input.castka','1500/m');
+await pg.press(pvRadek('Albert')+' input.castka','Tab'); await pg.waitForTimeout(150);
+check('měsíční zápis 1500/m → 18 000 za rok',
+  (await pg.inputValue(pvRadek('Albert')+' input.castka'))==='18000');
+await pg.click(pvRadek('Ostatni')+' button.pv-mini[title^="bez největší"]'); await pg.waitForTimeout(150);
+check('bez jednorázové zůstane 2 000',(await pg.inputValue(pvRadek('Ostatni')+' input.castka'))==='2000');
+check('a důvod se vyplní sám',/jednorázové Kuchyň/.test(await pg.inputValue(pvRadek('Ostatni')+' input.duvod')));
+const pvSouhrn=txt(await pg.textContent('#pv-souhrn'));
+// 480 000 − 18 000 − 2 000
+check('souhrn: saldo plánu +460 000',pvSouhrn.includes('+460 000'),pvSouhrn);
+
+// Rozpracovaný plán přežije zavření dialogu.
+await pg.evaluate(()=>zavriDlg('dlg-pruvodce'));
+await pg.click('#btn-pruvodce'); await pg.waitForTimeout(150);
+check('po znovuotevření hlásí rozpracovaný plán',(await pg.textContent('#pv-telo')).includes('Rozpracovaný plán'));
+await pg.check('#pv-nahradit'); await pg.click('#pv-dal'); await pg.waitForTimeout(150);
+check('úpravy zůstaly',
+  (await pg.inputValue(pvRadek('Peta')+' input.castka'))==='480000');
+
+await pg.click('#pv-dal'); await pg.waitForTimeout(150);
+check('krok 3 Rozložení',(await pg.textContent('#pv-kroky .ted')).includes('Rozložení'));
+const pvRoz=await pg.evaluate(()=>pv.poradi.map(k=>pv.radky.get(k)).map(r=>({kat:r.kat,roz:pvRozlozeni(r),m:pvMesice(r),rok:pvPlanRoku(r)})));
+check('pravidelné rovně, nepravidelné jako v základu',
+  pvRoz.find(r=>r.kat===91).roz==='rovne'&&pvRoz.find(r=>r.kat===10).roz==='sezona',JSON.stringify(pvRoz));
+check('měsíce dají přesně roční částku',pvRoz.every(r=>r.m.reduce((a,b)=>a+b,0)===Math.round(r.rok)),JSON.stringify(pvRoz));
+check('sezónní rozložení: Ostatní jen v jednom měsíci',pvRoz.find(r=>r.kat===10).m.filter(v=>v).length===1,
+  JSON.stringify(pvRoz.find(r=>r.kat===10)));
+
+await pg.click('#pv-dal'); await pg.waitForTimeout(150);
+const pvK4=txt(await pg.textContent('#pv-telo'));
+check('můstek: saldo základu a saldo plánu',pvK4.includes('+346 000')&&pvK4.includes('+460 000'),pvK4);
+check('úprava bez důvodu je vytknutá',pvK4.includes('bez důvodu'),pvK4);
+const pvPred=calls.length;
+await pg.click('#pv-dal'); await pg.waitForTimeout(500);
+const pvVolani=calls.slice(pvPred);
+const pvDel=pvVolani.find(c=>c.method==='DELETE');
+check('stávající plán roku se smaže',!!pvDel&&pvDel.url.includes('typ_polozky=eq.plan')
+  &&pvDel.url.includes(`datum=gte.${pvCil}-01-01`)&&pvDel.url.includes(`datum=lte.${pvCil}-12-31`),pvDel&&pvDel.url);
+const pvPost=pvVolani.filter(c=>c.method==='POST').flatMap(c=>JSON.parse(c.body));
+// mzda 12 + nákupy 12 + ostatní 1
+check('zapíše se 25 plánových záznamů',pvPost.length===25,pvPost.length);
+check('všechny jsou plán v cílovém roce k 15.',pvPost.every(r=>r.typ_polozky==='plan'
+  &&r.datum.startsWith(pvCil+'-')&&r.datum.endsWith('-15')&&r.castka>0),JSON.stringify(pvPost[0]));
+check('DELETE odešel před POSTem',pvVolani.findIndex(c=>c.method==='DELETE')<pvVolani.findIndex(c=>c.method==='POST'));
+check('dialog se zavře a ukáže Rok',!(await pg.isVisible('#dlg-pruvodce'))
+  &&(await pg.textContent('#rok-label'))===String(pvCil));
+const pvLok=await pg.evaluate(cil=>({stary:zaznamy.some(z=>z.castka==='777'),
+  plan:zaznamy.filter(z=>z.typ_polozky==='plan'&&z.datum.startsWith(cil+'-')).length,
+  koncept:(()=>{try{return localStorage.getItem('homie_pruvodce_'+cil);}catch(e){return 'x';}})()}),pvCil);
+check('lokálně starý plán pryč a nový tam',!pvLok.stary&&pvLok.plan===25,JSON.stringify(pvLok));
+check('rozpracovaný koncept se po zápisu smaže',pvLok.koncept===null);
+await pg.evaluate(p=>{zaznamy=JSON.parse(p);rY=new Date().getFullYear();render();showTab('prehled');},pvPuvodni);
 
 console.log('\n== chyby v konzoli ==');
 // 400 = záměrně špatné heslo v testu 2
