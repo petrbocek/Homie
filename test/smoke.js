@@ -2299,6 +2299,10 @@ check('založí se podkategorie pod Ostatní',!!ppOsn&&JSON.parse(ppOsn.body).pa
 const ppPerg=ppV.filter(c=>c.method==='POST'&&c.url.includes('/plan_polozky')).flatMap(c=>JSON.parse(c.body))[0];
 check('položka nese novou kategorii a název',ppPerg&&ppPerg.nazev==='Pergola'&&ppPerg.perioda==='neznamy'
   &&ppPerg.castka===150000&&ppPerg.kategorie_id>0,JSON.stringify(ppPerg));
+check('nová podkategorie je hned v Osnově pod Ostatní',await pg.evaluate(()=>{
+  const n=osnova.find(o=>o.nazev==='Pergola');
+  return !!n&&n.parent_id===10&&document.getElementById('cat-tree').textContent.includes('Pergola')
+    &&!!document.querySelector(`#z-kategorie option[value="${n.id}"]`);}));
 check('neznámý termín do měsíců nic nezapíše',!ppV.some(c=>c.method==='POST'&&c.url.includes('/zaznamy')));
 const ppT3=txt(await pg.textContent('#pp-telo'));
 check('projekt je v seznamu jako bez termínu',ppT3.includes('Pergola')&&ppT3.includes('termín neznámý'),ppT3);
