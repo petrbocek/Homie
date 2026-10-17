@@ -2266,10 +2266,19 @@ let ppPred=calls.length;
 await pg.click('#pp-navrh-ulozit'); await pg.waitForTimeout(500);
 let ppV=calls.slice(ppPred);
 const ppPostPol=ppV.filter(c=>c.method==='POST'&&c.url.includes('/plan_polozky')).flatMap(c=>JSON.parse(c.body));
+check('uloží se 3 položky čekající na aktualizaci',ppPostPol.length===3
+  &&ppPostPol.every(p=>p.rok===ppCil&&p.ceka===true),JSON.stringify(ppPostPol));
+check('plánovač do záznamů sám nic nezapíše',!ppV.some(c=>c.url.includes('/zaznamy')));
+check('tlačítko Aktualizovat plán (3)',(await pg.textContent('#pp-aktualizovat')).includes('(3)'));
+check('tlačítko v Roku hlásí čekající změny',(await pg.textContent('#btn-plan')).includes('3 změny'));
+check('plánovač upozorní, že plán je zatím beze změny',txt(await pg.textContent('#pp-telo')).replace(/\s+/g,' ').includes('čekají na aktualizaci'));
+
+ppPred=calls.length;
+await pg.click('#pp-aktualizovat'); await pg.waitForTimeout(500);
+ppV=calls.slice(ppPred);
 const ppPostZaz=ppV.filter(c=>c.method==='POST'&&c.url.includes('/zaznamy')).flatMap(c=>JSON.parse(c.body));
-check('uloží se 3 položky',ppPostPol.length===3&&ppPostPol.every(p=>p.rok===ppCil),JSON.stringify(ppPostPol));
 // mzda 12 + vodné 4 + elektřina 1
-check('rozepíše se 17 plánových záznamů',ppPostZaz.length===17,ppPostZaz.length);
+check('aktualizace rozepíše 17 plánových záznamů',ppPostZaz.length===17,ppPostZaz.length);
 check('záznamy nesou id položky a název',ppPostZaz.every(z=>z.plan_polozka_id&&z.kde&&z.typ_polozky==='plan'
   &&z.datum.startsWith(ppCil+'-')),JSON.stringify(ppPostZaz[0]));
 const ppVodOd=ppPostPol.find(p=>p.kategorie_id===22).mesic_od;
@@ -2277,6 +2286,9 @@ check('vodné ve čtyřech měsících po třech',
   JSON.stringify(ppPostZaz.filter(z=>z.kategorie_id===22).map(z=>+z.datum.slice(5,7)))
   ===JSON.stringify([ppVodOd,ppVodOd+3,ppVodOd+6,ppVodOd+9]),
   JSON.stringify(ppPostZaz.filter(z=>z.kategorie_id===22).map(z=>z.datum)));
+check('po aktualizaci se příznak shodí',ppV.some(c=>c.method==='PATCH'&&c.url.includes('/plan_polozky?id=in.')
+  &&JSON.parse(c.body).ceka===false)&&await pg.evaluate(()=>ppCekajici().length===0));
+check('a tlačítko hlásí aktuální plán',(await pg.textContent('#pp-aktualizovat')).includes('aktuální'));
 const ppT2=txt(await pg.textContent('#pp-telo'));
 // příjmy 360 000, výdaje 3 600 + 5 000
 check('seznam: saldo plánu +351 400',ppT2.includes('+351 400'),ppT2);
@@ -2296,19 +2308,25 @@ ppV=calls.slice(ppPred);
 const ppOsn=ppV.find(c=>c.method==='POST'&&c.url.includes('/osnova'));
 check('založí se podkategorie pod Ostatní',!!ppOsn&&JSON.parse(ppOsn.body).parent_id===10
   &&JSON.parse(ppOsn.body).nazev==='Pergola',ppOsn&&ppOsn.body);
-const ppPerg=ppV.filter(c=>c.method==='POST'&&c.url.includes('/plan_polozky')).flatMap(c=>JSON.parse(c.body))[0];
-check('položka nese novou kategorii a název',ppPerg&&ppPerg.nazev==='Pergola'&&ppPerg.perioda==='neznamy'
-  &&ppPerg.castka===150000&&ppPerg.kategorie_id>0,JSON.stringify(ppPerg));
 check('nová podkategorie je hned v Osnově pod Ostatní',await pg.evaluate(()=>{
   const n=osnova.find(o=>o.nazev==='Pergola');
   return !!n&&n.parent_id===10&&document.getElementById('cat-tree').textContent.includes('Pergola')
     &&!!document.querySelector(`#z-kategorie option[value="${n.id}"]`);}));
-check('neznámý termín do měsíců nic nezapíše',!ppV.some(c=>c.method==='POST'&&c.url.includes('/zaznamy')));
+const ppPerg=ppV.filter(c=>c.method==='POST'&&c.url.includes('/plan_polozky')).flatMap(c=>JSON.parse(c.body))[0];
+check('položka nese novou kategorii a název',ppPerg&&ppPerg.nazev==='Pergola'&&ppPerg.perioda==='neznamy'
+  &&ppPerg.castka===150000&&ppPerg.kategorie_id>0,JSON.stringify(ppPerg));
 const ppT3=txt(await pg.textContent('#pp-telo'));
-check('projekt je v seznamu jako bez termínu',ppT3.includes('Pergola')&&ppT3.includes('termín neznámý'),ppT3);
+check('projekt je v seznamu jako nový a bez termínu',ppT3.includes('Pergola')&&ppT3.includes('termín neznámý')
+  &&ppT3.includes('nové'),ppT3);
 check('souhrn ukáže saldo i s projektem',ppT3.includes('bez termínu −150 000')&&ppT3.includes('+201 400'),ppT3);
+ppPred=calls.length;
+await pg.click('#pp-aktualizovat'); await pg.waitForTimeout(400);
+check('neznámý termín do měsíců nic nezapíše',
+  !calls.slice(ppPred).some(c=>c.method==='POST'&&c.url.includes('/zaznamy')));
 
-// --- úprava položky přepíše její záznamy ---
+// --- ruční úprava záznamu přežije, dokud se nezmění jeho položka ---
+const ppMzdaId=await pg.evaluate(()=>planPolozky.find(p=>p.kategorie_id===11).id);
+const ppRucni=await pg.evaluate(id=>{const z=zaznamy.find(z=>z.plan_polozka_id===id);z.castka='99999';return z.id;},ppMzdaId);
 const ppVodId=await pg.evaluate(()=>planPolozky.find(p=>p.kategorie_id===22).id);
 await pg.evaluate(id=>ppUprav(id),ppVodId); await pg.waitForTimeout(150);
 check('formulář má vybranou kategorii',(await pg.inputValue('#pp-kat'))==='22');
@@ -2317,22 +2335,35 @@ await pg.selectOption('#pp-od','3'); await pg.selectOption('#pp-do','10'); await
 ppPred=calls.length;
 await pg.click('#pp-ulozit'); await pg.waitForTimeout(500);
 ppV=calls.slice(ppPred);
+check('úprava položky jen PATCH, záznamy beze změny',ppV.some(c=>c.method==='PATCH'&&c.url.includes(`/plan_polozky?id=eq.${ppVodId}`))
+  &&!ppV.some(c=>c.url.includes('/zaznamy')));
+check('položka je označená jako změněná',txt(await pg.textContent('#pp-telo')).includes('změněno'));
+await pg.evaluate(()=>{window.__potvrzeni=[];window.confirm=m=>{__potvrzeni.push(m);return true;};});
+ppPred=calls.length;
+await pg.click('#pp-aktualizovat'); await pg.waitForTimeout(500);
+ppV=calls.slice(ppPred);
+check('před přepisem se zeptá',(await pg.evaluate(()=>__potvrzeni.length))===1);
 const ppDel=ppV.find(c=>c.method==='DELETE'&&c.url.includes('/zaznamy'));
-check('staré záznamy položky se smažou',!!ppDel&&ppDel.url.includes(`plan_polozka_id=in.(${ppVodId})`),ppDel&&ppDel.url);
-check('PATCH položky',ppV.some(c=>c.method==='PATCH'&&c.url.includes(`/plan_polozky?id=eq.${ppVodId}`)));
+check('smažou se jen záznamy změněné položky',!!ppDel&&ppDel.url.includes(`plan_polozka_id=in.(${ppVodId})`),ppDel&&ppDel.url);
 const ppNoveVod=ppV.filter(c=>c.method==='POST'&&c.url.includes('/zaznamy')).flatMap(c=>JSON.parse(c.body));
 check('měsíčně březen–říjen = 8 záznamů po 400',ppNoveVod.length===8&&ppNoveVod.every(z=>z.castka===400)
   &&ppNoveVod[0].datum===`${ppCil}-03-15`,JSON.stringify(ppNoveVod.map(z=>z.datum)));
-check('lokálně má položka jen nové záznamy',
-  await pg.evaluate(id=>zaznamy.filter(z=>z.plan_polozka_id===id).length,ppVodId)===8);
+check('ruční úprava jiné položky zůstala',
+  await pg.evaluate(id=>(zaznamy.find(z=>z.id===id)||{}).castka==='99999',ppRucni));
 
-// --- smazání položky ---
-await pg.evaluate(()=>{window.confirm=()=>true;});
+// --- smazání položky: nejdřív jen označení, záznamy zmizí s aktualizací ---
 ppPred=calls.length;
-await pg.evaluate(id=>ppSmaz(id),ppVodId); await pg.waitForTimeout(400);
+await pg.evaluate(id=>ppSmaz(id),ppVodId); await pg.waitForTimeout(300);
 ppV=calls.slice(ppPred);
-check('smazání maže záznamy i položku',ppV.some(c=>c.method==='DELETE'&&c.url.includes(`zaznamy?plan_polozka_id=eq.${ppVodId}`))
-  &&ppV.some(c=>c.method==='DELETE'&&c.url.includes(`plan_polozky?id=eq.${ppVodId}`)));
+check('smazání jen označí položku',ppV.some(c=>c.method==='PATCH'&&JSON.parse(c.body).smazana===true)
+  &&!ppV.some(c=>c.method==='DELETE'));
+check('záznamy smazané položky zatím zůstávají',await pg.evaluate(id=>zaznamy.filter(z=>z.plan_polozka_id===id).length,ppVodId)===8);
+check('smazaná se nepočítá do souhrnu',txt(await pg.textContent('#pp-telo')).includes('smaže se'));
+ppPred=calls.length;
+await pg.click('#pp-aktualizovat'); await pg.waitForTimeout(500);
+ppV=calls.slice(ppPred);
+check('aktualizace smaže záznamy i položku',ppV.some(c=>c.method==='DELETE'&&c.url.includes(`zaznamy?plan_polozka_id=in.(${ppVodId})`))
+  &&ppV.some(c=>c.method==='DELETE'&&c.url.includes(`plan_polozky?id=in.(${ppVodId})`)));
 check('lokálně pryč',await pg.evaluate(id=>!planPolozky.some(p=>p.id===id)&&!zaznamy.some(z=>z.plan_polozka_id===id),ppVodId));
 
 // --- starý plán bez položek ---

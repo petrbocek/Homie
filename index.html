@@ -312,7 +312,8 @@
   .pv-kroky span{padding:4px 10px;border-radius:99px;background:var(--surface2);color:var(--muted);white-space:nowrap;}
   .pv-kroky span.ted{background:rgba(200,240,96,0.15);color:var(--accent);}
   .pv-kroky span.hotovo{color:var(--text);}
-  .pv-pata{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--border);}
+  .pv-pata{display:flex;flex-wrap:wrap;gap:8px;padding:12px 18px;border-top:1px solid var(--border);}
+  .pv-pata .btn{flex:1 1 auto;width:auto;}
   .pv-pata .btn{margin-top:0;}
   .pv-pata #pv-zpet{flex:0 0 120px;}
   .pv-souhrn{display:flex;flex-wrap:wrap;gap:6px 18px;font-family:'DM Mono',monospace;font-size:11px;
@@ -328,6 +329,9 @@
     font-family:'DM Mono',monospace;background:var(--surface2);}
   .pv-tab tr.soucet td{border-top:1px solid var(--border);font-weight:700;}
   .pv-tab tr.pv-zmena td{background:rgba(200,240,96,0.06);}
+  .badge-zmena{background:rgba(240,168,96,0.15);color:var(--accent4);}
+  .pv-tab tr.pp-smazana td{opacity:0.5;text-decoration:line-through;}
+  .pv-tab tr.pp-smazana td:last-child{text-decoration:none;opacity:1;}
   .dlg-box .row2 .field{min-width:0;}
   .pv-tab tr.pv-zmena td.kat{color:var(--accent);}
   .pv-tab input,.pv-tab select{padding:5px 7px;font-size:11px;}
@@ -1402,7 +1406,7 @@ function render(){
   document.getElementById('monthLabel').textContent=label;
   document.getElementById('records-month').textContent=label;
   document.getElementById('plan-month-label').textContent=label;
-  renderPrehled();renderRoky();renderRok();renderZaznamy();renderPenezenky();renderZustatky();renderOsnova();renderEnergie();renderSporeni();
+  renderPrehled();renderRoky();renderRok();renderZaznamy();renderPenezenky();renderZustatky();renderOsnova();renderEnergie();renderSporeni();ppTlacitko();
 }
 
 function renderPrehled(){
@@ -1777,8 +1781,14 @@ function renderRok(skocNaDnes=false){
 // jednou v dubnu", „Pojistka 3 200 kvartálně". Položka žije v tabulce
 // `plan_polozky` a rozpisuje se do obyčejných záznamů typu plán — jeden na
 // každý měsíc, kdy se platí —, propojených přes `zaznamy.plan_polozka_id`.
-// Úprava položky její záznamy smaže a rozepíše znovu. Přehled, Rok i výhled
-// peněženek tak dál čtou jen záznamy a o položkách vědět nemusí.
+// Přehled, Rok i výhled peněženek tak dál čtou jen záznamy a o položkách
+// vědět nemusí.
+//
+// Plánovač je pracovní verze plánu. Přidání, úprava ani smazání položky se do
+// záznamů nepropíše hned — položka jen dostane příznak `ceka` (resp.
+// `smazana`) a záznamy se přepíšou až tlačítkem „Aktualizovat plán". Ruční
+// úpravy plánových záznamů v Záznamech tak zůstanou, dokud se v plánovači
+// nezmění jejich položka; u té se pak přepíšou, protože o to člověk požádal.
 //
 // Projekt s neznámým termínem (pergola, kuchyň „až to vyjde") se do měsíců
 // nerozpisuje vůbec: je v seznamu a v ročním součtu zvlášť, a až bude termín
@@ -1826,7 +1836,17 @@ function ppZaznamy(p){
 function ppRadekDb(p){
   return {rok:p.rok,nazev:p.nazev,typ:p.typ,kategorie_id:p.kategorie_id||null,
     castka:Math.round(Number(p.castka)),perioda:p.perioda,mesic_od:+p.mesic_od||1,
-    mesic_do:+p.mesic_do||12,penezenka_id:p.penezenka_id||null,poznamka:p.poznamka||null};
+    mesic_do:+p.mesic_do||12,penezenka_id:p.penezenka_id||null,poznamka:p.poznamka||null,
+    ceka:!!p.ceka,smazana:!!p.smazana};
+}
+// Položky, jejichž změna se ještě nepropsala do záznamů.
+function ppCekajici(rok){return planPolozky.filter(p=>(p.ceka||p.smazana)&&(rok==null||p.rok===rok));}
+function ppMaZaznamy(id){return zaznamy.some(z=>z.plan_polozka_id===id);}
+// Tlačítko v záložce Rok ukazuje, že v plánovači něco čeká.
+function ppTlacitko(){
+  const b=document.getElementById('btn-plan');if(!b)return;
+  const n=ppCekajici().length;
+  b.textContent='✦ Plán na rok'+(n?` · ${n} ${n===1?'změna':n<5?'změny':'změn'}`:'');
 }
 // Částka z pole. Přijme mezery a čárku („92 884", „1 234,5") a měsíční zápis
 // „3980/m", který se vynásobí dvanácti.
@@ -1885,14 +1905,19 @@ function ppRender(){
     ppNavrhPocet();
   }else{
     document.getElementById('pp-telo').innerHTML=ppSeznam();
+    const n=ppCekajici(pp.rok).length;
     pata.innerHTML=`<button class="btn secondary" onclick="ppOtevriNavrh()">Návrh z historie</button>`
-      +`<button class="btn" onclick="ppNova()">+ Přidat položku</button>`;
+      +`<button class="btn secondary" onclick="ppNova()">+ Přidat položku</button>`
+      +`<button class="btn" id="pp-aktualizovat" onclick="ppAktualizuj()"${n?'':' disabled'}>`
+      +(n?`Aktualizovat plán (${n})`:'Plán je aktuální')+`</button>`;
   }
+  ppTlacitko();
 }
 
 function ppSouhrn(){
   const s={prijmy:0,vydaje:0,neznamy:0};
   for(const p of ppRoku()){
+    if(p.smazana)continue;
     const v=ppRocne(p);
     if(p.perioda==='neznamy'){s.neznamy+=(p.typ==='prijem'?1:-1)*v;continue;}
     s[p.typ==='prijem'?'prijmy':'vydaje']+=v;
@@ -1914,6 +1939,10 @@ function ppSeznam(){
         <span>saldo <b style="color:${barva(saldo)}">${fmtZn(saldo)}</b> · ${fmtZn(saldo/12)}/měs.</span>
         ${s.neznamy?`<span style="color:var(--accent4)">bez termínu ${fmtZn(s.neznamy)} → saldo ${fmtZn(saldo+s.neznamy)}</span>`:''}
       </div></div></div>`;
+  const ceka=ppCekajici(pp.rok).length;
+  if(ceka)html+=`<div class="pv-varovani">${ceka===1?'Jedna změna čeká':`${ceka} ${ceka<5?'změny čekají':'změn čeká'}`}
+    na aktualizaci. Přehled a Rok zatím ukazují plán beze změny — propíše se tlačítkem
+    <strong>Aktualizovat plán</strong>. Záznamy ostatních položek (i ručně upravené) zůstanou, jak jsou.</div>`;
   const stare=ppStarePlany();
   if(stare.length){
     const sum=stare.reduce((a,z)=>a+(z.typ==='prijem'?1:-1)*Number(z.castka),0);
@@ -1938,7 +1967,7 @@ function ppSeznam(){
     <th class="right pv-uzke">částka</th><th class="right">za rok</th><th></th></tr></thead><tbody>`;
   for(const t of klice){
     const pp_=skupiny.get(t).sort((a,b)=>(a.typ===b.typ?0:a.typ==='prijem'?-1:1)||a.nazev.localeCompare(b.nazev,'cs'));
-    const plan=pp_.reduce((a,p)=>a+(p.typ==='prijem'?1:-1)*ppRocne(p),0);
+    const plan=pp_.filter(p=>!p.smazana).reduce((a,p)=>a+(p.typ==='prijem'?1:-1)*ppRocne(p),0);
     const top=osnova.find(o=>o.id===t);
     html+=`<tr class="skupina"><td colspan="5">${esc(top?top.nazev:'Bez kategorie')} · plán ${fmtZn(plan)}`
       +`<span class="pv-uzke"> · posledních 12 měsíců ${fmtZn(loni.get(t)||0)}</span></td></tr>`;
@@ -1947,13 +1976,17 @@ function ppSeznam(){
       let pod=p.kategorie_id&&ppTop(p.kategorie_id)!==p.kategorie_id?catName(p.kategorie_id).split(' › ').pop():'';
       const bez=t=>t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
       if(bez(pod)===bez(p.nazev))pod='';
-      html+=`<tr><td class="kat">${esc(p.nazev)}`
+      const stav=p.smazana?'<span class="badge badge-zmena">smaže se</span>'
+        :p.ceka?`<span class="badge badge-zmena">${ppMaZaznamy(p.id)?'změněno':'nové'}</span>`:'';
+      html+=`<tr${p.smazana?' class="pp-smazana"':''}><td class="kat">${esc(p.nazev)} ${stav}`
         +`<div style="font-size:10px;color:var(--muted)">${[pod,p.typ==='prijem'?'příjem':null,p.poznamka].filter(Boolean).map(esc).join(' · ')}</div></td>`
         +`<td>${p.perioda==='neznamy'?'<span class="projekce">termín neznámý</span>':esc(ppPopis(p))}</td>`
         +`<td class="cis pv-uzke">${fmtM(p.castka)}</td>`
         +`<td class="cis" style="color:${p.typ==='prijem'?'var(--green)':'var(--text)'}">${fmtM(ppRocne(p))}</td>`
-        +`<td style="white-space:nowrap"><button class="edit-btn" onclick="ppUprav(${p.id})" title="Upravit">✎</button>`
-        +`<button class="del-btn" onclick="ppSmaz(${p.id})" title="Smazat">✕</button></td></tr>`;
+        +`<td style="white-space:nowrap">`+(p.smazana
+          ?`<button class="edit-btn" onclick="ppObnov(${p.id})" title="Nemazat">↺</button>`
+          :`<button class="edit-btn" onclick="ppUprav(${p.id})" title="Upravit">✎</button>`
+          +`<button class="del-btn" onclick="ppSmaz(${p.id})" title="Smazat">✕</button>`)+`</td></tr>`;
     }
   }
   return html+`</tbody></table></div>`;
@@ -2064,29 +2097,20 @@ async function ppUlozFormular(){
       updateCategorySelect();renderOsnova();
     }
     await ppZapis([p]);
-    syncSt('ok');toast(p.id?'Položka upravena ✓':'Položka přidána ✓');
+    syncSt('ok');toast((p.id?'Položka upravena':'Položka přidána')+' — do plánu se propíše aktualizací');
     render();ppRezim('seznam');
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');
     setBtn('pp-ulozit',false,p.id?'Uložit změny':'+ Přidat položku');}
 }
 
-// Uloží položky a jejich záznamy rozepíše znovu. Staré záznamy upravených
-// položek se mažou až po úspěšném uložení položky, ať se nic neztratí.
+// Uloží položky do plánovače. Záznamů se nedotkne — položka jen dostane
+// příznak `ceka` a do plánu se propíše až aktualizací.
 async function ppZapis(polozky){
   const ulozene=[];
+  polozky=polozky.map(p=>({...p,ceka:true}));
   const nove=polozky.filter(p=>!p.id),stare=polozky.filter(p=>p.id);
   if(nove.length)ulozene.push(...(await api('plan_polozky','POST',nove.map(ppRadekDb))||[]));
   for(const p of stare){await api('plan_polozky','PATCH',ppRadekDb(p),`id=eq.${p.id}`);ulozene.push({...p,...ppRadekDb(p)});}
-  const ids=stare.map(p=>p.id);
-  if(ids.length){
-    await api('zaznamy','DELETE',null,`plan_polozka_id=in.(${ids.join(',')})`);
-    zaznamy=zaznamy.filter(z=>!ids.includes(z.plan_polozka_id));
-  }
-  const zz=ulozene.flatMap(ppZaznamy);
-  for(let i=0;i<zz.length;i+=500){
-    const res=await api('zaznamy','POST',zz.slice(i,i+500));
-    zaznamy.unshift(...(res||[]));
-  }
   for(const u of ulozene){
     const i=planPolozky.findIndex(x=>x.id===u.id);
     if(i>=0)planPolozky[i]=u;else planPolozky.push(u);
@@ -2094,15 +2118,63 @@ async function ppZapis(polozky){
 }
 async function ppSmaz(id){
   const p=planPolozky.find(x=>x.id===id);if(!p)return;
-  if(!confirm(`Smazat položku „${p.nazev}" z plánu na rok ${p.rok}?`))return;
   syncSt('syncing');
   try{
-    await api('zaznamy','DELETE',null,`plan_polozka_id=eq.${id}`);
-    await api('plan_polozky','DELETE',null,`id=eq.${id}`);
-    zaznamy=zaznamy.filter(z=>z.plan_polozka_id!==id);
-    planPolozky=planPolozky.filter(x=>x.id!==id);
-    syncSt('ok');toast('Položka smazána');render();ppRender();
+    // Položka, která se do plánu ještě nepropsala, nemá co uklízet — jde pryč
+    // hned. Ostatní se jen označí; záznamy zmizí s aktualizací.
+    if(!ppMaZaznamy(id)){
+      if(!confirm(`Smazat položku „${p.nazev}"? V plánu ještě není, takže se smaže hned.`)){syncSt('ok');return;}
+      await api('plan_polozky','DELETE',null,`id=eq.${id}`);
+      planPolozky=planPolozky.filter(x=>x.id!==id);
+    }else{
+      await api('plan_polozky','PATCH',{smazana:true},`id=eq.${id}`);
+      p.smazana=true;
+    }
+    syncSt('ok');ppRender();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
+}
+async function ppObnov(id){
+  const p=planPolozky.find(x=>x.id===id);if(!p)return;
+  syncSt('syncing');
+  try{await api('plan_polozky','PATCH',{smazana:false},`id=eq.${id}`);p.smazana=false;syncSt('ok');ppRender();}
+  catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
+}
+
+// Propíše čekající změny plánovače do záznamů: u změněných a smazaných
+// položek smaže jejich záznamy (i ručně upravené — o přepis člověk požádal),
+// změněné rozepíše znovu a smazané položky odstraní. Záznamů ostatních
+// položek se nedotkne.
+async function ppAktualizuj(){
+  const cekaji=ppCekajici(pp.rok);
+  if(!cekaji.length)return;
+  const prepis=cekaji.filter(p=>ppMaZaznamy(p.id)).length;
+  if(prepis&&!confirm(`Aktualizovat plán na rok ${pp.rok}? Záznamy ${polozek(prepis)} se přepíšou podle plánovače`
+    +` — jejich ruční úpravy v Záznamech se ztratí. Ostatní položky zůstanou beze změny.`))return;
+  const b=document.getElementById('pp-aktualizovat');
+  if(b){b.disabled=true;b.textContent='Aktualizuji…';}
+  syncSt('syncing');
+  try{
+    const ids=cekaji.map(p=>p.id);
+    await api('zaznamy','DELETE',null,`plan_polozka_id=in.(${ids.join(',')})`);
+    zaznamy=zaznamy.filter(z=>!ids.includes(z.plan_polozka_id));
+    const zive=cekaji.filter(p=>!p.smazana),smazane=cekaji.filter(p=>p.smazana);
+    const zz=zive.flatMap(ppZaznamy);
+    for(let i=0;i<zz.length;i+=500){
+      const res=await api('zaznamy','POST',zz.slice(i,i+500));
+      zaznamy.unshift(...(res||[]));
+    }
+    if(smazane.length){
+      const sid=smazane.map(p=>p.id);
+      await api('plan_polozky','DELETE',null,`id=in.(${sid.join(',')})`);
+      planPolozky=planPolozky.filter(p=>!sid.includes(p.id));
+    }
+    if(zive.length){
+      await api('plan_polozky','PATCH',{ceka:false},`id=in.(${zive.map(p=>p.id).join(',')})`);
+      zive.forEach(p=>{p.ceka=false;});
+    }
+    syncSt('ok');toast(`Plán na rok ${pp.rok} aktualizován ✓`);
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
+  render();ppRender();
 }
 async function ppSmazStare(){
   const stare=ppStarePlany();
@@ -2129,7 +2201,7 @@ function ppSestavNavrh(){
     if(!sk.has(k))sk.set(k,{kat:z.kategorie_id||null,typ:z.typ,celkem:0,mesice:Array(12).fill(0)});
     const r=sk.get(k);r.celkem+=Number(z.castka);r.mesice[+z.datum.slice(5,7)-1]+=Number(z.castka);
   }
-  const vPlanu=new Set(ppRoku().map(p=>`${p.kategorie_id||0}|${p.typ}`));
+  const vPlanu=new Set(ppRoku().filter(p=>!p.smazana).map(p=>`${p.kategorie_id||0}|${p.typ}`));
   const kolo=(n,k)=>Math.max(k,Math.round(n/k)*k);
   const out=[];
   for(const [k,r] of sk){
@@ -2196,7 +2268,7 @@ async function ppUlozNavrh(){
   setBtn('pp-navrh-ulozit',true,'','Ukládám…');syncSt('syncing');
   try{
     await ppZapis(vyber);
-    syncSt('ok');toast(`Přidáno ${polozek(vyber.length)} ✓`);render();ppRezim('seznam');
+    syncSt('ok');toast(`Přidáno ${polozek(vyber.length)} — do plánu se propíšou aktualizací`);render();ppRezim('seznam');
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');ppNavrhPocet();
     document.getElementById('pp-navrh-ulozit').disabled=false;}
 }

@@ -241,6 +241,10 @@ CREATE TABLE IF NOT EXISTS plan_polozky (
   poznamka      TEXT,
   created_at    TIMESTAMPTZ DEFAULT NOW()
 );
+-- Plánovač je pracovní verze: změna položky se do záznamů propíše až
+-- tlačítkem „Aktualizovat plán". Do té doby nese položka příznak.
+ALTER TABLE plan_polozky ADD COLUMN IF NOT EXISTS ceka    BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE plan_polozky ADD COLUMN IF NOT EXISTS smazana BOOLEAN NOT NULL DEFAULT FALSE;
 CREATE INDEX IF NOT EXISTS idx_plan_polozky_rok ON plan_polozky(rok);
 
 ALTER TABLE zaznamy ADD COLUMN IF NOT EXISTS plan_polozka_id BIGINT
