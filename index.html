@@ -761,7 +761,7 @@
         <span id="rok-nav-label"></span>
         <button onclick="changeRok(1)">›</button>
       </div>
-      <button class="btn uzky" id="btn-pruvodce" onclick="otevriPruvodce()">✦ Plán na další rok</button>
+      <button class="btn uzky" id="btn-plan" onclick="otevriPlan()">✦ Plán na rok</button>
     </div>
 
     <div class="rok-wrap">
@@ -804,19 +804,15 @@
     </div>
     </div>
 
-    <!-- průvodce plánem na rok -->
-    <div class="dlg-pozadi" id="dlg-pruvodce" onclick="if(event.target===this)zavriDlg('dlg-pruvodce')">
-      <div class="dlg-box siroky" role="dialog" aria-modal="true" aria-labelledby="pv-titulek">
+    <!-- plán na rok po položkách -->
+    <div class="dlg-pozadi" id="dlg-plan" onclick="if(event.target===this)zavriDlg('dlg-plan')">
+      <div class="dlg-box siroky" role="dialog" aria-modal="true" aria-labelledby="pp-titulek">
         <div class="dlg-hlava">
-          <div class="form-title" id="pv-titulek">Plán na rok</div>
-          <button class="dlg-x" onclick="zavriDlg('dlg-pruvodce')" title="Zavřít" aria-label="Zavřít">✕</button>
+          <div class="form-title" id="pp-titulek">Plán na rok</div>
+          <button class="dlg-x" onclick="zavriDlg('dlg-plan')" title="Zavřít" aria-label="Zavřít">✕</button>
         </div>
-        <div class="pv-kroky" id="pv-kroky"></div>
-        <div class="dlg-telo" id="pv-telo"></div>
-        <div class="pv-pata">
-          <button class="btn secondary" id="pv-zpet" onclick="pvKrok(-1)">‹ Zpět</button>
-          <button class="btn" id="pv-dal" onclick="pvKrok(1)">Další ›</button>
-        </div>
+        <div class="dlg-telo" id="pp-telo"></div>
+        <div class="pv-pata" id="pp-pata"></div>
       </div>
     </div>
   </div>
@@ -1070,7 +1066,7 @@ function lock(msg){
 async function signOut(){
   const t=session&&session.access_token;
   if(t){try{await fetch(`${SB_URL}/auth/v1/logout`,{method:'POST',headers:{'apikey':SB_KEY,'Authorization':`Bearer ${t}`}});}catch(e){}}
-  zaznamy=[];penezenky=[];osnova=[];
+  zaznamy=[];penezenky=[];osnova=[];planPolozky=[];
   editingZaznamId=null;editingPenezenkaId=null;
   lock(null);
   const pw=document.getElementById('auth-pass');if(pw)pw.value='';
@@ -1776,150 +1772,65 @@ function renderRok(skocNaDnes=false){
     +`<tr class="soucet"><td class="kat">Celkový součet</td>${souhrnBunky(celkem)}</tr></tbody>`;
 }
 
-// --- PRŮVODCE PLÁNEM NA ROK ---
-// Plán se staví stejně jako tools/rozpocet-2027.md: základem je skutečnost za
-// posledních 12 uzavřených měsíců (ne průměr let, ne odhad) a každá změna proti
-// ní je jmenovitá, s důvodem. Co se nezmění, jde do plánu v loňské výši. Tak je
-// každé číslo dohledatelné ze skutečnosti — první verze rozpočtu 2027 počítaná
-// „od nuly" vyšla skoro vyrovnaná, a byla to chyba o 136 tisíc.
+// --- PLÁN NA ROK PO POLOŽKÁCH ---
+// Plán se skládá z položek: „Benzín 5 500 měsíčně", „Servis auta 12 000
+// jednou v dubnu", „Pojistka 3 200 kvartálně". Položka žije v tabulce
+// `plan_polozky` a rozpisuje se do obyčejných záznamů typu plán — jeden na
+// každý měsíc, kdy se platí —, propojených přes `zaznamy.plan_polozka_id`.
+// Úprava položky její záznamy smaže a rozepíše znovu. Přehled, Rok i výhled
+// peněženek tak dál čtou jen záznamy a o položkách vědět nemusí.
 //
-// Výsledkem jsou obyčejné záznamy typu plán, jeden na kategorii a měsíc, takže
-// je hned ukazuje Přehled, matice Rok i výhled peněženek.
-//
-// Rozpracovaný plán si průvodce drží v localStorage (jen úpravy, ne základ),
-// aby šlo dialog zavřít, popřemýšlet a vrátit se. Smaže se po zápisu.
-const PV_KROKY=['Základ','Položky','Rozložení','Zápis'];
-// „Příjmy", které jsou ve skutečnosti přesuny: převod z Unicreditu, čerpání
-// vlastní půjčky, výběr z bankomatu. Stejné pravidlo jako v rozpočtu 2027.
-const PV_PSEUDO=/p[rř]evod|moje p[uů]j[cč]k|v[yý]b[eě]r/i;
-let pv=null;
+// Projekt s neznámým termínem (pergola, kuchyň „až to vyjde") se do měsíců
+// nerozpisuje vůbec: je v seznamu a v ročním součtu zvlášť, a až bude termín
+// jasný, změní se mu perioda na „jednorázově" a měsíc. Kdo na něj chce šetřit
+// průběžně, zvolí „rozpustit do roku".
+const PP_PERIODY={mesicne:'měsíčně',kvartalne:'kvartálně',jednou:'jednorázově',
+  rozpustit:'rozpustit do roku',neznamy:'termín neznámý'};
+// „Příjmy", které jsou ve skutečnosti přesuny — do návrhu z historie nepatří.
+// Stejné pravidlo jako v tools/rozpocet-2027.md.
+const PP_PSEUDO=/p[rř]evod|moje p[uů]j[cč]k|v[yý]b[eě]r/i;
+let planPolozky=[];
+let pp=null;
 
-const pvPad=n=>String(n).padStart(2,'0');
-function pvJePseudo(z){return z.typ==='prijem'&&PV_PSEUDO.test(z.poznamka||'');}
+const ppPad=n=>String(n).padStart(2,'0');
+const ppMes=m=>MONTHS_CS[m-1].toLowerCase();
 
-// Základní období. Výchozí je posledních 12 uzavřených měsíců: nejčerstvější
-// celý rok, který máme, a každý kalendářní měsíc v něm je právě jednou, takže
-// se z něj dá vzít i sezónnost.
-function pvObdobi(druh){
-  const t=new Date();
-  if(druh==='rok'){const r=t.getFullYear()-1;
-    return {od:`${r}-01-01`,do:`${r}-12-31`,popis:`rok ${r}`};}
-  let doY=t.getFullYear(),doM=t.getMonth();          // poslední uzavřený měsíc, 1–12
-  if(doM===0){doM=12;doY--;}
-  let odY=doY,odM=doM-11;if(odM<1){odM+=12;odY--;}
-  return {od:`${odY}-${pvPad(odM)}-01`,do:`${doY}-${pvPad(doM)}-${pvPad(new Date(doY,doM,0).getDate())}`,
-          popis:`${odM}/${odY} – ${doM}/${doY}`};
-}
-// Začátek posledních tří měsíců základu — podle nich se odhaduje mzda, která
-// se během roku změnila (průměr roku by ji podstřelil).
-function pvOdPosl3(ob){
-  let y=+ob.do.slice(0,4),m=+ob.do.slice(5,7)-2;if(m<1){m+=12;y--;}
-  return `${y}-${pvPad(m)}-01`;
-}
-
-function pvKoncept(rok){try{const r=localStorage.getItem('homie_pruvodce_'+rok);return r?JSON.parse(r):null;}catch(e){return null;}}
-function pvUlozKoncept(){
-  if(!pv)return;
-  const zmeny=pv.poradi.map(k=>pv.radky.get(k))
-    .filter(r=>r.novy!==null||r.duvod||r.rozlozeni||r.pridany)
-    .map(r=>({k:r.klic,novy:r.novy,duvod:r.duvod,rozlozeni:r.rozlozeni,pridany:!!r.pridany,
-              bezJednor:!!r.bezJednor}));
-  try{localStorage.setItem('homie_pruvodce_'+pv.rok,JSON.stringify(
-    {zaklad:pv.zaklad,bezPseudo:pv.bezPseudo,penezenka:pv.penezenka,zmeny}));}catch(e){}
-}
-function pvSmazKoncept(rok){try{localStorage.removeItem('homie_pruvodce_'+rok);}catch(e){}}
-
-function pvNovyRadek(klic){
-  const [kat,typ]=klic.split('|');
-  return {klic,kat:+kat||null,typ,zaklad:0,posl3:0,mesice:Array(12).fill(0),pocet:0,
-          max:null,novy:null,duvod:'',rozlozeni:null,pridany:false,bezJednor:false};
-}
-
-// Sestaví řádky plánu ze základu a přes ně položí uložené úpravy.
-function pvSestav(){
-  const ob=pvObdobi(pv.zaklad);pv.obdobi=ob;
-  const od3=pvOdPosl3(ob);
-  const radky=new Map();
-  const pen=new Map();
-  pv.pseudo={pocet:0,castka:0};
-  for(const z of zaznamy){
-    if(!z.datum||jePlan(z)||jePrevod(z)||z.datum<ob.od||z.datum>ob.do)continue;
-    const c=Number(z.castka);
-    if(pvJePseudo(z)){pv.pseudo.pocet++;pv.pseudo.castka+=c;if(pv.bezPseudo)continue;}
-    const klic=`${z.kategorie_id||0}|${z.typ}`;
-    if(!radky.has(klic))radky.set(klic,pvNovyRadek(klic));
-    const r=radky.get(klic);
-    r.zaklad+=c;r.pocet++;
-    r.mesice[+z.datum.slice(5,7)-1]+=c;
-    if(z.datum>=od3)r.posl3+=c;
-    if(!r.max||c>r.max.castka)r.max={castka:c,datum:z.datum,kde:z.kde||''};
-    if(z.penezenka_id)pen.set(z.penezenka_id,(pen.get(z.penezenka_id)||0)+1);
+// Rozpis položky do dvanácti měsíců v celých korunách.
+function ppMesice(p){
+  const c=Math.round(Number(p.castka)||0),out=Array(12).fill(0);
+  const od=Math.min(12,Math.max(1,+p.mesic_od||1)),doM=Math.min(12,Math.max(od,+p.mesic_do||12));
+  if(c<=0)return out;
+  if(p.perioda==='mesicne')for(let m=od;m<=doM;m++)out[m-1]=c;
+  else if(p.perioda==='kvartalne')for(let m=od;m<=12;m+=3)out[m-1]=c;
+  else if(p.perioda==='jednou')out[od-1]=c;
+  else if(p.perioda==='rozpustit'){
+    // Zaokrouhlovací zbytek jde do posledního měsíce, ať součet sedí na korunu.
+    let zb=c;for(let m=1;m<=12;m++){out[m-1]=Math.round(c/12);zb-=out[m-1];}out[11]+=zb;
   }
-  for(const r of radky.values())r.posl3*=4;
-  // Peněženka pro plán: ta, přes kterou v základu šlo nejvíc pohybů. Díky ní
-  // plán naskočí ve „výhledu" v Peněženkách.
-  pv.penezenkaVychozi=[...pen.entries()].sort((a,b)=>b[1]-a[1]).map(x=>String(x[0]))
-    .find(id=>penezenkyVidet().some(w=>String(w.id)===id))||'';
-  if(pv.penezenka===undefined)pv.penezenka=pv.penezenkaVychozi;
-
-  for(const u of (pv.zmeny||[])){
-    const [kat]=u.k.split('|');
-    if(+kat&&!osnova.some(o=>o.id==kat))continue;      // kategorie mezitím zmizela
-    if(!radky.has(u.k)){if(!u.pridany&&u.novy===null)continue;radky.set(u.k,pvNovyRadek(u.k));}
-    Object.assign(radky.get(u.k),{novy:u.novy,duvod:u.duvod||'',rozlozeni:u.rozlozeni||null,
-      bezJednor:!!u.bezJednor&&!!radky.get(u.k).max,
-      pridany:!!u.pridany&&!radky.get(u.k).pocet});
-  }
-  pv.radky=radky;
-  const nazev=r=>r.kat?catName(r.kat):'(bez kategorie)';
-  pv.poradi=[...radky.values()].sort((a,b)=>(a.typ===b.typ?0:a.typ==='prijem'?-1:1)
-      ||(a.pridany-b.pridany)||(b.zaklad-a.zaklad)||nazev(a).localeCompare(nazev(b),'cs'))
-    .map(r=>r.klic);
-  pv.existujici=zaznamy.filter(z=>jePlan(z)&&z.datum&&z.datum.startsWith(pv.rok+'-'));
-}
-
-function pvPlanRoku(r){return r.novy!==null?r.novy:r.zaklad;}
-function pvZmeneny(r){return r.novy!==null&&Math.round(r.novy)!==Math.round(r.zaklad);}
-// Co chodí skoro každý měsíc (mzda, hypotéka, zálohy), se rozloží rovnoměrně;
-// co ne (Vánoce, dovolená, čtvrtletní vodné), kopíruje měsíce základu.
-function pvRozlozeniVychozi(r){
-  const v=pvVzor(r);
-  return v.some(x=>x>0)&&v.filter(x=>x>0).length<10?'sezona':'rovne';
-}
-// Měsíce základu, ze kterých se bere sezónnost. Vyřazená jednorázová položka
-// v nich být nesmí — jinak by zbylé 2 000 Kč z „30 000 + 2 000" padly z 94 %
-// do měsíce, kdy se kupovala kuchyň.
-function pvVzor(r){
-  const v=r.mesice.slice();
-  if(r.bezJednor&&r.max)v[+r.max.datum.slice(5,7)-1]-=r.max.castka;
-  return v.map(x=>Math.max(0,x));
-}
-function pvRozlozeni(r){return r.rozlozeni||pvRozlozeniVychozi(r);}
-// Roční částka do měsíců v celých korunách. Zaokrouhlovací zbytek jde do
-// posledního měsíce s plánem, aby součet měsíců seděl přesně na roční částku.
-function pvMesice(r){
-  const rok=Math.round(pvPlanRoku(r));
-  const out=Array(12).fill(0);
-  if(rok<=0)return out;
-  const vzor=pvVzor(r),celkem=vzor.reduce((a,v)=>a+v,0);
-  const podily=pvRozlozeni(r)==='sezona'&&celkem>0
-    ?vzor.map(v=>v/celkem):Array(12).fill(1/12);
-  let zbyva=rok,posledni=11;
-  for(let m=0;m<12;m++){out[m]=Math.round(rok*podily[m]);zbyva-=out[m];if(podily[m]>0)posledni=m;}
-  out[posledni]+=zbyva;
   return out;
 }
-function pvSoucty(){
-  const s={prijmy:0,vydaje:0,zPrijmy:0,zVydaje:0};
-  for(const k of pv.poradi){const r=pv.radky.get(k);
-    if(r.typ==='prijem'){s.prijmy+=pvPlanRoku(r);s.zPrijmy+=r.zaklad;}
-    else{s.vydaje+=pvPlanRoku(r);s.zVydaje+=r.zaklad;}}
-  return s;
+function ppRocne(p){return p.perioda==='neznamy'?Math.round(Number(p.castka)||0):ppMesice(p).reduce((a,b)=>a+b,0);}
+function ppPopis(p){
+  const od=+p.mesic_od||1,doM=+p.mesic_do||12;
+  if(p.perioda==='mesicne')return od===1&&doM===12?'měsíčně':`měsíčně ${od}.–${doM}. měsíc`;
+  if(p.perioda==='kvartalne')return 'kvartálně · '+ppMesice({...p,castka:1}).map((v,i)=>v?MONTHS_SHORT[i].toLowerCase():null).filter(Boolean).join(', ');
+  if(p.perioda==='jednou')return 'jednorázově · '+ppMes(od);
+  if(p.perioda==='rozpustit')return 'rozpuštěno do 12 měsíců';
+  return 'termín neznámý';
 }
-
+function ppZaznamy(p){
+  return ppMesice(p).map((v,i)=>v>0?{typ:p.typ,typ_polozky:'plan',datum:`${p.rok}-${ppPad(i+1)}-15`,
+    castka:v,kategorie_id:p.kategorie_id||null,penezenka_id:p.penezenka_id||null,kde:p.nazev,
+    poznamka:p.poznamka||null,pravidelna:false,plan_polozka_id:p.id}:null).filter(Boolean);
+}
+function ppRadekDb(p){
+  return {rok:p.rok,nazev:p.nazev,typ:p.typ,kategorie_id:p.kategorie_id||null,
+    castka:Math.round(Number(p.castka)),perioda:p.perioda,mesic_od:+p.mesic_od||1,
+    mesic_do:+p.mesic_do||12,penezenka_id:p.penezenka_id||null,poznamka:p.poznamka||null};
+}
 // Částka z pole. Přijme mezery a čárku („92 884", „1 234,5") a měsíční zápis
-// „3980/m", který se vynásobí dvanácti — zálohy se tak zadávají přirozeněji.
-function pvCislo(s){
+// „3980/m", který se vynásobí dvanácti.
+function ppCislo(s){
   s=String(s||'').trim().toLowerCase().replace(/\s|kč/g,'').replace(',','.');
   if(!s)return null;
   const mes=/\/m(es)?$/.test(s);
@@ -1927,283 +1838,367 @@ function pvCislo(s){
   if(!isFinite(n)||n<0)return NaN;
   return mes?n*12:n;
 }
+function ppTop(katId){const c=osnova.find(o=>o.id==katId);return c?(c.parent_id||c.id):0;}
 
-function otevriPruvodce(){
-  const rok=new Date().getFullYear()+1;
-  pvNastavRok(rok);
-  pv.krok=0;
-  pvRender();
-  otevriDlg('dlg-pruvodce');
+// Posledních 12 uzavřených měsíců — základ pro návrh z historie a pro
+// srovnání „loni" u každé kategorie.
+function ppObdobi(){
+  const t=new Date();
+  let doY=t.getFullYear(),doM=t.getMonth();
+  if(doM===0){doM=12;doY--;}
+  let odY=doY,odM=doM-11;if(odM<1){odM+=12;odY--;}
+  return {od:`${odY}-${ppPad(odM)}-01`,do:`${doY}-${ppPad(doM)}-${ppPad(new Date(doY,doM,0).getDate())}`,
+          popis:`${odM}/${odY} – ${doM}/${doY}`};
 }
-function pvNastavRok(rok){
-  const k=pvKoncept(rok)||{};
-  pv={rok,zaklad:k.zaklad||'posl12',bezPseudo:k.bezPseudo!==false,
-      penezenka:k.penezenka,zmeny:k.zmeny||[],nahradit:false,krok:pv?pv.krok:0};
-  pvSestav();
-}
-// Změna základu nebo pseudo-příjmů: úpravy zůstávají, přepočítá se jen základ.
-function pvPrestav(){pvUlozKoncept();const k=pvKoncept(pv.rok)||{};pv.zmeny=k.zmeny||[];pvSestav();pvRender();}
-
-function pvKrok(d){
-  if(d>0&&pv.krok===0&&pv.existujici.length&&!pv.nahradit){
-    toast('Na rok '+pv.rok+' už plán je — zaškrtni, že se má nahradit',true);return;}
-  if(d>0&&pv.krok===PV_KROKY.length-1){pvZapis();return;}
-  pv.krok=Math.max(0,Math.min(PV_KROKY.length-1,pv.krok+d));
-  pvRender();
-  document.getElementById('pv-telo').scrollTop=0;
+function ppSkutecnost(){
+  const ob=ppObdobi();
+  return zaznamy.filter(z=>z.datum&&!jePlan(z)&&!jePrevod(z)&&z.datum>=ob.od&&z.datum<=ob.do
+    &&!(z.typ==='prijem'&&PP_PSEUDO.test(z.poznamka||'')));
 }
 
-function pvRender(){
-  document.getElementById('pv-titulek').textContent=`Plán na rok ${pv.rok}`;
-  document.getElementById('pv-kroky').innerHTML=PV_KROKY.map((n,i)=>
-    `<span class="${i===pv.krok?'ted':i<pv.krok?'hotovo':''}">${i+1}. ${n}</span>`).join('');
-  document.getElementById('pv-zpet').style.visibility=pv.krok?'visible':'hidden';
-  const dal=document.getElementById('pv-dal');
-  dal.disabled=false;
-  dal.textContent=pv.krok===PV_KROKY.length-1?`Zapsat plán (${pvZaznamy().length})`:'Další ›';
-  document.getElementById('pv-telo').innerHTML=[pvKrokZaklad,pvKrokPolozky,pvKrokRozlozeni,pvKrokZapis][pv.krok]();
+function ppRoku(){return planPolozky.filter(p=>p.rok===pp.rok);}
+// Plánové záznamy roku, které nevznikly z položky — zadané ručně v Záznamech
+// nebo staršími nástroji. Sčítaly by se s položkami, proto se na ně upozorní.
+function ppStarePlany(){
+  return zaznamy.filter(z=>jePlan(z)&&!z.plan_polozka_id&&z.datum&&z.datum.startsWith(pp.rok+'-'));
 }
 
-function pvSouhrnHtml(){
-  const s=pvSoucty(),saldo=s.prijmy-s.vydaje,zSaldo=s.zPrijmy-s.zVydaje;
-  const barva=n=>n>=0?'var(--green)':'var(--red)';
-  return `<div class="pv-souhrn" id="pv-souhrn">`
-    +`<span>příjmy <b>${fmt(s.prijmy)}</b></span>`
-    +`<span>výdaje <b>${fmt(s.vydaje)}</b></span>`
-    +`<span>saldo <b style="color:${barva(saldo)}">${fmtZn(saldo)}</b> · ${fmtZn(saldo/12)}/měs.</span>`
-    +`<span style="color:var(--muted)">proti základu ${fmtZn(saldo-zSaldo)}</span></div>`;
+function otevriPlan(){
+  pp={rok:new Date().getFullYear()+1,rezim:'seznam',upravovana:null,navrh:null};
+  ppRender();
+  otevriDlg('dlg-plan');
 }
+function ppRezim(r){pp.rezim=r;ppRender();document.getElementById('pp-telo').scrollTop=0;}
 
-function pvKrokZaklad(){
-  const letos=new Date().getFullYear();
-  const s=pvSoucty();
-  const volbaRok=[letos,letos+1,letos+2].map(r=>`<option value="${r}"${r===pv.rok?' selected':''}>${r}</option>`).join('');
-  const pen=penezenkyVidet().map(w=>`<option value="${w.id}"${String(w.id)===String(pv.penezenka)?' selected':''}>${esc(w.nazev)}</option>`).join('');
-  const ex=pv.existujici;
-  const exSoucet=ex.reduce((a,z)=>a+(z.typ==='prijem'?1:-1)*Number(z.castka),0);
-  const upravy=pv.poradi.filter(k=>{const r=pv.radky.get(k);return pvZmeneny(r)||r.pridany;}).length;
-  return `<div class="pv-text">Plán se postaví <strong>od skutečnosti</strong>: vezme se, kolik se za
-      základní období opravdu utratilo a vydělalo, po kategoriích. V dalším kroku upravíš jen to,
-      o čem víš, že bude jinak — u každé změny napiš proč. Co neupravíš, jde do plánu v loňské výši.</div>
-    <div class="row2">
-      <div class="field"><label>Plán na rok</label><select id="pv-rok" onchange="pvNastavRok(+this.value);pvRender()">${volbaRok}</select></div>
-      <div class="field"><label>Základ — skutečnost za</label><select id="pv-zaklad" onchange="pv.zaklad=this.value;pvPrestav()">
-        <option value="posl12"${pv.zaklad==='posl12'?' selected':''}>posledních 12 měsíců (${esc(pvObdobi('posl12').popis)})</option>
-        <option value="rok"${pv.zaklad==='rok'?' selected':''}>kalendářní ${esc(pvObdobi('rok').popis)}</option>
-      </select></div>
-    </div>
-    <div class="field"><label>Peněženka pro plánované položky</label>
-      <select id="pv-penezenka" onchange="pv.penezenka=this.value;pvUlozKoncept()">
-        <option value=""${pv.penezenka?'':' selected'}>— bez peněženky —</option>${pen}</select></div>
-    <label class="pv-check"><input type="checkbox" id="pv-pseudo"${pv.bezPseudo?' checked':''}
-        onchange="pv.bezPseudo=this.checked;pvPrestav()">
-      <span>Vynechat „příjmy", které jsou přesuny — poznámka obsahuje <span class="mono">převod</span>,
-      <span class="mono">moje půjčka</span> nebo <span class="mono">výběr</span>
-      (${polozek(pv.pseudo.pocet)}, ${fmt(pv.pseudo.castka)}). Převody mezi peněženkami se vynechávají vždy.</span></label>
-    ${ex.length?`<div class="pv-varovani">Na rok ${pv.rok} už je plán: ${polozek(ex.length)}, saldo ${fmtZn(exSoucet)}.
-      Nový plán ho nahradí — jinak by se oba sečetly.
-      <label class="pv-check" style="margin:8px 0 0;color:var(--text)"><input type="checkbox" id="pv-nahradit"${pv.nahradit?' checked':''}
-        onchange="pv.nahradit=this.checked">Smazat stávající plán na rok ${pv.rok} a zapsat nový</label></div>`:''}
-    <div class="summary-grid" style="margin-bottom:12px">
-      <div class="card info"><div class="card-label">Příjmy základu</div><div class="card-value">${fmt(s.zPrijmy)}</div><div class="card-sub">${fmt(s.zPrijmy/12)} měsíčně</div></div>
-      <div class="card danger"><div class="card-label">Výdaje základu</div><div class="card-value">${fmt(s.zVydaje)}</div><div class="card-sub">${fmt(s.zVydaje/12)} měsíčně</div></div>
-      <div class="card ${s.zPrijmy-s.zVydaje>=0?'accent':'warn'}"><div class="card-label">Saldo základu</div><div class="card-value">${fmtZn(s.zPrijmy-s.zVydaje)}</div><div class="card-sub">${esc(pv.obdobi.popis)}</div></div>
-    </div>
-    ${upravy?`<div class="pv-text">Rozpracovaný plán na rok ${pv.rok} má ${polozek(upravy)} upravených — pokračuje se v něm.
-      <button class="pv-mini" onclick="pvZahodKoncept()">začít znovu</button></div>`:''}`;
-}
-function pvZahodKoncept(){
-  if(!confirm('Zahodit všechny úpravy rozpracovaného plánu na rok '+pv.rok+'?'))return;
-  pvSmazKoncept(pv.rok);pv.zmeny=[];pv.penezenka=undefined;pvSestav();pvRender();
-}
-
-function pvKrokPolozky(){
-  let html=pvSouhrnHtml()
-    +`<div class="pv-text">Prázdné pole = loňská výše (šedě). Částku lze zadat i měsíčně, např.
-      <span class="mono">3980/m</span>. Tlačítko <span class="mono">3m</span> vezme poslední tři měsíce
-      základu ×&nbsp;4 — hodí se u mzdy nebo zálohy, která se během roku změnila.</div>`
-    +`<div class="pv-tab-wrap"><table class="pv-tab"><thead><tr>
-      <th>Kategorie</th><th class="right pv-uzke">základ / rok</th><th class="right pv-uzke">posl. 3 m ×4</th>
-      <th class="right">plán / rok</th><th class="right">/ měsíc</th><th>důvod změny</th><th></th></tr></thead><tbody>`;
-  let typ=null;
-  pv.poradi.forEach((k,i)=>{
-    const r=pv.radky.get(k);
-    if(r.typ!==typ){typ=r.typ;html+=`<tr class="skupina"><td colspan="7">${typ==='prijem'?'Příjmy':'Výdaje'}</td></tr>`;}
-    const jednor=r.max&&r.pocet>1&&r.max.castka>=0.3*r.zaklad;
-    html+=`<tr id="pv-r${i}" class="${pvZmeneny(r)||r.pridany?'pv-zmena':''}">`
-      +`<td class="kat">${esc(r.kat?catName(r.kat):'(bez kategorie)')}${r.pridany?' <span class="badge badge-plan">nová</span>':''}</td>`
-      +`<td class="cis pv-uzke">${fmtM(r.zaklad)}</td>`
-      +`<td class="cis pv-uzke">${fmtM(r.posl3)}</td>`
-      +`<td class="cis"><input class="castka" inputmode="decimal" value="${r.novy!==null?Math.round(r.novy):''}"
-          placeholder="${Math.round(r.zaklad)}" onchange="pvNastavCastku(${i},this)"></td>`
-      +`<td class="cis" id="pv-m${i}">${fmtM(pvPlanRoku(r)/12)}</td>`
-      +`<td><input class="duvod" value="${esc(r.duvod)}" placeholder="${pvZmeneny(r)?'proč?':''}"
-          onchange="pvNastav(${i},'duvod',this.value.trim())"></td>`
-      +`<td style="white-space:nowrap">`
-      +  (r.posl3&&Math.round(r.posl3)!==Math.round(r.zaklad)?`<button class="pv-mini" title="poslední 3 měsíce ×4" onclick="pvRychle(${i},'3m')">3m</button>`:'')
-      +  (jednor?`<button class="pv-mini" title="bez největší položky: ${esc(r.max.kde)} ${esc(r.max.datum)}" onclick="pvRychle(${i},'jednor')">−${fmtM(r.max.castka)}</button>`:'')
-      +  `<button class="pv-mini" title="v plánu nebude" onclick="pvRychle(${i},'nula')">0</button>`
-      +  (r.novy!==null||r.pridany?`<button class="pv-mini" title="vrátit na základ" onclick="pvRychle(${i},'zpet')">↺</button>`:'')
-      +`</td></tr>`;
-  });
-  html+=`</tbody></table></div>`
-    +`<div class="section-title" style="margin-bottom:6px">Přidat kategorii, která v základu není</div>`
-    +`<div class="pv-pridat"><select id="pv-nova-kat"><option value="">— kategorie —</option>${buildCatOptions()}</select>`
-    +`<select id="pv-nova-typ" style="flex:0 0 auto"><option value="vydaj">výdaj</option><option value="prijem">příjem</option></select>`
-    +`<button class="btn secondary" onclick="pvPridej()">+ Přidat</button></div>`;
-  return html;
-}
-function pvNastav(i,pole,hodnota){
-  const r=pv.radky.get(pv.poradi[i]);if(!r)return;
-  r[pole]=hodnota;pvUlozKoncept();
-}
-function pvNastavCastku(i,el){
-  const r=pv.radky.get(pv.poradi[i]);if(!r)return;
-  const n=pvCislo(el.value);
-  if(Number.isNaN(n)){toast('Částka musí být kladné číslo',true);el.value=r.novy!==null?Math.round(r.novy):'';return;}
-  r.novy=n===null?null:Math.round(n);
-  el.value=r.novy!==null?r.novy:'';
-  pvUlozKoncept();
-  // Jen dotčené buňky, ne celou tabulku — jinak by se ztratil fokus pole,
-  // na které uživatel právě přetabuloval.
-  document.getElementById('pv-m'+i).textContent=fmtM(pvPlanRoku(r)/12);
-  document.getElementById('pv-r'+i).className=pvZmeneny(r)||r.pridany?'pv-zmena':'';
-  document.getElementById('pv-souhrn').outerHTML=pvSouhrnHtml();
-}
-function pvRychle(i,co){
-  const r=pv.radky.get(pv.poradi[i]);if(!r)return;
-  if(co==='3m'){r.novy=Math.round(r.posl3);if(!r.duvod)r.duvod='poslední 3 měsíce';}
-  r.bezJednor=co==='jednor';
-  if(co==='jednor'){r.novy=Math.round(r.zaklad-r.max.castka);
-    if(!r.duvod)r.duvod=`bez jednorázové ${r.max.kde?r.max.kde+' ':''}${r.max.datum}`.trim();}
-  if(co==='nula'){r.novy=0;}
-  if(co==='zpet'){
-    if(r.pridany&&!r.pocet){pv.radky.delete(r.klic);pv.poradi.splice(i,1);}
-    else{r.novy=null;r.duvod='';}
+function ppRender(){
+  document.getElementById('pp-titulek').textContent=`Plán na rok ${pp.rok}`;
+  const pata=document.getElementById('pp-pata');
+  if(pp.rezim==='polozka'){
+    document.getElementById('pp-telo').innerHTML=ppFormular();
+    pata.innerHTML=`<button class="btn secondary" onclick="ppRezim('seznam')">‹ Zpět</button>`
+      +`<button class="btn" id="pp-ulozit" onclick="ppUlozFormular()">${pp.upravovana&&pp.upravovana.id?'Uložit změny':'+ Přidat položku'}</button>`;
+    ppFormNahled();
+  }else if(pp.rezim==='navrh'){
+    document.getElementById('pp-telo').innerHTML=ppNavrhHtml();
+    pata.innerHTML=`<button class="btn secondary" onclick="ppRezim('seznam')">‹ Zpět</button>`
+      +`<button class="btn" id="pp-navrh-ulozit" onclick="ppUlozNavrh()">Přidat vybrané</button>`;
+    ppNavrhPocet();
+  }else{
+    document.getElementById('pp-telo').innerHTML=ppSeznam();
+    pata.innerHTML=`<button class="btn secondary" onclick="ppOtevriNavrh()">Návrh z historie</button>`
+      +`<button class="btn" onclick="ppNova()">+ Přidat položku</button>`;
   }
-  pvUlozKoncept();pvRender();
-}
-function pvPridej(){
-  const kat=parseInt(document.getElementById('pv-nova-kat').value)||null;
-  const typ=document.getElementById('pv-nova-typ').value;
-  if(!kat){toast('Vyber kategorii',true);return;}
-  const klic=`${kat}|${typ}`;
-  if(pv.radky.has(klic)){toast('Tahle kategorie už v plánu je',true);return;}
-  const r=pvNovyRadek(klic);r.novy=0;r.pridany=true;
-  pv.radky.set(klic,r);
-  // Za poslední řádek stejného typu, ať zůstanou příjmy a výdaje pohromadě.
-  let kam=pv.poradi.length;
-  if(typ==='prijem'){const p=pv.poradi.findIndex(k=>pv.radky.get(k).typ==='vydaj');if(p>=0)kam=p;}
-  pv.poradi.splice(kam,0,klic);
-  pvUlozKoncept();pvRender();
-  const el=document.querySelector(`#pv-r${kam} input.castka`);
-  if(el)el.focus();
 }
 
-function pvKrokRozlozeni(){
-  const aktivni=pv.poradi.map((k,i)=>[pv.radky.get(k),i]).filter(([r])=>Math.round(pvPlanRoku(r))>0);
-  const mesP=Array(12).fill(0),mesV=Array(12).fill(0);
-  for(const [r] of aktivni)pvMesice(r).forEach((v,m)=>{(r.typ==='prijem'?mesP:mesV)[m]+=v;});
-  const hl=`<th class="kat">Kategorie</th><th>rozložení</th>${MONTHS_SHORT.map(m=>`<th class="right">${m}</th>`).join('')}`;
-  const radek=(nazev,hodnoty,cls='')=>`<tr class="${cls}"><td class="kat">${nazev}</td><td></td>${hodnoty.map(v=>`<td class="cis">${fmtM(v)}</td>`).join('')}</tr>`;
-  let html=pvSouhrnHtml()
-    +`<div class="pv-text">Do kterého měsíce co spadne. <strong>Rovně</strong> = dvanáctina každý měsíc;
-      <strong>jako v základu</strong> = ve stejném poměru, jak to chodilo v ${esc(pv.obdobi.popis)}
-      (Vánoce v prosinci, dovolená v létě, vodné po čtvrtletích). Výchozí volba je rovně tam,
-      kde platba chodila aspoň deset měsíců z dvanácti.</div>`
-    +`<div class="pv-tab-wrap"><table class="pv-tab"><thead><tr>${hl}</tr></thead><tbody>`
-    +radek('Příjmy',mesP,'soucet')+radek('Výdaje',mesV.map(v=>-v),'soucet')
-    +radek('<strong>Saldo</strong>',mesP.map((v,m)=>v-mesV[m]),'soucet');
-  let typ=null;
-  for(const [r,i] of aktivni){
-    if(r.typ!==typ){typ=r.typ;html+=`<tr class="skupina"><td colspan="14">${typ==='prijem'?'Příjmy':'Výdaje'}</td></tr>`;}
-    const roz=pvRozlozeni(r);
-    html+=`<tr><td class="kat">${esc(r.kat?catName(r.kat):'(bez kategorie)')}</td>`
-      +`<td>${r.zaklad>0?`<select onchange="pvNastav(${i},'rozlozeni',this.value);pvRender()">
-          <option value="rovne"${roz==='rovne'?' selected':''}>rovně</option>
-          <option value="sezona"${roz==='sezona'?' selected':''}>jako v základu</option></select>`
-        :'<span style="color:var(--muted)">rovně</span>'}</td>`
-      +pvMesice(r).map(v=>`<td class="cis">${fmtM(v)}</td>`).join('')+`</tr>`;
+function ppSouhrn(){
+  const s={prijmy:0,vydaje:0,neznamy:0};
+  for(const p of ppRoku()){
+    const v=ppRocne(p);
+    if(p.perioda==='neznamy'){s.neznamy+=(p.typ==='prijem'?1:-1)*v;continue;}
+    s[p.typ==='prijem'?'prijmy':'vydaje']+=v;
+  }
+  return s;
+}
+
+function ppSeznam(){
+  const letos=new Date().getFullYear();
+  const pol=ppRoku();
+  const s=ppSouhrn(),saldo=s.prijmy-s.vydaje;
+  const barva=n=>n>=0?'var(--green)':'var(--red)';
+  let html=`<div class="row2" style="align-items:flex-end;flex-wrap:wrap">
+      <div class="field" style="flex:0 0 140px"><label>Rok</label>
+        <select id="pp-rok" onchange="pp.rok=+this.value;ppRender()">${[letos,letos+1,letos+2]
+          .map(r=>`<option value="${r}"${r===pp.rok?' selected':''}>${r}</option>`).join('')}</select></div>
+      <div class="field" style="flex:1 1 260px"><div class="pv-souhrn" style="margin:0">
+        <span>příjmy <b>${fmt(s.prijmy)}</b></span><span>výdaje <b>${fmt(s.vydaje)}</b></span>
+        <span>saldo <b style="color:${barva(saldo)}">${fmtZn(saldo)}</b> · ${fmtZn(saldo/12)}/měs.</span>
+        ${s.neznamy?`<span style="color:var(--accent4)">bez termínu ${fmtZn(s.neznamy)} → saldo ${fmtZn(saldo+s.neznamy)}</span>`:''}
+      </div></div></div>`;
+  const stare=ppStarePlany();
+  if(stare.length){
+    const sum=stare.reduce((a,z)=>a+(z.typ==='prijem'?1:-1)*Number(z.castka),0);
+    html+=`<div class="pv-varovani">Na rok ${pp.rok} je ${polozek(stare.length)} plánu, které nevznikly
+      z položek (saldo ${fmtZn(sum)}). V Přehledu a Roku se sčítají s položkami níž.
+      <button class="pv-mini" onclick="ppSmazStare()">smazat je</button></div>`;
+  }
+  if(!pol.length){
+    return html+`<div class="empty"><span class="emoji">🗓️</span>Plán na rok ${pp.rok} zatím nemá žádné položky.<br>
+      <span style="font-size:12px">Začni <strong>návrhem z historie</strong> — nabídne položky podle toho,
+      za co se platilo posledních 12 měsíců — nebo přidej položku ručně.</span></div>`;
+  }
+  // Srovnání s posledními 12 měsíci po hlavních kategoriích.
+  const loni=new Map();
+  for(const z of ppSkutecnost()){const t=ppTop(z.kategorie_id);
+    loni.set(t,(loni.get(t)||0)+(z.typ==='prijem'?1:-1)*Number(z.castka));}
+  const skupiny=new Map();
+  for(const p of pol){const t=ppTop(p.kategorie_id);if(!skupiny.has(t))skupiny.set(t,[]);skupiny.get(t).push(p);}
+  const poradiTop=new Map(catTop().map((c,i)=>[c.id,i]));
+  const klice=[...skupiny.keys()].sort((a,b)=>(poradiTop.get(a)??999)-(poradiTop.get(b)??999));
+  html+=`<div class="pv-tab-wrap"><table class="pv-tab"><thead><tr><th>Položka</th><th>Kdy</th>
+    <th class="right pv-uzke">částka</th><th class="right">za rok</th><th></th></tr></thead><tbody>`;
+  for(const t of klice){
+    const pp_=skupiny.get(t).sort((a,b)=>(a.typ===b.typ?0:a.typ==='prijem'?-1:1)||a.nazev.localeCompare(b.nazev,'cs'));
+    const plan=pp_.reduce((a,p)=>a+(p.typ==='prijem'?1:-1)*ppRocne(p),0);
+    const top=osnova.find(o=>o.id===t);
+    html+=`<tr class="skupina"><td colspan="5">${esc(top?top.nazev:'Bez kategorie')} · plán ${fmtZn(plan)}`
+      +`<span class="pv-uzke"> · posledních 12 měsíců ${fmtZn(loni.get(t)||0)}</span></td></tr>`;
+    for(const p of pp_){
+      // Podkategorie jen když se liší od názvu — „Benzín / Benzin" nic neříká.
+      let pod=p.kategorie_id&&ppTop(p.kategorie_id)!==p.kategorie_id?catName(p.kategorie_id).split(' › ').pop():'';
+      const bez=t=>t.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+      if(bez(pod)===bez(p.nazev))pod='';
+      html+=`<tr><td class="kat">${esc(p.nazev)}`
+        +`<div style="font-size:10px;color:var(--muted)">${[pod,p.typ==='prijem'?'příjem':null,p.poznamka].filter(Boolean).map(esc).join(' · ')}</div></td>`
+        +`<td>${p.perioda==='neznamy'?'<span class="projekce">termín neznámý</span>':esc(ppPopis(p))}</td>`
+        +`<td class="cis pv-uzke">${fmtM(p.castka)}</td>`
+        +`<td class="cis" style="color:${p.typ==='prijem'?'var(--green)':'var(--text)'}">${fmtM(ppRocne(p))}</td>`
+        +`<td style="white-space:nowrap"><button class="edit-btn" onclick="ppUprav(${p.id})" title="Upravit">✎</button>`
+        +`<button class="del-btn" onclick="ppSmaz(${p.id})" title="Smazat">✕</button></td></tr>`;
+    }
   }
   return html+`</tbody></table></div>`;
 }
 
-// Záznamy, které se zapíšou: jeden na kategorii a měsíc, k patnáctému. Na dni
-// nezáleží — Přehled i Rok plán sčítají po měsících.
-function pvZaznamy(){
-  const out=[];
-  const pen=parseInt(pv.penezenka)||null;
-  for(const k of pv.poradi){
-    const r=pv.radky.get(k);
-    const pozn=`Plán ${pv.rok}`+(r.duvod?` — ${r.duvod}`:'');
-    pvMesice(r).forEach((v,m)=>{
-      if(v<=0)return;
-      out.push({typ:r.typ,typ_polozky:'plan',datum:`${pv.rok}-${pvPad(m+1)}-15`,castka:v,
-        kategorie_id:r.kat,penezenka_id:pen,kde:null,poznamka:pozn,pravidelna:false});
-    });
-  }
-  return out;
+// --- formulář položky ---
+function ppNova(){
+  const pen=penezenkyVidet()[0];
+  pp.upravovana={rok:pp.rok,nazev:'',typ:'vydaj',kategorie_id:null,castka:'',perioda:'mesicne',
+    mesic_od:1,mesic_do:12,penezenka_id:pen?pen.id:null,poznamka:''};
+  ppRezim('polozka');
 }
-
-function pvKrokZapis(){
-  const s=pvSoucty();
-  const zSaldo=s.zPrijmy-s.zVydaje,saldo=s.prijmy-s.vydaje;
-  const zmeny=pv.poradi.map(k=>pv.radky.get(k)).filter(r=>pvZmeneny(r)||(r.pridany&&r.novy));
-  const bezDuvodu=zmeny.filter(r=>!r.duvod).length;
-  const n=pvZaznamy().length;
-  return `<div class="pv-text">Můstek od skutečnosti k plánu — každé číslo plánu je dohledatelné
-      ze základu a z úprav pod ním.</div>
-    <div class="pv-tab-wrap"><table class="pv-tab"><tbody>
-      <tr><td class="kat">skutečnost ${esc(pv.obdobi.popis)}, příjmy</td><td class="cis">${fmt(s.zPrijmy)}</td><td></td></tr>
-      <tr><td class="kat">skutečnost ${esc(pv.obdobi.popis)}, výdaje</td><td class="cis">${fmt(s.zVydaje)}</td><td></td></tr>
-      <tr class="soucet"><td class="kat"><strong>saldo základu</strong></td><td class="cis"><strong>${fmtZn(zSaldo)}</strong></td><td></td></tr>
-      ${zmeny.length?`<tr class="skupina"><td colspan="3">Úpravy (dopad na saldo)</td></tr>`:''}
-      ${zmeny.map(r=>{const d=(pvPlanRoku(r)-r.zaklad)*(r.typ==='prijem'?1:-1);
-        return `<tr><td class="kat">${esc(r.kat?catName(r.kat):'(bez kategorie)')} <span style="color:var(--muted)">${r.typ==='prijem'?'příjem':'výdaj'}</span></td>`
-          +`<td class="cis ${d>=0?'diff-ok':'diff-over'}">${fmtZn(d)}</td>`
-          +`<td>${r.duvod?esc(r.duvod):'<span class="mezera">bez důvodu</span>'}</td></tr>`;}).join('')}
-      <tr class="soucet"><td class="kat"><strong>saldo plánu ${pv.rok}</strong></td><td class="cis"><strong>${fmtZn(saldo)}</strong></td>
-        <td style="color:var(--muted)">${fmtZn(saldo/12)} měsíčně</td></tr>
-    </tbody></table></div>
-    ${bezDuvodu?`<div class="pv-varovani">${polozek(bezDuvodu)} nemá vyplněný důvod. Zapsat to jde,
-      ale za rok nikdo nebude vědět, proč se číslo od skutečnosti liší.</div>`:''}
-    <div class="pv-text">Zapíše se <strong>${polozek(n)}</strong> typu plán na rok ${pv.rok}
-      (jedna na kategorii a měsíc, k 15. dni)${pv.penezenka?` na peněženku <strong>${esc(walletName(pv.penezenka))}</strong>`:', bez peněženky'}.
-      ${pv.existujici.length?`Předtím se smaže stávajících ${polozek(pv.existujici.length)} plánu na rok ${pv.rok}.`:''}
-      Výsledek pak ukáže záložka Rok jako plán proti skutečnosti.</div>`;
+function ppUprav(id){
+  const p=planPolozky.find(x=>x.id===id);if(!p)return;
+  pp.upravovana={...p};ppRezim('polozka');
 }
-
-async function pvZapis(){
-  const rok=pv.rok;
-  const radky=pvZaznamy();
-  if(!radky.length){toast('Plán je prázdný, není co zapsat',true);return;}
-  if(pv.existujici.length&&!pv.nahradit){toast('Stávající plán se nemá nahradit — vrať se do kroku 1',true);return;}
-  const dal=document.getElementById('pv-dal');
-  dal.disabled=true;dal.textContent='Zapisuji…';syncSt('syncing');
-  let zapsano=0;
+function ppFormular(){
+  const p=pp.upravovana;
+  const mesice=(id,v)=>`<select id="${id}" onchange="ppFormNahled()">${MONTHS_CS.map((m,i)=>
+    `<option value="${i+1}"${+v===i+1?' selected':''}>${m}</option>`).join('')}</select>`;
+  const pen=penezenkyVidet().map(w=>`<option value="${w.id}"${w.id==p.penezenka_id?' selected':''}>${esc(w.nazev)}</option>`).join('');
+  return `<div class="row2">
+      <div class="field"><label>Typ</label><select id="pp-typ" onchange="ppFormNahled()">
+        <option value="vydaj"${p.typ==='vydaj'?' selected':''}>Výdaj</option>
+        <option value="prijem"${p.typ==='prijem'?' selected':''}>Příjem</option></select></div>
+      <div class="field"><label>Kategorie</label><select id="pp-kat" onchange="ppKategorieZmena()">
+        <option value="">— vybrat —</option>${p.kategorie_id?buildCatOptions().replace(`value="${p.kategorie_id}"`,`value="${p.kategorie_id}" selected`):buildCatOptions()}
+        <option value="nova">+ nová podkategorie…</option></select></div>
+    </div>
+    <div class="row2" id="pp-nova-kat" style="display:none">
+      <div class="field"><label>Nadřazená kategorie</label><select id="pp-nova-parent">
+        ${catTop().map(t=>`<option value="${t.id}"${/^ostatn/i.test(t.nazev)?' selected':''}>${esc(t.nazev)}</option>`).join('')}</select></div>
+      <div class="field"><label>Název podkategorie</label><input id="pp-nova-nazev" placeholder="např. Pergola"></div>
+    </div>
+    <div class="field"><label>Název položky</label><input id="pp-nazev" value="${esc(p.nazev)}"
+      placeholder="např. Benzín, Jízdenky, STK a servis, Pergola"></div>
+    <div class="row2">
+      <div class="field"><label>Jak se platí</label><select id="pp-perioda" onchange="ppFormNahled()">
+        ${Object.entries(PP_PERIODY).map(([k,v])=>`<option value="${k}"${p.perioda===k?' selected':''}>${v}</option>`).join('')}</select></div>
+      <div class="field"><label id="pp-castka-label">Částka</label><input id="pp-castka" inputmode="decimal"
+        value="${p.castka===''?'':Math.round(p.castka)}" oninput="ppFormNahled()" placeholder="0"></div>
+    </div>
+    <div class="row2">
+      <div class="field" id="pp-od-pole"><label id="pp-od-label">Od měsíce</label>${mesice('pp-od',p.mesic_od)}</div>
+      <div class="field" id="pp-do-pole"><label>Do měsíce</label>${mesice('pp-do',p.mesic_do)}</div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Peněženka</label><select id="pp-penezenka"><option value="">— bez peněženky —</option>${pen}</select></div>
+      <div class="field"><label>Poznámka</label><input id="pp-poznamka" value="${esc(p.poznamka||'')}" placeholder="volitelná"></div>
+    </div>
+    <div class="pv-souhrn" id="pp-nahled"></div>
+    <div class="pv-text" id="pp-historie"></div>`;
+}
+function ppKategorieZmena(){
+  const v=document.getElementById('pp-kat').value;
+  document.getElementById('pp-nova-kat').style.display=v==='nova'?'':'none';
+  // Název položky se předvyplní názvem podkategorie, dokud ho nikdo nepsal.
+  const n=document.getElementById('pp-nazev');
+  if(+v&&!n.value.trim())n.value=catName(+v).split(' › ').pop();
+  if(v==='nova')document.getElementById('pp-nova-nazev').focus();
+  ppFormNahled();
+}
+function ppZFormulare(){
+  const g=id=>document.getElementById(id);
+  return {...pp.upravovana,typ:g('pp-typ').value,kategorie_id:+g('pp-kat').value||null,
+    nazev:g('pp-nazev').value.trim(),perioda:g('pp-perioda').value,castka:ppCislo(g('pp-castka').value),
+    mesic_od:+g('pp-od').value,mesic_do:+g('pp-do').value,
+    penezenka_id:+g('pp-penezenka').value||null,poznamka:g('pp-poznamka').value.trim()};
+}
+function ppFormNahled(){
+  const g=id=>document.getElementById(id);
+  if(!g('pp-kat'))return;
+  const per=g('pp-perioda').value;
+  g('pp-castka-label').textContent={mesicne:'Částka za měsíc',kvartalne:'Částka za kvartál',
+    jednou:'Částka',rozpustit:'Částka za rok',neznamy:'Odhad částky'}[per];
+  g('pp-od-pole').style.display=['mesicne','kvartalne','jednou'].includes(per)?'':'none';
+  g('pp-do-pole').style.display=per==='mesicne'?'':'none';
+  g('pp-od-label').textContent=per==='jednou'?'V měsíci':per==='kvartalne'?'První platba v měsíci':'Od měsíce';
+  if(per==='kvartalne'&&+g('pp-od').value>3)g('pp-od').value=((+g('pp-od').value-1)%3)+1;
+  const p=ppZFormulare();
+  if(Number.isNaN(p.castka))p.castka=0;
+  const m=ppMesice(p);
+  g('pp-nahled').innerHTML=p.perioda==='neznamy'
+    ?`<span>za rok <b>${fmt(ppRocne(p))}</b></span><span style="color:var(--accent4)">do měsíců se nerozpíše, dokud nebude termín</span>`
+    :`<span>za rok <b>${fmt(ppRocne(p))}</b></span><span>${m.map((v,i)=>v?`${MONTHS_SHORT[i].toLowerCase()} ${fmtM(v)}`:null).filter(Boolean).join(' · ')||'—'}</span>`;
+  // Kolik se v té kategorii platilo posledních 12 měsíců — ať je s čím srovnat.
+  const kat=p.kategorie_id;
+  const h=kat?ppSkutecnost().filter(z=>z.kategorie_id===kat&&z.typ===p.typ):[];
+  const mes=new Set(h.map(z=>z.datum.slice(0,7)));
+  g('pp-historie').innerHTML=kat?(h.length
+    ?`Posledních 12 měsíců (${esc(ppObdobi().popis)}) v ${esc(catName(kat))}: <strong>${fmt(h.reduce((a,z)=>a+Number(z.castka),0))}</strong>,
+      ${polozek(h.length)} v ${mes.size} ${mes.size===1?'měsíci':'měsících'}.`
+    :`V ${esc(catName(kat))} se posledních 12 měsíců nic neplatilo.`):'';
+}
+async function ppUlozFormular(){
+  const g=id=>document.getElementById(id);
+  const p=ppZFormulare();
+  if(g('pp-kat').value==='nova'&&!g('pp-nova-nazev').value.trim()){toast('Zadej název nové podkategorie',true);return;}
+  if(!p.kategorie_id&&g('pp-kat').value!=='nova'){toast('Vyber kategorii',true);return;}
+  if(!p.nazev&&g('pp-kat').value==='nova')p.nazev=g('pp-nova-nazev').value.trim();
+  if(!p.nazev){toast('Zadej název položky',true);return;}
+  if(p.castka===null||Number.isNaN(p.castka)||p.castka<=0){toast('Částka musí být kladné číslo',true);return;}
+  setBtn('pp-ulozit',true);syncSt('syncing');
   try{
-    if(pv.existujici.length){
-      await api('zaznamy','DELETE',null,`typ_polozky=eq.plan&datum=gte.${rok}-01-01&datum=lte.${rok}-12-31`);
-      zaznamy=zaznamy.filter(z=>!(jePlan(z)&&z.datum&&z.datum.startsWith(rok+'-')));
+    if(g('pp-kat').value==='nova'){
+      const res=await api('osnova','POST',{nazev:g('pp-nova-nazev').value.trim(),parent_id:+g('pp-nova-parent').value});
+      osnova.push(res[0]);p.kategorie_id=res[0].id;
+      updateCategorySelect();renderOsnova();
     }
-    for(let i=0;i<radky.length;i+=500){
-      const res=await api('zaznamy','POST',radky.slice(i,i+500));
-      zaznamy.unshift(...(res||[]));
-      zapsano+=(res||[]).length;
-      dal.textContent=`Zapisuji… ${zapsano}/${radky.length}`;
-    }
-    pvSmazKoncept(rok);
-    syncSt('ok');toast(`Plán na rok ${rok} zapsán ✓ (${polozek(zapsano)})`);
-    zavriDlg('dlg-pruvodce');
-    rY=rok;render();showTab('rok');
-  }catch(e){
-    // Rozpracovaný koncept zůstává, takže se dá zkusit znovu — v kroku 1 pak
-    // průvodce uvidí, co se už stihlo zapsat, a nabídne to nahradit.
-    syncSt('error');render();
-    toast(`Chyba: ${e.message}${zapsano?` — zapsáno ${zapsano} z ${radky.length}`:''}`,true);
-    pv.existujici=zaznamy.filter(z=>jePlan(z)&&z.datum&&z.datum.startsWith(rok+'-'));
-    pv.nahradit=false;pvRender();
+    await ppZapis([p]);
+    syncSt('ok');toast(p.id?'Položka upravena ✓':'Položka přidána ✓');
+    render();ppRezim('seznam');
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');
+    setBtn('pp-ulozit',false,p.id?'Uložit změny':'+ Přidat položku');}
+}
+
+// Uloží položky a jejich záznamy rozepíše znovu. Staré záznamy upravených
+// položek se mažou až po úspěšném uložení položky, ať se nic neztratí.
+async function ppZapis(polozky){
+  const ulozene=[];
+  const nove=polozky.filter(p=>!p.id),stare=polozky.filter(p=>p.id);
+  if(nove.length)ulozene.push(...(await api('plan_polozky','POST',nove.map(ppRadekDb))||[]));
+  for(const p of stare){await api('plan_polozky','PATCH',ppRadekDb(p),`id=eq.${p.id}`);ulozene.push({...p,...ppRadekDb(p)});}
+  const ids=stare.map(p=>p.id);
+  if(ids.length){
+    await api('zaznamy','DELETE',null,`plan_polozka_id=in.(${ids.join(',')})`);
+    zaznamy=zaznamy.filter(z=>!ids.includes(z.plan_polozka_id));
   }
+  const zz=ulozene.flatMap(ppZaznamy);
+  for(let i=0;i<zz.length;i+=500){
+    const res=await api('zaznamy','POST',zz.slice(i,i+500));
+    zaznamy.unshift(...(res||[]));
+  }
+  for(const u of ulozene){
+    const i=planPolozky.findIndex(x=>x.id===u.id);
+    if(i>=0)planPolozky[i]=u;else planPolozky.push(u);
+  }
+}
+async function ppSmaz(id){
+  const p=planPolozky.find(x=>x.id===id);if(!p)return;
+  if(!confirm(`Smazat položku „${p.nazev}" z plánu na rok ${p.rok}?`))return;
+  syncSt('syncing');
+  try{
+    await api('zaznamy','DELETE',null,`plan_polozka_id=eq.${id}`);
+    await api('plan_polozky','DELETE',null,`id=eq.${id}`);
+    zaznamy=zaznamy.filter(z=>z.plan_polozka_id!==id);
+    planPolozky=planPolozky.filter(x=>x.id!==id);
+    syncSt('ok');toast('Položka smazána');render();ppRender();
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
+}
+async function ppSmazStare(){
+  const stare=ppStarePlany();
+  if(!confirm(`Smazat ${polozek(stare.length)} plánu na rok ${pp.rok}, které nevznikly z položek?`))return;
+  syncSt('syncing');
+  try{
+    await api('zaznamy','DELETE',null,
+      `typ_polozky=eq.plan&plan_polozka_id=is.null&datum=gte.${pp.rok}-01-01&datum=lte.${pp.rok}-12-31`);
+    const ids=new Set(stare.map(z=>z.id));
+    zaznamy=zaznamy.filter(z=>!ids.has(z.id));
+    syncSt('ok');toast('Smazáno');render();ppRender();
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
+}
+
+// --- návrh z historie ---
+// Po podkategoriích z posledních 12 měsíců, s odhadem periody: co se platilo
+// skoro každý měsíc, je měsíční; co jednou za čtvrtletí, kvartální; co jednou
+// za rok, jednorázové ve stejném měsíci; zbytek se rozpustí do roku.
+// Kategorie, které už v plánu jsou, se nenabízejí zaškrtnuté.
+function ppSestavNavrh(){
+  const sk=new Map();
+  for(const z of ppSkutecnost()){
+    const k=`${z.kategorie_id||0}|${z.typ}`;
+    if(!sk.has(k))sk.set(k,{kat:z.kategorie_id||null,typ:z.typ,celkem:0,mesice:Array(12).fill(0)});
+    const r=sk.get(k);r.celkem+=Number(z.castka);r.mesice[+z.datum.slice(5,7)-1]+=Number(z.castka);
+  }
+  const vPlanu=new Set(ppRoku().map(p=>`${p.kategorie_id||0}|${p.typ}`));
+  const kolo=(n,k)=>Math.max(k,Math.round(n/k)*k);
+  const out=[];
+  for(const [k,r] of sk){
+    if(r.celkem<=0)continue;
+    const kdy=r.mesice.map((v,i)=>v>0?i+1:0).filter(Boolean);
+    let perioda,castka,od=1;
+    if(kdy.length>=10){perioda='mesicne';castka=kolo(r.celkem/12,10);}
+    else if(kdy.length===1){perioda='jednou';castka=kolo(r.celkem,10);od=kdy[0];}
+    else if(kdy.length<=4&&kdy.every(m=>(m-kdy[0])%3===0)){perioda='kvartalne';castka=kolo(r.celkem/4,10);od=((kdy[0]-1)%3)+1;}
+    else{perioda='rozpustit';castka=kolo(r.celkem,100);}
+    out.push({vybrano:!vPlanu.has(k),vPlanu:vPlanu.has(k),loni:r.celkem,
+      p:{rok:pp.rok,nazev:r.kat?catName(r.kat).split(' › ').pop():'Bez kategorie',typ:r.typ,
+         kategorie_id:r.kat,castka,perioda,mesic_od:od,mesic_do:12,
+         penezenka_id:(penezenkyVidet()[0]||{}).id||null,poznamka:''}});
+  }
+  const nazev=x=>x.p.kategorie_id?catName(x.p.kategorie_id):'';
+  return out.sort((a,b)=>(a.p.typ===b.p.typ?0:a.p.typ==='prijem'?-1:1)||nazev(a).localeCompare(nazev(b),'cs'));
+}
+function ppOtevriNavrh(){pp.navrh=ppSestavNavrh();ppRezim('navrh');}
+function ppNavrhHtml(){
+  if(!pp.navrh.length)return `<div class="empty">Za posledních 12 měsíců nejsou žádné záznamy, z čeho navrhovat.</div>`;
+  let html=`<div class="pv-text">Položky podle toho, za co se platilo v ${esc(ppObdobi().popis)} — bez převodů
+    a bez „příjmů", které jsou přesuny. Perioda je odhad: co se platilo skoro každý měsíc, je měsíční;
+    co jednou za čtvrtletí, kvartální; co jednou, jednorázové ve stejném měsíci; zbytek se rozpustí do roku.
+    Uprav, co nesedí, a odškrtni, co v plánu nechceš. Podrobnosti (měsíce, peněženku) jde změnit u položky později.</div>
+    <div class="pv-tab-wrap"><table class="pv-tab"><thead><tr><th></th><th>Kategorie</th><th>Název</th>
+    <th>Jak se platí</th><th class="right">částka</th><th class="right">za rok</th><th class="right pv-uzke">posledních 12 m</th></tr></thead><tbody>`;
+  let typ=null;
+  pp.navrh.forEach((x,i)=>{
+    if(x.p.typ!==typ){typ=x.p.typ;html+=`<tr class="skupina"><td colspan="7">${typ==='prijem'?'Příjmy':'Výdaje'}</td></tr>`;}
+    html+=`<tr${x.vybrano?'':' style="opacity:0.5"'} id="pp-n${i}"><td><input type="checkbox" style="width:auto"${x.vybrano?' checked':''}
+        onchange="pp.navrh[${i}].vybrano=this.checked;this.closest('tr').style.opacity=this.checked?'':'0.5';ppNavrhPocet()"></td>`
+      +`<td class="kat">${esc(x.p.kategorie_id?catName(x.p.kategorie_id):'(bez kategorie)')}${x.vPlanu?' <span class="badge badge-plan">už v plánu</span>':''}</td>`
+      +`<td><input class="duvod" style="width:150px" value="${esc(x.p.nazev)}" onchange="pp.navrh[${i}].p.nazev=this.value.trim()"></td>`
+      +`<td><select onchange="ppNavrhZmena(${i},'perioda',this.value)">${Object.entries(PP_PERIODY).map(([k,v])=>
+          `<option value="${k}"${x.p.perioda===k?' selected':''}>${v}</option>`).join('')}</select>`
+      +(x.p.perioda==='jednou'||x.p.perioda==='kvartalne'?` <span style="color:var(--muted)">${esc(ppPopis(x.p).split(' · ')[1]||'')}</span>`:'')+`</td>`
+      +`<td class="cis"><input class="castka" inputmode="decimal" value="${Math.round(x.p.castka)}" onchange="ppNavrhZmena(${i},'castka',this.value)"></td>`
+      +`<td class="cis" id="pp-nr${i}">${fmtM(ppRocne(x.p))}</td>`
+      +`<td class="cis pv-uzke">${fmtM(x.loni)}</td></tr>`;
+  });
+  return html+`</tbody></table></div>`;
+}
+function ppNavrhZmena(i,pole,v){
+  const x=pp.navrh[i];
+  if(pole==='castka'){const n=ppCislo(v);if(n===null||Number.isNaN(n)){toast('Částka musí být kladné číslo',true);ppRender();return;}
+    x.p.castka=Math.round(n);document.getElementById('pp-nr'+i).textContent=fmtM(ppRocne(x.p));return;}
+  // Při změně periody se drží roční částka, ne částka za jednu platbu —
+  // „měsíčně 500" přepnuté na „kvartálně" má být 1 500, ne 500.
+  const rocne=ppRocne(x.p);
+  x.p.perioda=v;
+  const kolik={mesicne:12,kvartalne:4}[v]||1;
+  x.p.castka=Math.round(rocne/kolik);
+  ppRender();
+}
+function ppNavrhPocet(){
+  const n=pp.navrh.filter(x=>x.vybrano).length;
+  const b=document.getElementById('pp-navrh-ulozit');
+  if(b){b.textContent=`Přidat vybrané (${n})`;b.disabled=!n;}
+}
+async function ppUlozNavrh(){
+  const vyber=pp.navrh.filter(x=>x.vybrano&&x.p.nazev&&x.p.castka>0).map(x=>x.p);
+  if(!vyber.length)return;
+  setBtn('pp-navrh-ulozit',true,'','Ukládám…');syncSt('syncing');
+  try{
+    await ppZapis(vyber);
+    syncSt('ok');toast(`Přidáno ${polozek(vyber.length)} ✓`);render();ppRezim('seznam');
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');ppNavrhPocet();
+    document.getElementById('pp-navrh-ulozit').disabled=false;}
 }
 
 // --- ENERGIE ---
@@ -3785,6 +3780,11 @@ async function init(){
     penezenky=w||[];osnova=o||[];
     // záznamů je přes 22 tisíc, takže stránkovaně a s rozstřelem podle id
     zaznamy=await apiAll('zaznamy','select=*&order=datum.desc,id.desc','záznamy');
+    // Položky plánu. Tabulka přibyla později, takže když v databázi ještě
+    // není (schema.sql nespuštěné), appka běží dál a jen plán po položkách
+    // neukáže — nesmí kvůli tomu spadnout celé načítání.
+    try{planPolozky=await api('plan_polozky','GET',null,'select=*&order=rok.asc,id.asc')||[];}
+    catch(e){planPolozky=[];}
     const [od,ce,sp,fo,fs,za,zs]=await Promise.all([
       apiAll('energie_odecty','select=*&order=datum.asc,zdroj_radek.asc'),
       api('energie_cenik','GET',null,'select=*&order=platnost_od.asc'),

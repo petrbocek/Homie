@@ -8,11 +8,11 @@ rozhodnutí Petra, nebo jsem to nabídl a nedostal odpověď.
 - **Rozpočet 2027 do aplikace.** `tools/rozpocet-2027.md` je spočítaný, ale do
   tabulky `plan` se nic nezapsalo. Vložením 57 záznamů na rok 2027 by záložka
   Rok ukazovala plán vs. skutečnost. Nepotvrzeno.
-  Od 14. 10. 2026 to jde udělat v appce: záložka Rok → **✦ Plán na další rok**.
-  Průvodce staví plán stejnou metodou (skutečnost za posledních 12 měsíců +
-  jmenovité úpravy s důvodem) a zapíše ho jako záznamy typu plán, jeden na
-  kategorii a měsíc. Úpravy z `rozpocet-2027.md` se v něm dají naklikat
-  (mzdy tlačítkem `3m`, zálohu EON jako `3980/m`).
+  Od 17. 10. 2026 to jde udělat v appce: záložka Rok → **✦ Plán na rok**.
+  Plán se skládá z položek (název, podkategorie, částka, perioda: měsíčně /
+  kvartálně / jednorázově / rozpustit do roku / termín neznámý) v tabulce
+  `plan_polozky`; z nich se rozepíšou záznamy typu plán. „Návrh z historie"
+  nabídne položky podle posledních 12 měsíců.
 - **Zbývající Strava › Strava (300 záznamů).** Nabídnuto rozdělení podle
   obchodu (supermarkety → Nákupy, restaurace → Restaurace). Bez odpovědi.
 - **Záznamy před rokem 2024** (16 103 ks, zařazeno ~1 %). Petr to odložil.

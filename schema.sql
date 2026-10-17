@@ -219,6 +219,40 @@ CREATE TABLE IF NOT EXISTS sporeni (
 CREATE INDEX IF NOT EXISTS idx_sporeni_datum ON sporeni(datum);
 
 -- ============================================================
+-- PLÁN PO POLOŽKÁCH – „Benzín 5 500 měsíčně", „Servis 12 000 jednou
+-- v dubnu", „Pergola 150 000, termín neznámý". Z položky se rozpisují
+-- obyčejné záznamy typu plán (jeden na měsíc, kdy se platí), propojené přes
+-- zaznamy.plan_polozka_id. Úprava položky je smaže a rozepíše znovu.
+-- `castka` je částka za jednu platbu: za měsíc, za kvartál, jednorázově;
+-- u „rozpustit" a „neznamy" za celý rok.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS plan_polozky (
+  id            BIGSERIAL PRIMARY KEY,
+  rok           INTEGER NOT NULL,
+  nazev         TEXT NOT NULL,
+  typ           TEXT NOT NULL CHECK (typ IN ('prijem', 'vydaj')),
+  kategorie_id  BIGINT REFERENCES osnova(id) ON DELETE SET NULL,
+  castka        NUMERIC(12,2) NOT NULL CHECK (castka >= 0),
+  perioda       TEXT NOT NULL CHECK (perioda IN
+                  ('mesicne', 'kvartalne', 'jednou', 'rozpustit', 'neznamy')),
+  mesic_od      INTEGER NOT NULL DEFAULT 1  CHECK (mesic_od BETWEEN 1 AND 12),
+  mesic_do      INTEGER NOT NULL DEFAULT 12 CHECK (mesic_do BETWEEN 1 AND 12),
+  penezenka_id  BIGINT REFERENCES penezenky(id) ON DELETE SET NULL,
+  poznamka      TEXT,
+  created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_plan_polozky_rok ON plan_polozky(rok);
+
+ALTER TABLE zaznamy ADD COLUMN IF NOT EXISTS plan_polozka_id BIGINT
+  REFERENCES plan_polozky(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS idx_zaznamy_plan_polozka ON zaznamy(plan_polozka_id)
+  WHERE plan_polozka_id IS NOT NULL;
+
+ALTER TABLE plan_polozky ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "auth_all" ON plan_polozky;
+CREATE POLICY "auth_all" ON plan_polozky FOR ALL TO authenticated USING (true) WITH CHECK (true);
+
+-- ============================================================
 -- RLS – přístup má jen přihlášený uživatel (role `authenticated`).
 -- Role `anon` (klíč zapečený v index.html) nemá k datům nic.
 -- ============================================================
