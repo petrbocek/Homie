@@ -1829,14 +1829,14 @@ const dlgy=await pg.evaluate(()=>[...document.querySelectorAll('.dlg-pozadi')].m
   nadpis:!!d.querySelector('.dlg-hlava .form-title'),
   krizek:!!d.querySelector('.dlg-x'),
   otevreny:d.classList.contains('open')})));
-// Osmý je plán na rok po položkách.
-check('v appce je osm dialogů',dlgy.length===8,JSON.stringify(dlgy.map(x=>x.id)));
+// Osmý je plán na rok po položkách, devátý správa fondů.
+check('v appce je devět dialogů',dlgy.length===9,JSON.stringify(dlgy.map(x=>x.id)));
 check('každý má nadpis i křížek',dlgy.every(x=>x.nadpis&&x.krizek),JSON.stringify(dlgy));
 check('žádný nezůstal otevřený',dlgy.every(x=>!x.otevreny),JSON.stringify(dlgy));
 const sirotci=await pg.evaluate(()=>
   [...document.querySelectorAll('.form-title')].filter(t=>!t.closest('.dlg-hlava')).length);
 check('žádný formulář nezůstal mimo dialog',sirotci===0,String(sirotci));
-for(const [zal,tl] of [['Energie',2],['Peněženky',2],['Osnova',1],['Záznamy',1],['Spoření',1]]){
+for(const [zal,tl] of [['Energie',2],['Peněženky',2],['Osnova',1],['Záznamy',1],['Spoření',2]]){
   await pg.click(`.tab:text-is("${zal}")`); await pg.waitForTimeout(250);
   const n=await pg.evaluate(z=>document.querySelectorAll(
     '#view-'+z+' .list-head .btn').length,
@@ -1988,7 +1988,7 @@ console.log('\n== 27. zápis měsíčního snímku ==');
 await pg.reload(); await pg.waitForSelector('main',{state:'visible'}); await pg.waitForTimeout(800);
 await klik('.tab:text-is("Spoření")'); await pg.waitForTimeout(300);
 calls.length=0;
-await klik('#view-sporeni .list-head .btn'); await pg.waitForTimeout(250);
+await klik('#view-sporeni .list-head .btn:has-text("Zapsat snímek")'); await pg.waitForTimeout(250);
 check('tlačítko dialog snímku otevře',await pg.isVisible('#dlg-sporeni'));
 // Poslední skutečný snímek je 2021-04 (2021-05 je projekce), takže na řadě je
 // 2021-05. Nabídnout dnešek by u rozepsané historie udělalo díru.
@@ -2091,7 +2091,7 @@ await pg.evaluate(()=>zavriDlg('dlg-sporeni'));
 await pg.waitForTimeout(200);
 
 // Snímek za tentýž měsíc podruhé by vyrobil dva řádky a změna by vyšla nula.
-await klik('#view-sporeni .list-head .btn'); await pg.waitForTimeout(250);
+await klik('#view-sporeni .list-head .btn:has-text("Zapsat snímek")'); await pg.waitForTimeout(250);
 await pg.fill('#sn-mesic','2021-04');
 await pg.waitForTimeout(150);
 calls.length=0;
@@ -2378,6 +2378,61 @@ check('upozornění zmizí',!txt(await pg.textContent('#pp-telo')).includes('nev
 await pg.evaluate(cil=>{zavriDlg('dlg-plan');rY=cil;renderRok();},ppCil); await pg.waitForTimeout(150);
 check('Rok cílového roku má plán',(await pg.locator('#rok-table tr').count())>2);
 await pg.evaluate(p=>{zaznamy=JSON.parse(p);planPolozky=[];rY=new Date().getFullYear();render();showTab('prehled');},ppPuvodni);
+
+console.log('\n== peněženky: skryté na konec ==');
+const pnPoradi=()=>pg.evaluate(()=>({data:penezenky.map(w=>w.id),
+  dom:[...document.querySelectorAll('#penezenky-list .wallet-name')].map(e=>e.textContent)}));
+await pg.evaluate(()=>{window.confirm=()=>true;});
+await pg.evaluate(()=>toggleSkryta(1)); await pg.waitForTimeout(300);
+let pn=await pnPoradi();
+check('skrytá peněženka jde na konec',JSON.stringify(pn.data)==='[2,1,3]',JSON.stringify(pn));
+check('i v seznamu peněženek',pn.dom[0]==='Kreditka',JSON.stringify(pn.dom));
+const zuPoradi=await pg.evaluate(()=>[...document.querySelectorAll('#zustatky-table tbody tr td.kat')].map(t=>t.textContent.trim()));
+check('i v tabulce zůstatků',zuPoradi[0].startsWith('Kreditka'),JSON.stringify(zuPoradi));
+await pg.evaluate(()=>toggleSkryta(1)); await pg.waitForTimeout(300);
+pn=await pnPoradi();
+check('znovu zobrazená se vrátí na své místo',JSON.stringify(pn.data)==='[1,2,3]',JSON.stringify(pn));
+
+console.log('\n== fondy a spoření ==');
+await pg.evaluate(()=>showTab('sporeni'));
+await pg.click('button:has-text("Fondy a spoření")'); await pg.waitForTimeout(200);
+check('správa fondů se otevře',await pg.isVisible('#dlg-fond'));
+check('ukáže existující fondy',(await pg.locator('#fondy-seznam .wallet-list-item').count())===5);
+await pg.fill('#fd-nazev','Stavební spoření'); await pg.fill('#fd-vklad','1700');
+let fdPred=calls.length;
+await pg.click('#btn-fond'); await pg.waitForTimeout(400);
+const fdPost=calls.slice(fdPred).find(c=>c.method==='POST'&&c.url.includes('/fondy'));
+const fdBody=fdPost&&JSON.parse(fdPost.body);
+check('nový fond se uloží s vkladem a pořadím na konec',!!fdBody&&fdBody.nazev==='Stavební spoření'
+  &&fdBody.mesicni_vklad===1700&&fdBody.druh==='fond'&&fdBody.aktivni===true&&fdBody.poradi===6,fdPost&&fdPost.body);
+check('a je v seznamu',(await pg.textContent('#fondy-seznam')).includes('Stavební spoření'));
+const fdId=await pg.evaluate(()=>fondy.find(f=>f.nazev==='Stavební spoření').id);
+// Ze snímku: naťukaná hodnota přežije přidání fondu a nové pole se objeví hned.
+await pg.evaluate(()=>{zavriDlg('dlg-fond');novySnimek();});
+await pg.waitForTimeout(200);
+await pg.fill('#sn-f-1','12345');
+await pg.click('#dlg-sporeni button:has-text("nový fond")'); await pg.waitForTimeout(200);
+check('správa fondů jde otevřít ze snímku',await pg.isVisible('#dlg-fond')&&await pg.isVisible('#dlg-sporeni'));
+await pg.fill('#fd-nazev','Penzijní spoření dětí');
+await pg.click('#btn-fond'); await pg.waitForTimeout(400);
+const fd2=await pg.evaluate(()=>fondy.find(f=>f.nazev==='Penzijní spoření dětí').id);
+check('nový fond je hned ve snímku',await pg.isVisible('#sn-f-'+fd2)||(await pg.locator('#sn-f-'+fd2).count())===1);
+check('naťukaná hodnota ve snímku zůstala',(await pg.inputValue('#sn-f-1'))==='12345');
+await pg.keyboard.press('Escape'); await pg.waitForTimeout(150);
+check('Escape zavře jen správu fondů',!(await pg.isVisible('#dlg-fond'))&&await pg.isVisible('#dlg-sporeni'));
+await pg.evaluate(()=>zavriDlg('dlg-sporeni'));
+// Ukončení fondu
+await pg.evaluate(id=>{otevriFondy();editFond(id);},fdId); await pg.waitForTimeout(150);
+check('úprava předvyplní formulář',(await pg.inputValue('#fd-nazev'))==='Stavební spoření'&&(await pg.inputValue('#fd-vklad'))==='1700');
+await pg.uncheck('#fd-aktivni');
+fdPred=calls.length;
+await pg.click('#btn-fond'); await pg.waitForTimeout(400);
+const fdPatch=calls.slice(fdPred).find(c=>c.method==='PATCH'&&c.url.includes(`/fondy?id=eq.${fdId}`));
+check('ukončení = PATCH aktivni:false',!!fdPatch&&JSON.parse(fdPatch.body).aktivni===false,fdPatch&&fdPatch.body);
+const fdSeznam=await pg.evaluate(()=>[...document.querySelectorAll('#fondy-seznam .wallet-name')].map(e=>e.textContent));
+check('neaktivní fondy jsou v seznamu na konci',fdSeznam[fdSeznam.length-1]==='Stavební spoření'||
+  fdSeznam.slice(-3).includes('Stavební spoření'),JSON.stringify(fdSeznam));
+await pg.evaluate(()=>{zavriDlg();fondy=fondy.filter(f=>!/spoření/i.test(f.nazev));render();showTab('prehled');});
 
 console.log('\n== chyby v konzoli ==');
 // 400 = záměrně špatné heslo v testu 2

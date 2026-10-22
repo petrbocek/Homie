@@ -660,6 +660,7 @@
 
     <div class="list-head" style="margin-bottom:10px">
       <div class="section-title">Měsíční snímky</div>
+      <button class="btn uzky secondary" onclick="otevriFondy()">Fondy a spoření</button>
       <button class="btn uzky" onclick="novySnimek()">+ Zapsat snímek</button>
     </div>
     <div class="rok-wrap">
@@ -713,6 +714,7 @@
 
         <div class="dlg-sekce">Fondy</div>
         <div id="sn-fondy"></div>
+        <button class="pv-mini" style="margin:0 0 11px" onclick="otevriFondy(true)">+ nový fond / spoření</button>
         <div class="field"><label>Investice celkem</label>
           <input id="sn-investice" type="number" step="0.01">
           <div class="rok-pozn" style="margin-top:4px" id="sn-investice-pozn"></div></div>
@@ -746,6 +748,40 @@
           Minulý stav je proto jen v šedé nápovědě, ne předvyplněný.
           <strong>Dluhy zadávej kladně</strong>, uloží se záporně — čisté jmění je
           aktiva + závazky, takže kladně uložený dluh by jmění vyhodil nahoru.
+        </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- správa fondů a spoření -->
+    <div class="dlg-pozadi" id="dlg-fond" onclick="if(event.target===this)zavriDlg('dlg-fond')">
+      <div class="dlg-box" role="dialog" aria-modal="true" aria-labelledby="form-fond-title">
+        <div class="dlg-hlava">
+          <div class="form-title" id="form-fond-title">Fondy a spoření</div>
+          <button class="dlg-x" onclick="zavriDlg('dlg-fond')" title="Zavřít" aria-label="Zavřít">✕</button>
+        </div>
+        <div class="dlg-telo">
+        <div class="wallet-list" id="fondy-seznam" style="margin-bottom:16px"></div>
+        <div class="dlg-sekce" id="fond-form-nadpis">Nový fond / spoření</div>
+        <div class="field"><label>Název</label><input id="fd-nazev" type="text" placeholder="např. Conseq – akciové fondy, Stavební spoření"></div>
+        <div class="row2">
+          <div class="field"><label>Druh</label><select id="fd-druh">
+            <option value="fond">fond / spoření</option>
+            <option value="pujcka">půjčka sám sobě</option></select></div>
+          <div class="field"><label>Měsíční vklad (Kč)</label><input id="fd-vklad" type="number" step="0.01" min="0" placeholder="0"></div>
+        </div>
+        <div class="field"><label>Poznámka</label><input id="fd-poznamka" type="text" placeholder="nepovinné"></div>
+        <div class="field" style="display:flex;align-items:center;gap:8px">
+          <input type="checkbox" id="fd-aktivni" style="width:auto;margin:0" checked>
+          <label for="fd-aktivni" style="margin:0;text-transform:none;letter-spacing:0;font-size:11px">Aktivní — nabízí se ve snímku</label>
+        </div>
+        <button class="btn" id="btn-fond" onclick="saveFond()">+ Přidat</button>
+        <button class="btn secondary" id="btn-cancel-fond" onclick="cancelEditFond()" style="display:none;margin-top:6px">Zrušit úpravy</button>
+        <div class="rok-pozn" style="margin-top:10px">
+          Nový fond se objeví ve snímku jako další pole a jeho hodnota se přičte do
+          <strong>Investic</strong>. Stav se zapisuje ve snímku k prvnímu dni měsíce.
+          Měsíční vklad slouží jen k odhadu vložených peněz a zisku ve Výkonnosti fondů.
+          Ukončený fond odškrtni jako neaktivní — historie mu zůstane.
         </div>
         </div>
       </div>
@@ -1220,6 +1256,12 @@ function buildCatOptions(){
 // z nabídek a z přehledu, ale záznamy ani zůstatek jí nikdo nebere — jen se
 // neplete do cesty při zápisu nového záznamu.
 function penezenkyVidet(){return penezenky.filter(w=>!w.skryta);}
+// Skryté (neaktivní) peněženky patří na konec seznamu — v Peněženkách,
+// v tabulce zůstatků i ve filtru. Jinak zůstává pořadí, v jakém vznikly.
+function seradPenezenky(){
+  penezenky=penezenky.map((w,i)=>[w,i])
+    .sort((a,b)=>(!!a[0].skryta-!!b[0].skryta)||(a[1]-b[1])).map(x=>x[0]);
+}
 
 // Zůstatek k poslednímu dni roku `rok` a pohyby za ten rok. Počáteční zůstatek
 // peněženky je kotva k začátku celé historie, takže počátek roku = kotva plus
@@ -3073,6 +3115,79 @@ function renderSporeni(){
   document.getElementById('sporeni-table-strany').innerHTML=strankovani('sporeni-table',strS);
 }
 
+// --- FONDY A SPOŘENÍ: přidání a úpravy ---
+// Číselník pod sloupcem Investice. Fond se nemaže — má historii stavů
+// a výkonnost; ukončený se jen přepne na neaktivní.
+let editingFondId=null;
+function otevriFondy(zeSnimku){
+  cancelEditFond();
+  renderFondySeznam();
+  otevriDlg('dlg-fond','fd-nazev');
+}
+function renderFondySeznam(){
+  const el=document.getElementById('fondy-seznam');
+  const serazene=fondy.slice().sort((a,b)=>(!a.aktivni-!b.aktivni)||(a.poradi-b.poradi)||(a.id-b.id));
+  el.innerHTML=serazene.length?serazene.map(f=>{
+    const stavy=fondStavy(f.id),posl=stavy[stavy.length-1];
+    const meta=[f.druh==='pujcka'?'půjčka sám sobě':null,
+      Number(f.mesicni_vklad)?`vklad ${fmt(f.mesicni_vklad)}/měs.`:null,
+      posl?`${fmt(posl.hodnota)} k ${+posl.datum.slice(5,7)}/${posl.datum.slice(0,4)}`:'zatím bez stavu',
+      f.aktivni?null:'neaktivní'].filter(Boolean).join(' · ');
+    return `<div class="wallet-list-item${f.aktivni?'':' skryta'}"><div class="wallet-info">`
+      +`<div class="wallet-name">${esc(f.nazev)}</div><div class="wallet-meta">${esc(meta)}</div></div>`
+      +`<button class="edit-btn" onclick="editFond(${f.id})" title="Upravit">✎</button></div>`;
+  }).join(''):'<div class="rok-pozn">Zatím žádné fondy.</div>';
+}
+function editFond(id){
+  const f=fondy.find(x=>x.id===id);if(!f)return;
+  editingFondId=id;
+  document.getElementById('fd-nazev').value=f.nazev;
+  document.getElementById('fd-druh').value=f.druh||'fond';
+  document.getElementById('fd-vklad').value=Number(f.mesicni_vklad)||'';
+  document.getElementById('fd-poznamka').value=f.poznamka||'';
+  document.getElementById('fd-aktivni').checked=!!f.aktivni;
+  document.getElementById('fond-form-nadpis').textContent='Upravit: '+f.nazev;
+  setBtn('btn-fond',false,'Uložit změny');
+  document.getElementById('btn-cancel-fond').style.display='block';
+  document.getElementById('fd-nazev').focus();
+}
+function cancelEditFond(){
+  editingFondId=null;
+  ['fd-nazev','fd-vklad','fd-poznamka'].forEach(i=>document.getElementById(i).value='');
+  document.getElementById('fd-druh').value='fond';
+  document.getElementById('fd-aktivni').checked=true;
+  document.getElementById('fond-form-nadpis').textContent='Nový fond / spoření';
+  document.getElementById('btn-cancel-fond').style.display='none';
+  setBtn('btn-fond',false,'+ Přidat');
+}
+async function saveFond(){
+  const nazev=document.getElementById('fd-nazev').value.trim();
+  if(!nazev){toast('Zadejte název',true);return;}
+  const vklad=parseFloat(document.getElementById('fd-vklad').value)||0;
+  if(vklad<0){toast('Vklad nemůže být záporný',true);return;}
+  const row={nazev,druh:document.getElementById('fd-druh').value,mesicni_vklad:vklad,
+    aktivni:document.getElementById('fd-aktivni').checked,
+    poznamka:document.getElementById('fd-poznamka').value.trim()||null};
+  const label=editingFondId?'Uložit změny':'+ Přidat';
+  setBtn('btn-fond',true);syncSt('syncing');
+  try{
+    if(editingFondId){
+      await api('fondy','PATCH',row,`id=eq.${editingFondId}`);
+      const i=fondy.findIndex(f=>f.id===editingFondId);
+      if(i>=0)fondy[i]={...fondy[i],...row};
+      toast('Fond upraven ✓');
+    }else{
+      row.poradi=fondy.reduce((m,f)=>Math.max(m,f.poradi||0),0)+1;
+      const res=await api('fondy','POST',row);
+      fondy.push(res[0]);
+      toast('Fond přidán ✓ — stav zapiš ve snímku');
+    }
+    syncSt('ok');cancelEditFond();renderFondySeznam();renderSporeni();
+    // Otevřený snímek dostane pole pro nový fond hned, naťukané hodnoty zůstanou.
+    if(document.getElementById('dlg-sporeni').classList.contains('open'))zmenaMesiceSnimku();
+  }catch(e){toast('Chyba: '+e.message,true);syncSt('error');setBtn('btn-fond',false,label);}
+}
+
 // --- SNÍMKY SPOŘENÍ: zápis a úpravy ---
 let editingSporeniId=null;
 
@@ -3375,6 +3490,7 @@ const DLG_ZRUS={
   'dlg-odecet':()=>cancelEditOdecet(),
   'dlg-cenik':()=>cancelEditCenik(),
   'dlg-sporeni':()=>cancelEditSporeni(),
+  'dlg-fond':()=>cancelEditFond(),
 };
 
 function otevriDlg(id,poleId){
@@ -3713,7 +3829,7 @@ async function savePenezenka(){
       toast('Peněženka upravena ✓');syncSt('ok');
     }else{
       const res=await api('penezenky','POST',row);
-      penezenky.push(res[0]);
+      penezenky.push(res[0]);seradPenezenky();
       toast('Peněženka přidána ✓');syncSt('ok');
     }
     if(bylaEditace)zavriDlg('dlg-penezenka'); else cancelEditPenezenka();
@@ -3753,6 +3869,9 @@ async function toggleSkryta(id){
   try{
     await api('penezenky','PATCH',{skryta},`id=eq.${id}`);
     w.skryta=skryta;
+    // Při znovuzobrazení se vrátí mezi aktivní v pořadí, v jakém vznikla.
+    penezenky.sort((a,b)=>String(a.created_at||'').localeCompare(String(b.created_at||''))||(a.id-b.id));
+    seradPenezenky();
     toast(skryta?'Peněženka skryta':'Peněženka zobrazena');syncSt('ok');
     render();updateWalletSelect();
   }catch(e){toast('Chyba: '+e.message,true);syncSt('error');}
@@ -3849,7 +3968,7 @@ async function init(){
       api('penezenky','GET',null,'select=*&order=created_at.asc'),
       api('osnova','GET',null,'select=*&order=poradi.asc,id.asc')
     ]);
-    penezenky=w||[];osnova=o||[];
+    penezenky=w||[];osnova=o||[];seradPenezenky();
     // záznamů je přes 22 tisíc, takže stránkovaně a s rozstřelem podle id
     zaznamy=await apiAll('zaznamy','select=*&order=datum.desc,id.desc','záznamy');
     // Položky plánu. Tabulka přibyla později, takže když v databázi ještě
@@ -3887,7 +4006,10 @@ async function boot(){
   // před rozpadem: může být otevřený nad ním.
   document.addEventListener('keydown',e=>{
     if(e.key!=='Escape')return;
-    if(dlgOtevreny())zavriDlg(); else zavriRozpad();
+    // Jen horní dialog — správa fondů se otevírá nad rozepsaným snímkem
+    // a ten se Escapem zavírat nemá.
+    const otevrene=[...document.querySelectorAll('.dlg-pozadi.open')];
+    if(otevrene.length)zavriDlg(otevrene[otevrene.length-1].id); else zavriRozpad();
   });
   session=readStored();
   if(session&&session.refresh_token){
