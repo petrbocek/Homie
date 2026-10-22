@@ -1836,7 +1836,7 @@ check('žádný nezůstal otevřený',dlgy.every(x=>!x.otevreny),JSON.stringify(
 const sirotci=await pg.evaluate(()=>
   [...document.querySelectorAll('.form-title')].filter(t=>!t.closest('.dlg-hlava')).length);
 check('žádný formulář nezůstal mimo dialog',sirotci===0,String(sirotci));
-for(const [zal,tl] of [['Energie',2],['Peněženky',2],['Osnova',1],['Záznamy',1],['Spoření',2]]){
+for(const [zal,tl] of [['Energie',2],['Peněženky',2],['Osnova',1],['Záznamy',1],['Spoření',3]]){
   await pg.click(`.tab:text-is("${zal}")`); await pg.waitForTimeout(250);
   const n=await pg.evaluate(z=>document.querySelectorAll(
     '#view-'+z+' .list-head .btn').length,
@@ -2433,6 +2433,37 @@ const fdSeznam=await pg.evaluate(()=>[...document.querySelectorAll('#fondy-sezna
 check('neaktivní fondy jsou v seznamu na konci',fdSeznam[fdSeznam.length-1]==='Stavební spoření'||
   fdSeznam.slice(-3).includes('Stavební spoření'),JSON.stringify(fdSeznam));
 await pg.evaluate(()=>{zavriDlg();fondy=fondy.filter(f=>!/spoření/i.test(f.nazev));render();showTab('prehled');});
+
+console.log('\n== půjčky ==');
+await pg.evaluate(()=>showTab('sporeni'));
+await pg.click('#view-sporeni .list-head button:has-text("Půjčky")'); await pg.waitForTimeout(200);
+check('správa půjček se otevře',await pg.isVisible('#dlg-fond')&&(await pg.textContent('#form-fond-title'))==='Půjčky');
+check('ukáže existující půjčky',(await pg.locator('#fondy-seznam .wallet-list-item').count())===2);
+check('u půjčky je věřitel, ne vklad',await pg.isVisible('#fd-veritel')&&!(await pg.isVisible('#fd-vklad')));
+await pg.fill('#fd-nazev','Kuchyň'); await pg.fill('#fd-veritel','Home Credit');
+let pjPred=calls.length;
+await pg.click('#btn-fond'); await pg.waitForTimeout(400);
+const pjPost=calls.slice(pjPred).find(c=>c.method==='POST'&&c.url.includes('/zavazky'));
+const pjBody=pjPost&&JSON.parse(pjPost.body);
+check('nová půjčka se uloží do zavazky',!!pjBody&&pjBody.nazev==='Kuchyň'&&pjBody.veritel==='Home Credit'
+  &&pjBody.poradi===3&&pjBody.aktivni===true&&!('mesicni_vklad' in pjBody),pjPost&&pjPost.body);
+check('nic se nezapsalo do fondů',!calls.slice(pjPred).some(c=>c.url.includes('/fondy')));
+const pjId=await pg.evaluate(()=>zavazky.find(z=>z.nazev==='Kuchyň').id);
+await pg.evaluate(()=>{zavriDlg('dlg-fond');novySnimek();}); await pg.waitForTimeout(200);
+check('nová půjčka je ve snímku',(await pg.locator('#sn-z-'+pjId).count())===1);
+await pg.click('#dlg-sporeni button:has-text("nová půjčka")'); await pg.waitForTimeout(200);
+check('ze snímku se otevře správa půjček',(await pg.textContent('#form-fond-title'))==='Půjčky');
+await pg.evaluate(id=>editFond(id),pjId); await pg.waitForTimeout(100);
+await pg.uncheck('#fd-aktivni');
+pjPred=calls.length;
+await pg.click('#btn-fond'); await pg.waitForTimeout(400);
+const pjPatch=calls.slice(pjPred).find(c=>c.method==='PATCH'&&c.url.includes(`/zavazky?id=eq.${pjId}`));
+check('splacení = PATCH aktivni:false',!!pjPatch&&JSON.parse(pjPatch.body).aktivni===false,pjPatch&&pjPatch.body);
+// Přepnutí zpátky na fondy ukáže fondová pole.
+await pg.evaluate(()=>{zavriDlg('dlg-fond');otevriFondy();}); await pg.waitForTimeout(150);
+check('režim fondů má zase vklad',await pg.isVisible('#fd-vklad')&&!(await pg.isVisible('#fd-veritel')));
+await pg.evaluate(()=>{zavriDlg();zavazky=zavazky.filter(z=>z.nazev!=='Kuchyň');render();showTab('prehled');});
+
 
 console.log('\n== chyby v konzoli ==');
 // 400 = záměrně špatné heslo v testu 2
