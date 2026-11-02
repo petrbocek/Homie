@@ -1518,6 +1518,15 @@ for(const sirka of [320,390,1440,1920]){
     const p=await pg.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);
     if(p>0)pretekaji.push(`${z}: +${p}px`);
   }
+  // Hlavička nese název měsíce, takže výsledek závisel na dnešku: v říjnu
+  // prošlo, „Listopad 2026" už přeteklo. Proto ještě s nejdelšími měsíci.
+  const puvodniM=await pg.evaluate(()=>[cY,cM]);
+  for(const m of [6,10,11]){
+    await pg.evaluate(m=>{cM=m;render();},m); await pg.waitForTimeout(150);
+    const p=await pg.evaluate(()=>document.documentElement.scrollWidth-window.innerWidth);
+    if(p>0)pretekaji.push(`měsíc ${m+1}: +${p}px`);
+  }
+  await pg.evaluate(([y,m])=>{cY=y;cM=m;render();},puvodniM);
   check(`na ${sirka} px se stránka neposouvá do strany`,pretekaji.length===0,pretekaji.join(', '));
 }
 

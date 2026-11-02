@@ -302,6 +302,7 @@
   .auth-err{display:none;background:rgba(248,113,113,0.12);border:1px solid var(--red);color:var(--red);font-size:11px;padding:9px 11px;border-radius:8px;margin-bottom:14px;line-height:1.45;}
   .user-chip{font-family:'DM Mono',monospace;font-size:11px;color:var(--muted);max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .signout-btn{background:var(--surface2);border:1px solid var(--border);color:var(--muted);padding:6px 11px;border-radius:8px;cursor:pointer;font-size:11px;font-family:'DM Mono',monospace;transition:all 0.15s;}
+  header .kratke{display:none;}
   .signout-btn:hover{color:var(--text);border-color:var(--muted);}
 
   /* Průvodce plánem na rok. Tabulka položek má pět sloupců s čísly a do
@@ -360,12 +361,18 @@
        jen sebe. Zkrácený název, z indikátoru zůstane jen tečka (barva nese
        celou informaci) a menší mezery — vejde se to i na 320 px. */
     .user-chip{display:none;}
+    /* Měsíc a odhlášení zkráceně — plné znění hlavičku vystrčilo do strany. */
+    header .dlouhe{display:none;} header .kratke{display:inline;}
+    .signout-btn{padding:6px 9px;}
+    .month-nav{gap:8px;} #monthLabel{white-space:nowrap;}
     .header-right{gap:10px;}
     .logo-dlouhy{display:none;} .logo-kratky{display:inline;}
     .sync-indicator span{display:none;}
     .summary-grid{grid-template-columns:1fr 1fr;}
   }
-  @media(max-width:480px){.summary-grid{grid-template-columns:1fr;}}
+  @media(max-width:480px){.summary-grid{grid-template-columns:1fr;}
+    /* Na 320 px se logo s měsícem a odhlášením vedle sebe nevešlo o 16 px. */
+    .logo{font-size:17px;} .header-right{gap:8px;} header{padding:13px 12px;}}
 </style>
 </head>
 <body class="locked">
@@ -415,7 +422,7 @@
       <button onclick="changeMonth(1)">›</button>
     </div>
     <span class="user-chip" id="user-email"></span>
-    <button class="signout-btn" onclick="signOut()" title="Odhlásit se">odhlásit</button>
+    <button class="signout-btn" onclick="signOut()" title="Odhlásit se" aria-label="Odhlásit se"><span class="dlouhe">odhlásit</span><span class="kratke">⏻</span></button>
   </div>
 </header>
 
@@ -1455,7 +1462,10 @@ function renderSwatches(){
 // --- Render ---
 function render(){
   const label=`${MONTHS_CS[cM]} ${cY}`;
-  document.getElementById('monthLabel').textContent=label;
+  // Na telefonu zkrácený měsíc („Lis 2026"): plný „Listopad 2026" vystrčil
+  // hlavičku na šířce 390 px o kus do strany a s ní celou stránku.
+  document.getElementById('monthLabel').innerHTML=
+    `<span class="dlouhe">${esc(label)}</span><span class="kratke">${esc(MONTHS_SHORT[cM]+' '+cY)}</span>`;
   document.getElementById('records-month').textContent=label;
   document.getElementById('plan-month-label').textContent=label;
   renderPrehled();renderRoky();renderRok();renderZaznamy();renderPenezenky();renderZustatky();renderOsnova();renderEnergie();renderSporeni();ppTlacitko();
