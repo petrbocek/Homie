@@ -3328,7 +3328,11 @@ async function ulozStavy(tabulka,klic,puvodni,datum,stavy){
   const mazat=puvodni.filter(s=>s.datum===datum&&!psat.some(p=>p[klic]===s[klic]));
   let vysledek=puvodni;
   if(psat.length){
-    const res=await api(tabulka,'POST',psat,'',
+    // Upsert musí jmenovat klíč (položka, datum). Bez `on_conflict` porovnává
+    // PostgREST jen podle `id`, které posílané řádky nemají, takže stav, který
+    // už za ten měsíc existuje, skončil chybou „duplicate key … _datum_key"
+    // a s ním celá dávka — ostatní fondy se neuložily vůbec.
+    const res=await api(tabulka,'POST',psat,`on_conflict=${klic},datum`,
       'return=representation,resolution=merge-duplicates');
     vysledek=vysledek.filter(s=>!(s.datum===datum&&psat.some(p=>p[klic]===s[klic])));
     vysledek=vysledek.concat(res||[]);

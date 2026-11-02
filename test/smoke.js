@@ -2066,6 +2066,9 @@ check('stavy fondů se zapíšou jedním dotazem',!!postFo,
 // Bez merge-duplicates by druhý zápis téhož měsíce spadl na unikátu.
 check('stavy fondů jdou upsertem',
   (postFo.prefer||'').includes('resolution=merge-duplicates'),String(postFo.prefer));
+// A upsert musí jmenovat klíč (fond, datum) — jinak PostgREST porovnává podle
+// id a existující stav měsíce skončí chybou „duplicate key … _datum_key".
+check('upsert fondů jmenuje klíč fond_id,datum',postFo.url.includes('on_conflict=fond_id,datum'),postFo.url);
 const telaFo=JSON.parse(postFo.body);
 check('zapíšou se jen vyplněné fondy',telaFo.length===2,postFo.body);
 check('prázdný fond se nezapíše jako nula',
@@ -2074,6 +2077,7 @@ check('stav fondu nese měsíc snímku',
   telaFo.every(x=>x.datum==='2021-05-01'),postFo.body);
 
 const postZa=calls.filter(c=>c.method==='POST'&&c.url.includes('zavazky_stavy')).pop();
+check('upsert půjček jmenuje klíč zavazek_id,datum',!!postZa&&postZa.url.includes('on_conflict=zavazek_id,datum'),postZa&&postZa.url);
 check('stavy půjček se zapíšou taky',!!postZa,
   calls.map(c=>c.method+' '+c.url).join(' | '));
 const telaZa=JSON.parse(postZa.body);
